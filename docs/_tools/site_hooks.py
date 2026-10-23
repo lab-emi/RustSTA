@@ -38,9 +38,14 @@ def on_page_markdown(markdown, *, page, config, files):
 
 
 def on_post_build(*, config):
-    """Keep the standalone report's source links usable in the generated site."""
+    for name in ("spef-report.html", "rc-report.html"):
+        _rewrite_report(config, name)
+
+
+def _rewrite_report(config, name):
+    """Keep a bounded standalone report usable in the generated site."""
     docs = Path(config.docs_dir).resolve()
-    source = docs / "verification/spef-report.html"
+    source = docs / "verification" / name
     if not source.is_file():
         return
     if source.stat().st_size > 1024 * 1024:

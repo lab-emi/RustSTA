@@ -44,3 +44,5 @@ delay model and timing checks of the Liberty format [@liberty2017] and the const
   exceptions (`-from`/`-to`, multicycle, `set_max_delay`/`set_min_delay`, `set_clock_groups`).
 - Phase 2b additions (propagated and generated clocks, timing derates, CPPR, `-through` exceptions,
   balanced-tree RC wire loads and SPEF parasitics) sit behind explicit engine traits.
+
+[Effective RC loads and waveforms](rc-waveforms.md) specify version 0.3 timing.

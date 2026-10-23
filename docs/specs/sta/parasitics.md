@@ -1,10 +1,11 @@
 # Extracted RC timing
 
-This additive interface implements the detailed RC subset of IEEE 1481 SPEF.
-It uses an explicit single extraction corner, grounded coupling (factor 1),
-Liberty pin capacitances, lumped NLDM driver loads and first-moment Elmore wire
-delay. It does not claim crosstalk, effective-capacitance waveform solving or
-propagated-clock signoff. Units inside the engine are ns, pF and kOhm.
+The detailed RC subset of IEEE 1481 SPEF uses an explicit extraction corner,
+grounded coupling (factor 1), physical pin capacitances and bounded tree
+reductions. Version 0.3 replaces the original lumped/first-moment-only timing
+interpretation with [effective-load and threshold/slew models](rc-waveforms.md).
+No crosstalk, CCS or propagated-clock signoff claim is made. Internal units are
+ns, pF and kOhm; PARASIT v1 source storage is unchanged.
 
 **STA-REQ-0700**: `rusteda import --spef FILE --spef-corner NAME` atomically
   commits a `PARASIT` v1 mmap container, source identity and parser budgets.
@@ -26,16 +27,12 @@ propagated-clock signoff. Units inside the engine are ns, pF and kOhm.
   nets and exactly one driver. Reject cycles and disconnected RC nodes, with
   zero-resistance edges contracted before tree checks. Never substitute ideal
   or estimated wires for missing extracted data.
-**STA-REQ-0704**: For each transition and early/late bound, add Liberty pin
-  and explicit port capacitances at their physical RC nodes. In iterative tree
-  postorder compute subtree capacitances; in preorder compute
-  `tau(child) = tau(parent) + R(edge) * C(subtree(child))`.
-  Add tau to wire arrival; copy driver slew (the first-moment delay-only model).
-  Driver NLDM uses total extracted plus pin capacitance. Report
-  `wire_model=spef_elmore`, `parasitics=spef`,
-  `delay_calculator=nldm_lumped_elmore`, `coupling=grounded_factor_1`.
-  The extracted scope reports `physical_clock_domains` from stored source-node
-  identities, so a flow can refuse ideal-clock results for sequential signoff.
+**STA-REQ-0704**: Add transition/bound-specific pin and port capacitances at
+  physical RC nodes. Compute first moments by iterative subtree/postorder and
+  preorder reduction, then evaluate the current RC waveform model. Report
+  `wire_model=spef_rc`, `parasitics=spef`, `delay_calculator=nldm_ceff_ramp`
+  and `coupling=grounded_factor_1`. Report physical clock source identities;
+  a flow may refuse ideal-clock results for sequential timing.
 **STA-REQ-0705**: Enforce configurable input, net, node, element and name-byte
   caps before allocation. Tree passes are O(V+E) after bounded canonical sorting and zero-R union-find; no paths are enumerated, and the
   RC state is included in the corner state budget. Arithmetic overflow and

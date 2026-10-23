@@ -32,7 +32,7 @@ workspaces. Part of the **RustEDA** family.
 - **Choose how to compute:** deterministic pure Rust CPU propagation in f64; optional native CUDA with CPU differential checks.
 - **Keep the evidence:** independent checker and full-rerun modes, analytic fixtures, incremental consistency tests, and pinned Sky130/GF180 libraries.
 
-> **Development preview:** version 0.2.0 is unreleased and is not on crates.io.
+> **Development preview:** version 0.3.0 is unreleased and is not on crates.io.
 > Build from source. Linux is the CI baseline. Read the
 > [analysis scope](docs/reference/scope.md) and [verification limits](docs/verification/index.md)
 > before interpreting a timing result.
@@ -56,7 +56,7 @@ export PATH="$PWD/target/release:$PATH"
 
 ```console
 $ ruststa --version
-ruststa 0.2.0 (backends: cpu)
+ruststa 0.3.0 (backends: cpu)
 ```
 
 From the repository root, analyze the bundled eight-cell chain in a fresh workspace:
@@ -110,7 +110,7 @@ handles such as `path1` belong to the selected revision. Initialization creates
 | Multi-corner 1D/2D/3D Liberty NLDM tables | No CCS/ECSM or sign-off accuracy claim |
 | Setup/hold, latch borrowing, recovery/removal, gating checks | Ideal and explicit propagated primary clocks; generated clocks and CPPR remain outside scope |
 | Constants and supported `-from`/`-to` timing exceptions | Ordered `-through` exception hops are rejected by the engine |
-| Ideal, lumped wire-load and detailed SPEF RC trees | First-moment Elmore with lumped NLDM; no crosstalk or effective-capacitance waveform solver |
+| Ideal, lumped wire-load and detailed SPEF RC trees | Moment-matched pi, charge-matched effective load and nonlinear driver slew; no crosstalk/CCS claim |
 | CPU f64 and optional CUDA f64/f32 propagation | Metal/Accelerate is not a shipped backend |
 | Incremental `TimingSession` Rust API | The CLI `ruststa update` currently reports full recomputation |
 
@@ -164,16 +164,15 @@ RustSTA is licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE) and
 imports a bounded detailed RC extraction for a previously imported netlist and
 corner. It can also be combined with `--lib`, `--netlist` and `--sdc` in one
 transaction. Run the usual `ruststa run` and `ruststa check --method full` on the
-returned revisions. The scope reports `spef_elmore`, `spef` and
-`nldm_lumped_elmore`; missing extraction, meshes and a different corner are errors.
+returned revisions. The scope reports `spef_rc`, `spef` and
+`nldm_ceff_ramp`; missing extraction, meshes and a different corner are errors.
 
 Plain text and gzip are accepted under the same encoded/decoded byte cap. CRC
 errors, missing annotation, unsupported RC meshes and budget overruns fail
-explicitly without committing a partial revision. This is lumped NLDM plus
-first-moment Elmore wire delay, unchanged wire slew and factor-one grounded
-coupling. Explicit propagated primary clocks are supported; crosstalk and ceff
-waveforms are not. The independent checker currently reports extracted RC as
+explicitly without committing a partial revision. This uses moment-matched pi loads, charge-matched effective capacitance,
+a finite-ramp Thevenin driver and RC threshold/slew propagation, with
+factor-one grounded coupling. Explicit propagated primary clocks are supported; crosstalk and CCS current tables are not. The independent checker currently reports extracted RC as
 undecided; use full recomputation and the measured dual-PDK black-box suite.
 See [the SPEF workflow](docs/guide/spef.md),
 [parasitic timing](docs/specs/sta/parasitics.md) and
-[the verification report](docs/verification/spef-report.html).
+[the verification report](docs/verification/rc-report.html).

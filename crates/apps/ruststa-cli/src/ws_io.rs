@@ -596,14 +596,14 @@ pub fn envelope_headers_from_store(
     let mut scope = JsonObject::new();
     scope.insert("corner", &primary_corner)?;
     scope.insert("wire_model", &scope_rep.wire_model)?;
-    let extracted = scope_rep.wire_model == "spef_elmore";
+    let extracted = scope_rep.wire_model == "spef_rc";
     scope.insert("parasitics", &if extracted { "spef" } else { "none" })?;
     scope.insert("drc_status", &"unchecked")?;
     scope.insert("wire_load", &wire_load_opt)?;
     scope.insert(
         "delay_calculator",
         &if extracted {
-            "nldm_lumped_elmore"
+            "nldm_ceff_ramp"
         } else {
             "nldm_lumped"
         },

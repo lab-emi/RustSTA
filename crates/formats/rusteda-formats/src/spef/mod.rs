@@ -230,7 +230,7 @@ impl Spef {
             .iter()
             .fold(0u64, |n, net| n.saturating_add(net.resistors.len() as u64));
         nodes
-            .saturating_mul(320)
+            .saturating_mul(448)
             .saturating_add(
                 (self.element_count as u64)
                     .max(resistors)

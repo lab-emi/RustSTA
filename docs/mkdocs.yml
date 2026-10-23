@@ -104,6 +104,7 @@ nav:
           - Inputs and corners: specs/sta/inputs.md
           - Delay and wire load: specs/sta/delay.md
           - Detailed parasitics: specs/sta/parasitics.md
+          - RC waveforms and effective load: specs/sta/rc-waveforms.md
           - Propagated primary clocks: specs/sta/propagated-clock.md
           - Constant propagation: specs/sta/constants.md
           - Clocks and checks: specs/sta/checks.md
@@ -134,6 +135,7 @@ nav:
       - Verification scope: verification/index.md
       - Dual-PDK verification: verification/pdk.md
       - SPEF verification: verification/spef.md
+      - RC waveform verification: verification/rc-waveforms.md
       - Timing verification specification: specs/sta/verification.md
       - Requirements and evidence: verification/requirements.md
   - Project:

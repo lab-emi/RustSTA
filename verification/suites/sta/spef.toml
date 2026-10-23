@@ -4,3 +4,10 @@ requirement = ["STA-REQ-0700", "STA-REQ-0701", "STA-REQ-0702", "STA-REQ-0703", "
 test = "crates/engines/ruststa/tests/extracted.rs"
 cases = "verification/fixtures/synthetic/spef"
 description = "Bounded detailed parasitics, typed-input validation, loads, zero resistance, full versus incremental ECO checks and propagated primary clocks. External acceptance uses the bounded nodal first-moment and dual-library harness documented with parasitic timing."
+
+[[suite]]
+name = "rc-waveforms"
+requirement = ["STA-REQ-0720", "STA-REQ-0721", "STA-REQ-0722", "STA-REQ-0723", "STA-REQ-0724", "STA-REQ-0725"]
+test = "crates/engines/ruststa/tests/extracted.rs"
+cases = "verification/fixtures/synthetic/spef"
+description = "Three-moment pi, nonlinear effective loads/slews, parsed metadata, full/incremental and CPU/CUDA agreement. External transient and dual-library acceptance are explicitly enabled."

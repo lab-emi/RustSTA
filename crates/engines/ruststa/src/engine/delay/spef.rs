@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! Bounded first-moment extracted RC timing (STA-REQ-0702 to STA-REQ-0706).
-//! Lumped NLDM driver load, Elmore delay, unchanged wire slew. No waveform/ceff claim.
+//! Physical RC binding, Elmore moments and passive pi loads (STA-REQ-0702 to STA-REQ-0706).
+//! Bounded waveform lowering adds charge-matched loads and threshold/slew response.
+//! Grounded coupling only; no CCS or crosstalk claim.
 
 mod tree;
 
@@ -29,6 +30,9 @@ pub struct ParasiticInput {
 pub struct Spef {
     wire_cap_pf: Vec<f64>,
     delay_ns: Vec<[f64; 4]>,
+    pi_loads: Vec<[DriverLoad; 4]>,
+    primary: Vec<bool>,
+    thresholds: crate::engine::input::libview::CornerThresholds,
 }
 
 pub(super) fn error(message: impl Into<String>) -> Diag {
@@ -118,6 +122,9 @@ impl Spef {
         let mut result = Self {
             wire_cap_pf: vec![0.0; view.num_nets()],
             delay_ns: vec![[0.0; 4]; view.num_nodes()],
+            pi_loads: vec![[DriverLoad::Lumped { c: 0.0 }; 4]; view.num_nets()],
+            primary: vec![false; view.num_nets()],
+            thresholds: lib.thresholds,
         };
         let mut annotated = BTreeSet::new();
         let pin_map = map_netlist_cell_pins(view.frozen(), lib);
@@ -212,7 +219,15 @@ impl Spef {
                     }
                 }
             }
-            let delays = tree::elmore(net, root, &caps)?;
+            let reduced = tree::reduce(net, root, &caps)?;
+            let delays = reduced.delays;
+            result.pi_loads[row.index()] = reduced.pi.map(|p| DriverLoad::Pi {
+                c_near: p.near,
+                r: p.resistance,
+                c_far: p.far,
+            });
+            result.primary[row.index()] =
+                matches!(view.node_kind(drivers[0]), NodeKind::PortBit { .. });
             for (id, rc_node) in connections {
                 result.delay_ns[id.index()] = delays[rc_node as usize];
             }
@@ -235,18 +250,37 @@ impl Spef {
 }
 
 impl WireModel for Spef {
+    fn elmore(&self, load: NodeId, tr: Tr, an: An) -> Option<f64> {
+        Some(self.delay_ns[load.index()][tr.index() * 2 + an.index()])
+    }
+
     fn scope_name(&self) -> &'static str {
-        "spef_elmore"
+        "spef_rc"
+    }
+    fn physical_load(&self, net: NetRow, tr: Tr, an: An) -> Option<DriverLoad> {
+        Some(self.pi_loads[net.index()][tr.index() * 2 + an.index()])
+    }
+    fn primary_input(&self, net: NetRow) -> bool {
+        self.primary[net.index()]
     }
     fn driver_load(&self, net: NetRow, _an: An, pin_load: f64) -> DriverLoad {
         DriverLoad::Lumped {
             c: pin_load + self.wire_cap_pf[net.index()],
         }
     }
-    fn load_delay(&self, _net: NetRow, load: NodeId, tr: Tr, an: An, slew: f64) -> DelaySlew {
-        DelaySlew {
-            delay: self.delay_ns[load.index()][tr.index() * 2 + an.index()],
+    fn load_delay(&self, net: NetRow, load: NodeId, tr: Tr, an: An, slew: f64) -> DelaySlew {
+        let tau = self.delay_ns[load.index()][tr.index() * 2 + an.index()];
+        match rusteda_compute::rc::wire(
+            tau,
             slew,
+            self.thresholds.rc(tr == Tr::Fall),
+            self.primary[net.index()],
+        ) {
+            Ok((delay, slew)) => DelaySlew { delay, slew },
+            Err(_) => DelaySlew {
+                delay: f64::NAN,
+                slew: f64::NAN,
+            },
         }
     }
 }

@@ -4,9 +4,8 @@
 //! The gate delay seam: delay and output slew of a cell arc (owner: E3).
 //!
 //! Engine section B. Work item E3 implements [`GateDelay`] with the non-linear delay model of the
-//! library tables. The load is the wire model's [`DriverLoad`]: a lumped capacitance in Phase 2a;
-//! a pi load, which the RC models of Phase 2b produce, is the hook for a delay calculation that
-//! reduces it to an effective capacitance. The bound selects the library of a corner that has
+//! library tables. The load is the wire model's [`DriverLoad`]: a lumped capacitance or
+//! a physical pi reduced through the bounded effective-capacitance/waveform model. The bound selects the library of a corner that has
 //! separate early and late libraries (Phase 2b).
 
 use std::borrow::Cow;
@@ -55,6 +54,30 @@ impl TimingLib {
         axis3: f64,
     ) -> DelaySlew {
         let pa = self.arc(arc);
+        if let DriverLoad::Pi { c_near, c_far, r } = load {
+            let eval = |c| {
+                let x = [slew, c, axis3];
+                (
+                    self.lut_bank.eval(pa.delay[out.index()], x),
+                    self.lut_bank.eval(pa.slew[out.index()], x),
+                )
+            };
+            return match rusteda_compute::rc::gate(
+                rusteda_compute::rc::Pi {
+                    near: c_near,
+                    far: c_far,
+                    resistance: r,
+                },
+                self.thresholds.rc(out == Tr::Fall),
+                eval,
+            ) {
+                Ok((delay, slew, _)) => DelaySlew { delay, slew },
+                Err(_) => DelaySlew {
+                    delay: f64::NAN,
+                    slew: f64::NAN,
+                },
+            };
+        }
         let x = [slew, load.total(), axis3];
         let k = out.index();
         DelaySlew {
@@ -76,6 +99,31 @@ impl TimingLib {
         tracker: &mut RangeTracker,
     ) -> DelaySlew {
         let pa = self.arc(arc);
+        if let DriverLoad::Pi { c_near, c_far, r } = load {
+            let eval = |c| {
+                let x = [slew, c, axis3];
+                (
+                    self.lut_bank
+                        .eval_tracked(pa.delay[out.index()], x, tracker),
+                    self.lut_bank.eval_tracked(pa.slew[out.index()], x, tracker),
+                )
+            };
+            return match rusteda_compute::rc::gate(
+                rusteda_compute::rc::Pi {
+                    near: c_near,
+                    far: c_far,
+                    resistance: r,
+                },
+                self.thresholds.rc(out == Tr::Fall),
+                eval,
+            ) {
+                Ok((delay, slew, _)) => DelaySlew { delay, slew },
+                Err(_) => DelaySlew {
+                    delay: f64::NAN,
+                    slew: f64::NAN,
+                },
+            };
+        }
         let x = [slew, load.total(), axis3];
         let k = out.index();
         DelaySlew {

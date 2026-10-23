@@ -15,11 +15,13 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
+mod rc;
+
 pub use rusteda_compute::timing::{
-    CompiledLutBank, InArc, LevelizedTimingCsr, NO_PRED, NONE, PropagationStats, Readback, Request,
-    Scope, StartRows, TagMapRec, TimingProblem, TimingPropagationBackend, TimingSession,
-    TimingStateSoA, TimingValues, WireRec, absent, arr_index, out_adjacency, pred_source, prewarm,
-    slew_index, timing_backend,
+    ArcValues, CompiledLutBank, InArc, LevelizedTimingCsr, NO_PRED, NONE, PropagationStats,
+    Readback, Request, Scope, StartRows, TagMapRec, TimingProblem, TimingPropagationBackend,
+    TimingSession, TimingStateSoA, TimingValues, WireRec, absent, arr_index, out_adjacency,
+    pred_source, prewarm, slew_index, timing_backend,
 };
 pub use rusteda_compute::{BackendKind, ComputeError, Precision};
 use rusteda_core::job::{Ctx, Diag};
@@ -298,6 +300,8 @@ pub struct LoweredCorner<'a> {
     pub starts: StartRows,
     /// Optional RC wire records per CSR incoming arc (empty for ideal/lumped wire models).
     pub wires: Vec<WireRec>,
+    /// CPU-prepared f64 RC arc values, shared by all propagation backends.
+    pub arc_values: Vec<ArcValues>,
     /// Wall-clock seconds spent lowering into the compute ABI.
     pub lower_s: f64,
 }
@@ -425,27 +429,21 @@ impl<'a> LoweredCorner<'a> {
             load,
             starts,
             wires: Vec::new(),
+            arc_values: Vec::new(),
             lower_s,
         })
     }
 
-    /// Add the extracted net delays to incoming CSR arcs (STA-REQ-0704).
-    pub fn set_wire_model(&mut self, graph: &TimingGraph, wire: &dyn WireModel) {
-        if wire.scope_name() != "spef_elmore" {
-            return;
-        }
-        self.wires = vec![WireRec::default(); self.csr.in_arcs.len()];
-        for (i, &ai) in self.csr_arc_to_graph_arc.iter().enumerate() {
-            let arc = &graph.arcs()[ai as usize];
-            if let ArcKind::Net { net } = arc.kind {
-                for tr in Tr::ALL {
-                    for an in An::ALL {
-                        self.wires[i].delay[tr.index() * 2 + an.index()] =
-                            wire.load_delay(net, arc.dst, tr, an, 0.0).delay;
-                    }
-                }
-            }
-        }
+    /// Prepare bounded RC waveform values after the start transitions are final.
+    pub fn set_wire_model(
+        &mut self,
+        graph: &TimingGraph,
+        view: &NetlistView<'_>,
+        wire: &dyn WireModel,
+        lib: &TimingLib,
+        max_bytes: u64,
+    ) -> Result<(), Diag> {
+        rc::prepare(self, graph, view, wire, lib, max_bytes)
     }
 
     /// Borrows this lowered corner as a [`TimingProblem`] for `rusteda_compute::timing`.
@@ -459,6 +457,7 @@ impl<'a> LoweredCorner<'a> {
             load: &self.load,
             starts: &self.starts,
             wires: &self.wires,
+            arc_values: &self.arc_values,
         }
     }
 
@@ -518,6 +517,11 @@ impl<'a> LoweredCorner<'a> {
         backend: &dyn TimingPropagationBackend,
         deterministic: bool,
     ) -> Result<LoweredResult, ComputeError> {
+        if !self.arc_values.is_empty() {
+            return Err(ComputeError::Invalid(
+                "RC arc values require the session API".into(),
+            ));
+        }
         let mut state = self.state_soa();
         let stats = backend.propagate_levels(&self.csr, &self.luts, &mut state, deterministic)?;
         Ok(LoweredResult {

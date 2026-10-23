@@ -234,8 +234,14 @@ pub fn build_start_rows<D: Derate>(
                             to,
                             an,
                             ck_arr.slew,
-                            DriverLoad::Lumped { c: c_load },
+                            match netview.node_net(l.out_pin) {
+                                NetTarget::Net(net) => net_loads.physical_load(net, to, an, c_load),
+                                _ => DriverLoad::Lumped { c: c_load },
+                            },
                         );
+                        if !ds.delay.is_finite() || !ds.slew.is_finite() {
+                            return Err(Diag::error("T0077", "nonfinite RC sequential launch"));
+                        }
                         let factor =
                             derate.factor(DelayKind::Cell, PathKind::Data, l.out_pin, an, to);
                         let arr = ck_arr.latency + ds.delay * factor;

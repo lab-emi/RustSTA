@@ -61,27 +61,81 @@ fn physical_pin_loads_and_port_loads_enter_elmore() {
         .find(|p| p.name == "A")
         .unwrap()
         .cap[0][0];
+    let moment = model.elmore(NodeId(2), Tr::Rise, An::Early).unwrap();
+    assert!((moment - 2.0 * (0.02 + input_cap)).abs() < 1e-14);
     let delay_a = model.load_delay(NetRow(0), NodeId(2), Tr::Rise, An::Early, 0.1);
-    assert!((delay_a.delay - 2.0 * (0.02 + input_cap)).abs() < 1e-14);
-    assert_eq!(delay_a.slew, 0.1);
-    assert!(
-        (model
-            .load_delay(NetRow(1), NodeId(1), Tr::Rise, An::Early, 0.1)
-            .delay
-            - 3.0 * 0.08)
-            .abs()
-            < 1e-14
-    );
-    assert!(
-        (model
-            .load_delay(NetRow(1), NodeId(1), Tr::Rise, An::Late, 0.1)
-            .delay
-            - 3.0 * 0.09)
-            .abs()
-            < 1e-14
-    );
+    assert!(delay_a.slew > 0.1);
+    assert!((model.elmore(NodeId(1), Tr::Rise, An::Early).unwrap() - 3.0 * 0.08).abs() < 1e-14);
+    assert!((model.elmore(NodeId(1), Tr::Rise, An::Late).unwrap() - 3.0 * 0.09).abs() < 1e-14);
     assert!(Spef::bind(&parsed, &nv, &tl, &ov, 1).is_err());
 }
+// STA-REQ-0720: one passive RC section is already its own exact pi; zero R contracts.
+// Additional test state <1 MiB, one corner and two test workers; no search/path enumeration.
+#[test]
+fn pi_reduction_preserves_a_section_and_zero_resistance() {
+    use ruststa::engine::delay::wire::DriverLoad;
+    let frozen = design().freeze();
+    let view = NetlistView::new(&frozen, std::slice::from_ref(lib())).unwrap();
+    let library = TimingLib::from_corner("default", std::slice::from_ref(lib())).unwrap();
+    let cap = library
+        .cell("wt_buf_1")
+        .unwrap()
+        .pins
+        .iter()
+        .find(|p| p.name == "A")
+        .unwrap()
+        .cap[0][0];
+    // STA-REQ-0721: diagnostic tracking must not change the physical delay model.
+    let arc = library.cell("wt_buf_1").unwrap().arcs[0];
+    let load = DriverLoad::Pi {
+        c_near: 0.01,
+        c_far: 0.03,
+        r: 3.0,
+    };
+    let plain = library.arc_delay_3d(arc, Tr::Rise, 0.1, load, 0.0);
+    let tracked = library.arc_delay_tracked(
+        arc,
+        Tr::Rise,
+        0.1,
+        load,
+        0.0,
+        &mut ruststa::engine::delay::lut::RangeTracker::new(),
+    );
+    assert!(plain.delay.is_finite() && plain.slew.is_finite());
+    assert_eq!(plain.delay.to_bits(), tracked.delay.to_bits());
+    assert_eq!(plain.slew.to_bits(), tracked.slew.to_bits());
+    for zero in [false, true] {
+        let source = if zero {
+            source().replace("1 a u:A 2", "1 a u:A 0")
+        } else {
+            source()
+        };
+        let parsed = spef::read(&source, spef::Limits::default()).unwrap();
+        let model = Spef::bind(
+            &parsed,
+            &view,
+            &library,
+            &NetLoadOverrides::default(),
+            1 << 20,
+        )
+        .unwrap();
+        let Some(DriverLoad::Pi { c_near, c_far, r }) =
+            model.physical_load(NetRow(0), Tr::Rise, An::Early)
+        else {
+            panic!("physical pi absent")
+        };
+        if zero {
+            assert!((c_near - 0.03 - cap).abs() < 1e-14);
+            assert_eq!(c_far, 0.0);
+            assert_eq!(r, 0.0);
+        } else {
+            assert!((c_near - 0.01).abs() < 1e-14);
+            assert!((c_far - 0.02 - cap).abs() < 1e-14);
+            assert!((r - 2.0).abs() < 1e-14);
+        }
+    }
+}
+
 // STA-REQ-0703, STA-REQ-0705: missing pins/nets, cycles and disconnected nodes never become ideal.
 #[test]
 fn reject_incomplete_and_mesh_extractions() {
@@ -305,13 +359,22 @@ fn propagated_clock_is_explicit_and_replaces_ideal_latency() {
         .find(|p| p.name == "A")
         .unwrap()
         .cap[0][1];
-    assert!((a.latency - (0.2 + 2.0 * (0.02 + cap))).abs() < 1e-13);
-    assert_eq!(a.slew, 0.1);
+    assert!((a.latency - (0.2 + 2.0 * (0.02 + cap) * 2.0_f64.ln())).abs() < 1e-13);
+    assert!((a.slew - (0.1 + 2.0 * (0.02 + cap) * 4.0_f64.ln())).abs() < 1e-13);
     assert!(analysis.diags.iter().any(|d| d.code == "T0076"));
     let mut session =
         TimingSession::new(design(), vec![lib().clone()], sdc, options.clone()).unwrap();
     session.swap_cell_by_name("u", "wt_buf_2").unwrap();
     session.verify_against_full().unwrap();
+    let driving = format!("{sdc}\nset_driving_cell -lib_cell wt_buf_1 [get_ports a]\n");
+    let rejected = EngineAnalysis::analyze_single_corner(
+        &frozen,
+        std::slice::from_ref(lib()),
+        &driving,
+        &options,
+    )
+    .unwrap_err();
+    assert!(rejected.iter().any(|d| d.code == "T0077"));
     let unset = format!("{sdc}\nunset_propagated_clock [get_clocks clk]\n");
     let ideal = EngineAnalysis::analyze_single_corner(
         &frozen,

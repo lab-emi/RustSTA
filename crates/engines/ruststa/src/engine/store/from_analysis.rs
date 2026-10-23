@@ -1074,7 +1074,16 @@ fn compute_corner_backward_pass(
         start_build.rows,
         &ca.latch_maps,
     ) {
-        lowered.set_wire_model(analysis.graph, &ca.wire_model);
+        // The same graph, starts and RC data passed analysis preflight already.
+        lowered
+            .set_wire_model(
+                analysis.graph,
+                analysis.netview,
+                &ca.wire_model,
+                &ca.lib,
+                u64::MAX,
+            )
+            .expect("RC preparation of a validated analysis is deterministic");
         bp.propagate(analysis.graph, &lowered, &values);
     }
     bp

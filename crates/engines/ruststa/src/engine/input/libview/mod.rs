@@ -304,12 +304,12 @@ pub struct TimingLib {
 }
 
 impl TimingLib {
-    /// Builds the library view for `corner` from parsed [`Library`] slices, inferring
-    /// [`CornerThresholds`] from the library name when raw text is not provided.
+    /// Builds the library view for `corner` from parsed [`Library`] slices, reading
+    /// [`CornerThresholds`] from the parsed library metadata.
     pub fn from_corner(corner: impl Into<String>, libs: &[Library]) -> Result<Self, Diag> {
         let pairs: Vec<(&Library, CornerThresholds)> = libs
             .iter()
-            .map(|l| (l, CornerThresholds::from_library_name(&l.name)))
+            .map(|l| (l, CornerThresholds::from_library(l)))
             .collect();
         Self::from_corner_with_thresholds(corner, &pairs)
     }
@@ -324,7 +324,7 @@ impl TimingLib {
         for &(file, text) in sources {
             let lib = rusteda_formats::liberty::read_text(text, file)
                 .map_err(|e| Diag::error("T0011", e.to_string()))?;
-            let thr = CornerThresholds::from_liberty_text(text);
+            let thr = CornerThresholds::from_library(&lib);
             parsed.push((lib, thr));
         }
         let refs: Vec<(&Library, CornerThresholds)> = parsed.iter().map(|(l, t)| (l, *t)).collect();

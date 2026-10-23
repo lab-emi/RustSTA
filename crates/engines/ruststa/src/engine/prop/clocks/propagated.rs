@@ -86,7 +86,7 @@ pub fn build_model(
         .saturating_mul(320)
         .saturating_add(n.saturating_mul(selected).saturating_mul(128))
         .saturating_add(if selected > 0 {
-            n.saturating_mul(320) + e.saturating_mul(64)
+            n.saturating_mul(320) + e.saturating_mul(192)
         } else {
             0
         })
@@ -143,7 +143,6 @@ pub fn build_model(
         GraphStartBuilder::new(2).build(),
         &ArcTagMaps::new(),
     )?;
-    lowered.set_wire_model(graph, wire);
     for (ci, clock) in constraints.clocks.iter().enumerate() {
         if !clock.propagated || clock.is_virtual() {
             values.push(None);
@@ -190,6 +189,7 @@ pub fn build_model(
             }
         }
         lowered.starts = starts.build();
+        lowered.set_wire_model(graph, view, wire, lib, options.max_state_bytes)?;
         let mut result = lowered
             .propagate(BackendKind::Cpu, Precision::F64, Ctx::NONE)
             .map_err(|e| crate::engine::prop::lower::compute_error_diag(&e))?

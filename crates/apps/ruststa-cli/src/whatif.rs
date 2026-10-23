@@ -452,14 +452,14 @@ pub fn exec_whatif(
     scope.insert("wire_model", &st.wire_model)?;
     scope.insert(
         "parasitics",
-        &if st.wire_model == "spef_elmore" {
+        &if st.wire_model == "spef_rc" {
             "spef"
         } else {
             "none"
         },
     )?;
-    if st.wire_model == "spef_elmore" {
-        scope.insert("delay_calculator", &"nldm_lumped_elmore")?;
+    if st.wire_model == "spef_rc" {
+        scope.insert("delay_calculator", &"nldm_ceff_ramp")?;
         scope.insert("coupling", &"grounded_factor_1")?;
     }
     scope.insert("drc_status", &"unchecked")?;

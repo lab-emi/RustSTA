@@ -52,11 +52,19 @@ eight times its default. Raising parser caps does not remove the independent
 
 ## Timing interpretation
 
-The reported model is `wire_model=spef_elmore`, `parasitics=spef`,
-`delay_calculator=nldm_lumped_elmore`. It includes physical pin and explicit
-port capacitances, computes first-moment wire delay and grounds coupling at
-factor 1. Interconnect slew is copied from the driver; this is not waveform or
-crosstalk analysis. See [the model definition](../specs/sta/parasitics.md).
+The reported model is `wire_model=spef_rc`, `parasitics=spef`,
+`delay_calculator=nldm_ceff_ramp`. It includes physical pin and explicit
+port capacitances, a three-moment driving-point pi, charge-matched effective
+load and a finite-ramp Thevenin driver. The driver resistance is an explicit
+NLDM sensitivity proxy. Receiver threshold delay and slew use the Elmore
+moment as a one-pole approximation. Raw first moments are not voltage crossing
+times. Coupling is grounded at factor 1; this is not CCS or crosstalk analysis.
+See [the waveform definition](../specs/sta/rc-waveforms.md).
+
+The deterministic CPU waveform pass prepares 128-byte per-arc records for both
+CPU and CUDA propagation. --max-state-gib bounds these arrays and conservative
+numeric work; excess is T0078. All numeric iterations have fixed ceilings and
+charge residuals are checked. A changed load re-evaluates neighboring arcs.
 
 Explicit `set_propagated_clock` on primary clocks uses cell and wire delay in
 the clock network. Generated clocks, unsupported internal clock sources and
@@ -65,7 +73,11 @@ and keeps CPPR off.
 
 The independent checker has no extracted-RC implementation and therefore
 reports `undecided` for that scope. `--method full` checks consistency with a
-full engine run. The [verification report](../verification/spef-report.html)
-separates nodal first-moment agreement, real-PDK input coverage and differences
-against a reference tool's default waveform model. A successful import or run
+full engine run. The [verification report](../verification/rc-report.html)
+separates independent transient equations, real-PDK input coverage and the unchanged
+1 ps gate against a reference tool's default model. A successful import or run
 does not mean the design meets setup/hold or signoff requirements.
+
+Extracted waveform timing currently uses port transition annotations. A
+`set_driving_cell` port annotation fails with T0077 rather than combining it
+with an unvalidated waveform convention. Ideal/lumped modes retain that feature.

@@ -342,7 +342,15 @@ fn in_arcs_equivalent(
     }
     let old_order = old_graph.order();
     let new_order = new_graph.order();
-    for (oa, na) in old_in.iter().zip(new_in.iter()) {
+    for (offset, (oa, na)) in old_in.iter().zip(new_in.iter()).enumerate() {
+        let ok = old_lowered.csr.in_ptr[old_pos] as usize + offset;
+        let nk = new_lowered.csr.in_ptr[new_pos] as usize + offset;
+        if old_lowered.arc_values.get(ok) != new_lowered.arc_values.get(nk) {
+            return false;
+        }
+        if old_lowered.wires.get(ok) != new_lowered.wires.get(nk) {
+            return false;
+        }
         let old_src_node = old_order[oa.src as usize];
         let new_src_node = new_order[na.src as usize];
         if mapping.new_to_old[new_src_node.index()] != Some(old_src_node) {
@@ -800,7 +808,9 @@ fn eval_backward_pos(
                     if s == absent(an_i) || !s.is_finite() {
                         continue;
                     }
-                    let delay = if cls.is_wire() {
+                    let delay = if let Some(rec) = lowered.arc_values.get(arc_k) {
+                        rec.delay[(ti * 2 + to) * 2 + an_i]
+                    } else if cls.is_wire() {
                         match lowered.wires.get(arc_k) {
                             Some(wr) => wr.delay[to * 2 + an_i],
                             None => 0.0,

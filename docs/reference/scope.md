@@ -61,9 +61,10 @@ Phase 2b (see [`docs/roadmap.md`](../roadmap.md)):
 - **Lumped wire-load model:** `WireloadLumped` adds the wire capacitance of the `wire_load` table
   to the net load and no wire resistance, so a library with a `default_wire_load` (such as
   `sky130_fd_sc_hd`) gives no wire delay; resistive tree models are a Phase 2b item.
-- **Extracted model limits:** detailed SPEF uses lumped NLDM plus Elmore delay,
-  unchanged interconnect slew and grounded coupling. It is not a crosstalk or
-  effective-capacitance waveform solver. General RC meshes and balanced/worst-case
+- **Extracted model limits:** detailed SPEF uses a moment-matched pi,
+  charge-matched effective load, finite-ramp Thevenin driver and one-pole
+  receiver threshold/slew model. Driver resistance is an NLDM sensitivity proxy;
+  coupling is grounded. This is not CCS, transistor characterization or crosstalk. General RC meshes and balanced/worst-case
   estimated tree wire-load modes remain unsupported. The independent checker
   returns undecided for extracted RC/propagated clocks; full consistency and
   external comparisons are separate evidence.

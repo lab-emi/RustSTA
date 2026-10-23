@@ -701,6 +701,12 @@ fn setup_corner<'l>(
         wire_model.is_ideal() || options.parasitics.is_some(),
     );
     if let Some(input) = &options.parasitics {
+        if !constraints.driving_cells.is_empty() {
+            return Err(Diag::error(
+                "T0077",
+                "set_driving_cell is unsupported in extracted waveform mode; use port transition annotations",
+            ));
+        }
         if options.wire_model != WireModelOption::Auto {
             return Err(Diag::error(
                 "T0070",
@@ -773,7 +779,7 @@ fn setup_corner<'l>(
                     .map_or(0, |p| p.data.estimated_state_bytes()),
             )
             .saturating_add(if options.parasitics.is_some() {
-                graph.arcs().len() as u64 * 64
+                graph.arcs().len() as u64 * 192
             } else {
                 0
             });
@@ -828,8 +834,8 @@ fn setup_corner<'l>(
         start_build.rows,
         &latch_maps,
     )?;
-    lowered.set_wire_model(graph, &wire_model);
     pin_latch_gq_slews(graph, &start_build.launch_slews, &mut lowered);
+    lowered.set_wire_model(graph, netview, &wire_model, lib, options.max_state_bytes)?;
 
     Ok(CornerSetup {
         wire_model,

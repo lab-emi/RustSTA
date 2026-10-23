@@ -54,6 +54,7 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | COMPUTE-REQ-0027 | docs/specs/compute/timing.md | crates/core/rusteda-compute/src/lib.rs<br>crates/core/rusteda-compute/src/timing/cpu.rs<br>crates/core/rusteda-compute/src/timing/mod.rs<br>crates/core/rusteda-compute/src/timing/tests/cpu.rs |
 | COMPUTE-REQ-0028 | docs/specs/compute/timing.md | crates/core/rusteda-compute/src/lib.rs<br>crates/core/rusteda-compute/src/timing/cuda.rs<br>crates/core/rusteda-compute/src/timing/tests/gpu.rs<br>crates/engines/ruststa/src/engine/prop/lower.rs |
 | COMPUTE-REQ-0029 | docs/specs/compute/timing.md | crates/core/rusteda-compute/src/lib.rs<br>crates/core/rusteda-compute/src/timing/cuda.rs<br>crates/core/rusteda-compute/src/timing/mod.rs<br>crates/core/rusteda-compute/src/timing/tests/gpu.rs<br>crates/engines/ruststa/src/engine/prop/lower.rs<br>crates/engines/ruststa/tests/backend_equality.rs |
+| COMPUTE-REQ-0030 | docs/specs/compute/timing.md | crates/core/rusteda-compute/src/timing/tests/prepared.rs |
 | COMPUTE-REQ-0101 | docs/specs/compute/README.md | crates/core/rusteda-compute/src/cut/mod.rs<br>crates/core/rusteda-compute/src/cut/tests.rs<br>crates/core/rusteda-compute/src/lib.rs |
 | COMPUTE-REQ-0102 | docs/specs/compute/README.md | crates/core/rusteda-compute/src/cut/cuda.rs<br>crates/core/rusteda-compute/src/cut/mod.rs |
 | COMPUTE-REQ-0103 | docs/specs/compute/README.md | crates/core/rusteda-compute/src/cut/mod.rs<br>crates/core/rusteda-compute/src/cut/pack.rs |
@@ -374,7 +375,7 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | STA-REQ-0701 | docs/specs/sta/parasitics.md | crates/engines/ruststa/tests/extracted.rs |
 | STA-REQ-0702 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs |
 | STA-REQ-0703 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs<br>crates/engines/ruststa/tests/extracted.rs |
-| STA-REQ-0704 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs<br>crates/engines/ruststa/src/engine/delay/spef/tree.rs<br>crates/engines/ruststa/src/engine/prop/lower.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0704 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs<br>crates/engines/ruststa/src/engine/delay/spef/tree.rs<br>crates/engines/ruststa/tests/extracted.rs |
 | STA-REQ-0705 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs<br>crates/engines/ruststa/tests/extracted.rs |
 | STA-REQ-0706 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs<br>crates/engines/ruststa/tests/extracted.rs |
 | STA-REQ-0707 | docs/specs/sta/parasitics.md | crates/apps/ruststa-cli/src/ws_io.rs |
@@ -383,6 +384,12 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | STA-REQ-0711 | docs/specs/sta/propagated-clock.md | crates/engines/ruststa/src/engine/prop/clocks/propagated.rs<br>crates/engines/ruststa/tests/extracted.rs |
 | STA-REQ-0712 | docs/specs/sta/propagated-clock.md | crates/engines/ruststa/src/engine/prop/clocks/propagated.rs<br>crates/engines/ruststa/tests/extracted.rs |
 | STA-REQ-0713 | docs/specs/sta/propagated-clock.md | crates/engines/ruststa/src/engine/prop/clocks/propagated.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0720 | docs/specs/sta/rc-waveforms.md | crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0721 | docs/specs/sta/rc-waveforms.md | crates/core/rusteda-compute/src/rc.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0722 | docs/specs/sta/rc-waveforms.md | crates/core/rusteda-compute/src/rc.rs<br>crates/core/rusteda-compute/tests/rc_transient.rs |
+| STA-REQ-0723 | docs/specs/sta/rc-waveforms.md | crates/engines/ruststa/src/engine/prop/lower/rc.rs |
+| STA-REQ-0724 | docs/specs/sta/rc-waveforms.md | crates/core/rusteda-compute/tests/rc_transient.rs |
+| STA-REQ-0725 | docs/specs/sta/rc-waveforms.md | crates/engines/ruststa/src/engine/input/libview/thresholds.rs |
 | VERILOG-REQ-0001 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/lex.rs<br>crates/formats/rusteda-formats/src/verilog/number.rs<br>crates/formats/rusteda-formats/src/verilog/token.rs |
 | VERILOG-REQ-0002 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/lex.rs<br>crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/span.rs |
 | VERILOG-REQ-0100 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/ast.rs<br>crates/formats/rusteda-formats/src/verilog/ast/stmt.rs<br>crates/formats/rusteda-formats/src/verilog/parse/mod.rs<br>crates/formats/rusteda-formats/tests/verilog_parse_design.rs |
@@ -512,15 +519,15 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | Prefix | Requirements | Without a citing test or source |
 |---|---|---|
 | CLI | 18 | 0 |
-| COMPUTE | 31 | 0 |
+| COMPUTE | 32 | 0 |
 | CORE | 26 | 0 |
 | JOB | 7 | 0 |
 | LIBERTY | 48 | 0 |
 | PROTO | 23 | 0 |
 | RCLI | 24 | 0 |
 | SDC | 56 | 0 |
-| STA | 139 | 0 |
+| STA | 145 | 0 |
 | VERILOG | 28 | 0 |
 | WS | 97 | 0 |
 
-497 requirements, 0 without a citing test or source.
+504 requirements, 0 without a citing test or source.

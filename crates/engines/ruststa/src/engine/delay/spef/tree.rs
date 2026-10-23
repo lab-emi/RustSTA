@@ -3,7 +3,13 @@
 
 //! Iterative RC tree reduction, linear space/work; no path enumeration (STA-REQ-0704).
 use super::error;
+use rusteda_compute::rc::Pi;
 use rusteda_core::diag::Diag;
+
+pub(super) struct Reduced {
+    pub delays: Vec<[f64; 4]>,
+    pub pi: [Pi; 4],
+}
 use rusteda_formats::spef::Net;
 
 fn find(parent: &mut [usize], mut x: usize) -> usize {
@@ -14,7 +20,7 @@ fn find(parent: &mut [usize], mut x: usize) -> usize {
     x
 }
 
-pub(super) fn elmore(net: &Net, driver: u32, caps: &[[f64; 4]]) -> Result<Vec<[f64; 4]>, Diag> {
+pub(super) fn reduce(net: &Net, driver: u32, caps: &[[f64; 4]]) -> Result<Reduced, Diag> {
     let n = net.nodes.len();
     if caps.len() != n
         || driver as usize >= n
@@ -107,6 +113,48 @@ pub(super) fn elmore(net: &Net, driver: u32, caps: &[[f64; 4]]) -> Result<Vec<[f
             }
         }
     }
+    // Magnitudes of admittance s^2 and s^3 coefficients, accumulated positively.
+    let mut moments = vec![[[0.0; 2]; 4]; n];
+    for &i in order.iter().rev() {
+        if i == root {
+            continue;
+        }
+        let p = tree_parent[i];
+        let r = resistance[i];
+        for k in 0..4 {
+            let a = sums[i][k];
+            let [b, c] = moments[i][k];
+            moments[p][k][0] += b + r * a * a;
+            moments[p][k][1] += c + 2.0 * r * a * b + r * r * a * a * a;
+            if !moments[p][k].iter().all(|x| x.is_finite()) {
+                return Err(error("RC admittance moment overflow"));
+            }
+        }
+    }
+    let mut pi = [Pi::default(); 4];
+    for k in 0..4 {
+        let a = sums[root][k];
+        let [b, c] = moments[root][k];
+        pi[k] = if b == 0.0 || c == 0.0 {
+            Pi {
+                near: a,
+                ..Pi::default()
+            }
+        } else {
+            let far = b / c * b;
+            let near = a - far;
+            let ratio = c / b;
+            if near < -1e-12 * a || !far.is_finite() {
+                return Err(error("nonpassive RC moment reduction"));
+            }
+            Pi {
+                near: near.max(0.0),
+                far,
+                resistance: ratio / b * ratio,
+            }
+        };
+        pi[k].validate().map_err(|e| error(e.to_string()))?;
+    }
     let mut delays = vec![[0.0; 4]; n];
     for &i in order.iter().skip(1) {
         for k in 0..4 {
@@ -120,5 +168,5 @@ pub(super) fn elmore(net: &Net, driver: u32, caps: &[[f64; 4]]) -> Result<Vec<[f
     for i in 0..n {
         delays[i] = delays[roots[i]];
     }
-    Ok(delays)
+    Ok(Reduced { delays, pi })
 }
