@@ -36,6 +36,15 @@ pub const DEFAULT_MAX_LIMIT_ROWS: usize = 100_000;
 /// Largest accepted number of rows kept per corner and check kind (`STA-REQ-0810`).
 pub const MAX_LIMIT_ROWS_CEILING: usize = 10_000_000;
 
+/// Bytes of the rows that the limit checks of one corner keep at most: the row budget, or the
+/// node count when smaller, per kind (`STA-REQ-0810`; part of the state budget of a corner).
+#[must_use]
+pub fn retained_bytes(num_nodes: usize, max_rows: usize) -> u64 {
+    (max_rows.min(num_nodes) as u64)
+        .saturating_mul(LimitKind::ALL.len() as u64)
+        .saturating_mul(size_of::<LimitRow>() as u64)
+}
+
 /// The kind of a pin limit check (`STA-REQ-0800`, `STA-REQ-0803`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
@@ -455,6 +464,16 @@ mod tests {
         assert!(rows.is_empty());
         let p = &kinds[LimitKind::MinPeriod.index()];
         assert_eq!((p.checked, p.violating, p.stored), (1, 1, 0));
+    }
+
+    // STA-REQ-0810: the kept rows of a corner are bounded by the budget or the node count.
+    #[test]
+    fn retained_rows_are_bounded() {
+        assert!(size_of::<LimitRow>() <= 48);
+        let row = size_of::<LimitRow>() as u64;
+        assert_eq!(retained_bytes(10, DEFAULT_MAX_LIMIT_ROWS), 10 * 6 * row);
+        assert_eq!(retained_bytes(usize::MAX, 100), 100 * 6 * row);
+        assert_eq!(retained_bytes(5, 0), 0);
     }
 
     #[test]

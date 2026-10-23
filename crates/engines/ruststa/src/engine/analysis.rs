@@ -795,6 +795,10 @@ fn setup_corner<'l>(
                         .count() as u64
                     * 128,
             )
+            .saturating_add(crate::engine::limits::retained_bytes(
+                graph.num_nodes(),
+                options.max_limit_rows,
+            ))
             .saturating_add(corner_rc.map_or(0, |p| p.data.estimated_state_bytes()))
             .saturating_add(if corner_rc.is_some() {
                 graph.arcs().len() as u64 * 192

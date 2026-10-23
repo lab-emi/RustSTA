@@ -105,8 +105,10 @@ metrics `min_pulse_width_violating`, `worst_min_pulse_width_slack_ns`, `min_peri
 **STA-REQ-0810** Bounded rows. Every check is counted, and at most `--max-limit-rows` rows
 (default 100000, at most 10000000) are kept per corner and kind, the worst slack first, ties by
 node and clock, in a heap bounded by that number (AGENTS rule 3.4). The analysis visits every node,
-net driver and clock pin once: `O(V + E + P * C)` for `P` pulse pins and `C` clocks. When rows are
-left out, a warning `T0134` names the kept and the checked count.
+net driver and clock pin once: `O(V + E + P * C)` for `P` pulse pins and `C` clocks. The kept rows,
+`min(budget, nodes) x 6 x 48` bytes per corner at most, are part of the state budget of the corner
+(`--max-state-gib`, `T0023`). When rows are left out, a warning `T0134` names the kept and the
+checked count.
 
 **STA-REQ-0811** Report sections. `ruststa report` has the sections `limits` (the counts per corner
 and kind), `pulse_width` (high and low rows), `min_period`, `drv` (the three design rules) and
