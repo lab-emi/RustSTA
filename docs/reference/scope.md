@@ -8,6 +8,10 @@
 - **Workspace & binary containers:** `RBIN v1` (`NETLIST v1`, `LIBERTY v1`, `CONSTR v1`, `STA v2`),
   `sta_check.json` (`ruststa.sta_check.v1`), multi-corner library resolution, and carry-forward
   revision transactions.
+- **Detailed parasitics:** bounded plain/gzip SPEF import into `PARASIT v1`,
+  explicit extraction corner, unit/name mapping, complete net/pin annotation,
+  zero-resistance contraction and RC-tree first moments. Coupling is grounded
+  at factor 1; unsupported meshes and missing annotation are errors.
 - **Liberty timing & wire-load model:** 1D/2D/3D NLDM delay, transition, and constraint tables,
   per-table index overrides, `Table::mid_slew`, rise/fall and min/max pin capacitance ranges,
   driver output-pin capacitance, `three_state` functions and enable/disable arcs, `when` Boolean
@@ -17,6 +21,7 @@
   `source`, explicit `--sdc-env NAME=VALUE`; `proc` and other Tcl outside the subset are errors
   `D0006`), `create_clock` (with `-add`),
   `set_clock_latency`, `set_clock_uncertainty` (simple and `-from`/`-to`), `set_clock_transition`,
+  `set_propagated_clock`, `unset_propagated_clock`,
   `set_input_delay`, `set_output_delay`, `set_driving_cell`, `set_input_transition`, `set_load`,
   `set_wire_load_model`, `set_wire_load_mode`, `set_case_analysis`, `set_logic_zero`,
   `set_logic_one`, `set_disable_timing`, `set_max_transition`, `set_max_capacitance`,
@@ -36,8 +41,9 @@
 The following capabilities sit behind explicit engine seams in Phase 2a and are scheduled for
 Phase 2b (see [`docs/roadmap.md`](../roadmap.md)):
 
-- **Propagated and generated clocks:** `set_propagated_clock` and `create_generated_clock` are
-  diagnosed and rejected at constraint compilation; clocks are ideal in Phase 2a.
+- **Generated clocks:** `create_generated_clock` remains unsupported. Explicit
+  propagated primary-port clocks are supported on the bounded unate clock
+  network; internal sources and unsupported reconvergence fail explicitly.
 - **Timing derates and CPPR:** `set_timing_derate` and common-path pessimism removal (`--cppr
   violating|all`) are Phase 2b extensions (`cppr` is `"off"` in Phase 2a).
 - **Ordered `-through` exception hops in the engine:** `-through`, `-rise_through`, and
@@ -55,9 +61,12 @@ Phase 2b (see [`docs/roadmap.md`](../roadmap.md)):
 - **Lumped wire-load model:** `WireloadLumped` adds the wire capacitance of the `wire_load` table
   to the net load and no wire resistance, so a library with a `default_wire_load` (such as
   `sky130_fd_sc_hd`) gives no wire delay; resistive tree models are a Phase 2b item.
-- **Distributed RC parasitics and tree wire loads:** `SPEF` parasitic annotation
-  (`rusteda import --spef`) and balanced/worst-case tree wire-load modes (`WireloadTree`) are
-  Phase 2b items; Phase 2a supports `WireloadLumped` and `Ideal`.
+- **Extracted model limits:** detailed SPEF uses lumped NLDM plus Elmore delay,
+  unchanged interconnect slew and grounded coupling. It is not a crosstalk or
+  effective-capacitance waveform solver. General RC meshes and balanced/worst-case
+  estimated tree wire-load modes remain unsupported. The independent checker
+  returns undecided for extracted RC/propagated clocks; full consistency and
+  external comparisons are separate evidence.
 
 
 Use the [timing workflow](../guide/timing.md) to run an analysis and the [verification guide](../verification/index.md) to assess evidence.

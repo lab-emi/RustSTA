@@ -285,6 +285,7 @@ pub fn analysis_settings(
         backend: backend_kind,
         precision,
         wire_model: WireModelOption::Auto,
+        parasitics: None,
         tag_budget: DEFAULT_TAG_BUDGET,
         max_state_bytes: (opts.max_state_gib * f64::from(1u32 << 30)) as u64,
     };
@@ -407,7 +408,9 @@ pub fn run_sta_on_revision(
     opts: &StaRunOptions,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<(StaStoreData, JsonObject, JsonObject, JsonObject), Error> {
-    let (analysis_opts, backend_scope_name, store_precision, store_mode) = analysis_settings(opts)?;
+    let (mut analysis_opts, backend_scope_name, store_precision, store_mode) =
+        analysis_settings(opts)?;
+    analysis_opts.parasitics = load_parasitics(rev)?;
     let log = PhaseLog::get();
     let netlist_rbin: Rbin = PhaseLog::time(log, "open_netlist", || {
         rusteda_workspace::netlist::open_rev(rev)
@@ -467,7 +470,7 @@ pub fn path_delay_breakdown(p: &QueriedPath) -> (u32, f64, f64, f64, f64) {
     let mut logic_levels = 0u32;
     let mut cell_delay_ns = 0.0f64;
     let mut wire_delay_ns = 0.0f64;
-    for pt in &p.points {
+    for (index, pt) in p.points.iter().enumerate() {
         match pt.kind {
             PathPointKind::Cell => {
                 logic_levels += 1;
@@ -476,6 +479,7 @@ pub fn path_delay_breakdown(p: &QueriedPath) -> (u32, f64, f64, f64, f64) {
             PathPointKind::Net => {
                 wire_delay_ns += pt.incr_delay;
             }
+            PathPointKind::Port if index > 0 => wire_delay_ns += pt.incr_delay,
             PathPointKind::Port | PathPointKind::ClockLaunch => {}
         }
     }
@@ -592,10 +596,28 @@ pub fn envelope_headers_from_store(
     let mut scope = JsonObject::new();
     scope.insert("corner", &primary_corner)?;
     scope.insert("wire_model", &scope_rep.wire_model)?;
-    scope.insert("parasitics", &"none")?;
+    let extracted = scope_rep.wire_model == "spef_elmore";
+    scope.insert("parasitics", &if extracted { "spef" } else { "none" })?;
     scope.insert("drc_status", &"unchecked")?;
     scope.insert("wire_load", &wire_load_opt)?;
-    scope.insert("delay_calculator", &"nldm_lumped")?;
+    scope.insert(
+        "delay_calculator",
+        &if extracted {
+            "nldm_lumped_elmore"
+        } else {
+            "nldm_lumped"
+        },
+    )?;
+    if extracted {
+        scope.insert("coupling", &"grounded_factor_1")?;
+        scope.insert(
+            "physical_clock_domains",
+            &v.clocks
+                .iter()
+                .filter(|c| c.source_node != ruststa::engine::store::NO_INDEX)
+                .count(),
+        )?;
+    }
     scope.insert("clock_model", &scope_rep.clock_model)?;
     scope.insert("cppr", &scope_rep.cppr)?;
     scope.insert("backend", &scope_rep.backend)?;
@@ -823,4 +845,84 @@ pub fn resolve_node_name(
         return Some(s);
     }
     None
+}
+
+/// Open immutable, budgeted SPEF source from the PARASIT v1 mmap table (STA-REQ-0700).
+pub fn load_parasitics(
+    rev: &Revision,
+) -> Result<Option<std::sync::Arc<ruststa::engine::delay::spef::ParasiticInput>>, Error> {
+    if !rev.has_table("parasitics") {
+        return Ok(None);
+    }
+    let rbin = rev.open_rbin("parasitics", "PARASIT", 1..=1)?;
+    rbin.verify_hash()?;
+    let metadata = rbin.section_bytes(2)?;
+    if metadata.len() > 4096 {
+        return Err(Error::input_rejected(
+            "T0072: parasitic metadata budget exceeded",
+        ));
+    }
+    let meta: rusteda_formats::spef::Metadata = serde_json::from_slice(metadata)
+        .map_err(|e| Error::input_rejected(format!("invalid PARASIT metadata: {e}")))?;
+    let source = std::str::from_utf8(rbin.section_bytes(1)?)
+        .map_err(|_| Error::input_rejected("SPEF table is not UTF-8"))?;
+    let data = rusteda_formats::spef::read(source, meta.limits)
+        .map_err(|e| Error::input_rejected(e.to_string()))?;
+    Ok(Some(std::sync::Arc::new(
+        ruststa::engine::delay::spef::ParasiticInput {
+            corner: meta.corner,
+            data,
+        },
+    )))
+}
+
+#[cfg(test)]
+mod extracted_path_tests {
+    use super::*;
+    use ruststa::engine::{store::QueriedPathPoint, types::Tr};
+    // STA-REQ-0707: an output port keeps its port identity but its incoming hop is a wire.
+    #[test]
+    fn output_port_hop_is_included_in_wire_breakdown() {
+        let mut path = QueriedPath {
+            handle: "path1".into(),
+            rank_idx: 0,
+            corner_idx: 0,
+            corner_name: "tt".into(),
+            endpoint_idx: 0,
+            endpoint_name: "y".into(),
+            check_kind: "setup".into(),
+            path_group: "vclk".into(),
+            launch_clock: "vclk".into(),
+            capture_clock: "vclk".into(),
+            slack: 1.0,
+            arrival: 1.9,
+            required: 2.9,
+            check_value: 0.0,
+            points: Vec::new(),
+        };
+        for (i, (kind, arrival, incr)) in [
+            (PathPointKind::Port, 1.0, 1.0),
+            (PathPointKind::Net, 1.1, 0.1),
+            (PathPointKind::Cell, 1.6, 0.5),
+            (PathPointKind::Port, 1.9, 0.3),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            path.points.push(QueriedPathPoint {
+                node: NodeId(i as u32),
+                name: i.to_string(),
+                tr: Tr::Rise,
+                kind,
+                arrival,
+                incr_delay: incr,
+                slew: 0.1,
+            });
+        }
+        let (levels, cell, wire, _, _) = path_delay_breakdown(&path);
+        assert_eq!(levels, 1);
+        assert_eq!(cell, 0.5);
+        assert_eq!(wire, 0.4);
+        assert!((cell + wire - (path.arrival - path.points[0].arrival)).abs() < 1e-14);
+    }
 }

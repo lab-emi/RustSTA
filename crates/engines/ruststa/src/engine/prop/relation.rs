@@ -220,6 +220,7 @@ mod tests {
 
     fn dummy_clock(name: &str, period_ns: f64, rise_ns: f64, fall_ns: f64) -> CompiledClock {
         CompiledClock {
+            propagated: false,
             id: ClockId(0),
             name: name.into(),
             period_ns,

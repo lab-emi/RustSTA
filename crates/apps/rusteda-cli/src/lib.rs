@@ -10,6 +10,7 @@ mod import_lib;
 mod import_netlist;
 mod import_rtl;
 mod import_sdc;
+mod import_spef;
 mod init;
 mod query;
 mod revert;
@@ -135,6 +136,21 @@ pub struct InitArgs {}
 
 #[derive(Args, Debug)]
 pub struct ImportArgs {
+    /// Detailed RC SPEF; requires an explicit extraction corner.
+    #[arg(long, requires = "spef_corner")]
+    pub spef: Option<PathBuf>,
+    #[arg(long, requires = "spef")]
+    pub spef_corner: Option<String>,
+    #[arg(long, default_value_t = 32, requires = "spef")]
+    pub max_spef_mib: usize,
+    #[arg(long, default_value_t = 100_000, requires = "spef")]
+    pub max_rc_nets: usize,
+    #[arg(long, default_value_t = 500_000, requires = "spef")]
+    pub max_rc_nodes: usize,
+    #[arg(long, default_value_t = 1_000_000, requires = "spef")]
+    pub max_rc_elements: usize,
+    #[arg(long, default_value_t = 16, requires = "spef")]
+    pub max_rc_name_mib: usize,
     /// Base revision expected to be HEAD (e.g. `rev0`).
     #[arg(long = "base-rev", value_name = "REV")]
     pub base_rev: String,
@@ -740,6 +756,15 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
                 netlist: imp.netlist.clone(),
                 sdc_files: imp.sdc.clone(),
                 sdc_env: imp.sdc_env.clone(),
+                spef: imp.spef.clone(),
+                spef_corner: imp.spef_corner.clone(),
+                spef_limits: rusteda_formats::spef::Limits {
+                    max_bytes: imp.max_spef_mib.saturating_mul(1 << 20),
+                    max_nets: imp.max_rc_nets,
+                    max_nodes: imp.max_rc_nodes,
+                    max_elements: imp.max_rc_elements,
+                    max_name_bytes: imp.max_rc_name_mib.saturating_mul(1 << 20),
+                },
             };
             let mut diags = Vec::new();
             match run_import(&ws, &ws_arg, &cmd, &inv, &mut diags) {

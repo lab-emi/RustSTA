@@ -130,9 +130,10 @@ pub fn build_start_rows<D: Derate>(
                     continue;
                 };
                 for an in An::ALL {
-                    let arr = clock_model.clock_latency(cid, edge, an);
-                    let slew = clock_model.clock_transition(cid, edge, an);
-                    builder.merge_bound(graph, src, tid.0, edge, an, arr, slew);
+                    let Some(arrival) = clock_model.arrival(cid, edge, src, edge, an) else {
+                        continue;
+                    };
+                    builder.merge_bound(graph, src, tid.0, edge, an, arrival.latency, arrival.slew);
                 }
             }
         }

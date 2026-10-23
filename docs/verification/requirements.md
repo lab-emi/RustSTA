@@ -183,6 +183,11 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | RCLI-REQ-0018 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/lib.rs<br>crates/apps/rusteda-cli/src/revert.rs<br>crates/apps/rusteda-cli/tests/cli_contract.rs |
 | RCLI-REQ-0019 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/import_netlist.rs<br>crates/apps/rusteda-cli/src/import_netlist/fast.rs<br>crates/apps/rusteda-cli/tests/import_netlist.rs |
 | RCLI-REQ-0020 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/export.rs<br>crates/apps/rusteda-cli/tests/export_netlist.rs |
+| RCLI-REQ-0070 | docs/specs/rusteda-cli/spef.md | crates/apps/rusteda-cli/src/import_spef.rs<br>crates/apps/rusteda-cli/tests/import_spef.rs |
+| RCLI-REQ-0071 | docs/specs/rusteda-cli/spef.md | crates/apps/rusteda-cli/src/import_spef.rs<br>crates/formats/rusteda-formats/src/spef/tests.rs |
+| RCLI-REQ-0072 | docs/specs/rusteda-cli/spef.md | crates/apps/rusteda-cli/src/import_spef.rs<br>crates/formats/rusteda-formats/src/spef/tests.rs |
+| RCLI-REQ-0073 | docs/specs/rusteda-cli/spef.md | crates/apps/rusteda-cli/tests/import_spef.rs<br>crates/formats/rusteda-formats/src/spef/source.rs |
+| RCLI-REQ-0074 | docs/specs/rusteda-cli/spef.md | crates/formats/rusteda-formats/src/spef/tests.rs |
 | SDC-REQ-0001 | docs/specs/sdc/sdc.md | crates/engines/ruststa/tests/constraints_compile.rs<br>crates/formats/rusteda-formats/src/sdc.rs<br>crates/formats/rusteda-formats/src/sdc/eval.rs<br>crates/formats/rusteda-formats/tests/sdc_fuzz.rs<br>crates/formats/rusteda-formats/tests/sdc_roundtrip.rs<br>crates/formats/rusteda-formats/tests/sdc_subset.rs |
 | SDC-REQ-0002 | docs/specs/sdc/sdc.md | crates/formats/rusteda-formats/src/sdc.rs<br>crates/formats/rusteda-formats/src/sdc/cmd.rs<br>crates/formats/rusteda-formats/src/sdc/schema.rs<br>crates/formats/rusteda-formats/src/sdc/schema/parse.rs<br>crates/formats/rusteda-formats/tests/sdc_commands.rs<br>crates/formats/rusteda-formats/tests/sdc_subset.rs |
 | SDC-REQ-0003 | docs/specs/sdc/sdc.md | crates/formats/rusteda-formats/src/sdc.rs<br>crates/formats/rusteda-formats/src/sdc/write.rs<br>crates/formats/rusteda-formats/tests/sdc_roundtrip.rs |
@@ -238,6 +243,7 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | SDC-REQ-0053 | docs/specs/sdc/sdc.md | crates/apps/rusteda-cli/src/import_sdc.rs<br>crates/apps/rusteda-cli/tests/import_sdc.rs<br>crates/formats/rusteda-formats/tests/sdc_roundtrip.rs |
 | SDC-REQ-0054 | docs/specs/sdc/sdc.md | crates/apps/rusteda-cli/src/import_sdc.rs<br>crates/apps/rusteda-cli/tests/import_sdc.rs |
 | SDC-REQ-0055 | docs/specs/sdc/sdc.md | crates/apps/rusteda-cli/src/import_sdc.rs<br>crates/apps/rusteda-cli/tests/import_sdc.rs<br>crates/formats/rusteda-formats/src/sdc.rs |
+| SDC-REQ-0070 | docs/specs/sdc/sdc.md | crates/formats/rusteda-formats/tests/sdc_commands.rs |
 | STA-REQ-0001 | docs/specs/sta/inputs.md | crates/engines/ruststa/src/netlist.rs<br>crates/engines/ruststa/tests/legacy_graph.rs<br>crates/engines/ruststa/tests/support/legacy_import.rs<br>crates/engines/ruststa/tests/support/main.rs<br>crates/verify/ruststa-check/src/design.rs<br>crates/verify/ruststa-check/src/rev/verilog.rs |
 | STA-REQ-0002 | docs/specs/sta/inputs.md | crates/engines/ruststa/src/engine/graph/build.rs<br>crates/engines/ruststa/src/engine/input/netview.rs<br>crates/engines/ruststa/src/graph.rs<br>crates/engines/ruststa/src/netlist.rs<br>crates/engines/ruststa/tests/graph_netlist.rs<br>crates/verify/ruststa-check/src/design.rs<br>crates/verify/ruststa-check/src/rev/verilog.rs |
 | STA-REQ-0003 | docs/specs/sta/inputs.md | crates/engines/ruststa/src/engine/graph/build.rs<br>crates/engines/ruststa/src/engine/input/netview.rs<br>crates/engines/ruststa/src/engine/paths/search.rs<br>crates/engines/ruststa/src/engine/prop/exceptions/helpers.rs<br>crates/engines/ruststa/src/engine/prop/lower.rs<br>crates/engines/ruststa/src/netlist.rs<br>crates/engines/ruststa/tests/graph_netlist.rs<br>crates/engines/ruststa/tests/support/main.rs<br>crates/verify/ruststa-check/src/design.rs<br>crates/verify/ruststa-check/src/rev/verilog.rs |
@@ -364,6 +370,19 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | STA-REQ-0510 | docs/specs/sta/verification.md | crates/apps/ruststa-cli/src/args.rs<br>crates/apps/ruststa-cli/tests/cli_contract.rs |
 | STA-REQ-0511 | docs/specs/sta/verification.md | crates/apps/ruststa-cli/tests/cli_contract.rs |
 | STA-REQ-0512 | docs/specs/sta/verification.md | crates/apps/ruststa-cli/tests/cli_contract.rs<br>crates/verify/ruststa-check/src/lib.rs |
+| STA-REQ-0700 | docs/specs/sta/parasitics.md | crates/apps/rusteda-cli/tests/import_spef.rs<br>crates/apps/ruststa-cli/src/ws_io.rs<br>crates/engines/ruststa/src/engine/analysis.rs |
+| STA-REQ-0701 | docs/specs/sta/parasitics.md | crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0702 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs |
+| STA-REQ-0703 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0704 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs<br>crates/engines/ruststa/src/engine/delay/spef/tree.rs<br>crates/engines/ruststa/src/engine/prop/lower.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0705 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0706 | docs/specs/sta/parasitics.md | crates/engines/ruststa/src/engine/delay/spef.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0707 | docs/specs/sta/parasitics.md | crates/apps/ruststa-cli/src/ws_io.rs |
+| STA-REQ-0708 | docs/specs/sta/parasitics.md | crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0710 | docs/specs/sta/propagated-clock.md | crates/engines/ruststa/src/engine/input/constr/model.rs<br>crates/engines/ruststa/src/engine/prop/clocks/propagated.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0711 | docs/specs/sta/propagated-clock.md | crates/engines/ruststa/src/engine/prop/clocks/propagated.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0712 | docs/specs/sta/propagated-clock.md | crates/engines/ruststa/src/engine/prop/clocks/propagated.rs<br>crates/engines/ruststa/tests/extracted.rs |
+| STA-REQ-0713 | docs/specs/sta/propagated-clock.md | crates/engines/ruststa/src/engine/prop/clocks/propagated.rs<br>crates/engines/ruststa/tests/extracted.rs |
 | VERILOG-REQ-0001 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/lex.rs<br>crates/formats/rusteda-formats/src/verilog/number.rs<br>crates/formats/rusteda-formats/src/verilog/token.rs |
 | VERILOG-REQ-0002 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/lex.rs<br>crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/span.rs |
 | VERILOG-REQ-0100 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/ast.rs<br>crates/formats/rusteda-formats/src/verilog/ast/stmt.rs<br>crates/formats/rusteda-formats/src/verilog/parse/mod.rs<br>crates/formats/rusteda-formats/tests/verilog_parse_design.rs |
@@ -498,10 +517,10 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | JOB | 7 | 0 |
 | LIBERTY | 48 | 0 |
 | PROTO | 23 | 0 |
-| RCLI | 19 | 0 |
-| SDC | 55 | 0 |
-| STA | 126 | 0 |
+| RCLI | 24 | 0 |
+| SDC | 56 | 0 |
+| STA | 139 | 0 |
 | VERILOG | 28 | 0 |
 | WS | 97 | 0 |
 
-478 requirements, 0 without a citing test or source.
+497 requirements, 0 without a citing test or source.

@@ -8,8 +8,10 @@
 //! latency (`set_clock_latency`), with the clock's ideal transition (`set_clock_transition`). The
 //! transition at a pin follows the sense of the clock network from the clock source to the pin.
 
+use super::propagated::PropagatedClocks;
 use rustc_hash::FxHashMap;
 use rusteda_formats::sdc::{EarlyLateScope, EdgeScope, MinMaxScope, SetupHoldScope};
+use std::sync::Arc;
 
 use super::{ClockArrival, ClockModel, SENSE_BOTH, SENSE_NEG, SENSE_POS, SenseBits};
 use crate::engine::graph::{ArcKind, ArcSense, TimingGraph};
@@ -19,6 +21,7 @@ use crate::engine::types::{An, ClockId, NodeId, Tr};
 /// Ideal clock model for one corner (`STA-REQ-0200`, `STA-REQ-0217`, `STA-REQ-0220`).
 #[derive(Debug, Clone)]
 pub struct IdealClockModel {
+    propagated: Option<Arc<PropagatedClocks>>,
     /// Per-node list of `(ClockId, SenseBits)` reaching the node in the clock network.
     clock_sense: Vec<Vec<(ClockId, SenseBits)>>,
     /// Per-clock source latency `[an][edge]` in ns (`Early` uses `early`/`min`, `Late` uses
@@ -181,12 +184,20 @@ impl IdealClockModel {
 
         Self {
             clock_sense,
+            propagated: None,
             source_latency_ns,
             network_latency_ns,
             transition_ns,
             pin_source_latency_ns,
             pin_network_latency_ns,
         }
+    }
+
+    pub(super) fn set_propagated(&mut self, clocks: Arc<PropagatedClocks>) {
+        self.propagated = Some(clocks);
+    }
+    pub fn is_propagated(&self, clock: ClockId) -> bool {
+        self.propagated.as_ref().is_some_and(|p| p.contains(clock))
     }
 
     /// Returns the `(ClockId, SenseBits)` pairs reaching `node`.
@@ -211,6 +222,9 @@ impl IdealClockModel {
     #[inline]
     #[must_use]
     pub fn network_latency(&self, clock: ClockId, edge: Tr, an: An) -> f64 {
+        if self.is_propagated(clock) {
+            return 0.0;
+        }
         self.network_latency_ns
             .get(clock.index())
             .map_or(0.0, |t| t[an.index()][edge.index()])
@@ -319,7 +333,7 @@ impl IdealClockModel {
 
 impl ClockModel for IdealClockModel {
     fn scope_name(&self) -> &'static str {
-        "ideal"
+        self.propagated.as_ref().map_or("ideal", |p| p.scope_name())
     }
 
     fn arrival(
@@ -342,6 +356,15 @@ impl ClockModel for IdealClockModel {
         }
         let ai = an.index();
         let ei = edge.index();
+        if let Some(p) = &self.propagated
+            && p.contains(clock)
+        {
+            let mut arrival = p.arrival(clock, edge, pin, tr, an)?;
+            if let Some(override_latency) = self.pin_source_latency_ns.get(&(clock, pin)) {
+                arrival.latency += override_latency[ai][ei] - self.source_latency(clock, edge, an);
+            }
+            return Some(arrival);
+        }
         let src_lat = self
             .pin_source_latency_ns
             .get(&(clock, pin))

@@ -14,6 +14,8 @@ recovery, removal, latch and clock-gating slacks of every timing endpoint, and t
 | Binary timing result store (`sta.rbin`) and mapped queries | [store.md](store.md) |
 | Incremental timing (`TimingSession` and `update_revision`) | [incremental.md](incremental.md) |
 | Propagation lowering and backends | [lowering.md](lowering.md) |
+| Detailed SPEF parasitics and first-moment RC timing | [parasitics.md](parasitics.md) |
+| Explicit propagated primary clocks | [propagated-clock.md](propagated-clock.md) |
 | Verification | [verification.md](verification.md) |
 | Superseded Phase 1 requirements (legacy engine, removed by Z1) | [legacy.md](legacy.md) |
 

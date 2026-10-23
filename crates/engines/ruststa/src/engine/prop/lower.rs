@@ -27,7 +27,7 @@ use rusteda_core::liberty::Direction;
 
 use crate::engine::delay::gate::GateDelay;
 use crate::engine::delay::load::NetLoads;
-use crate::engine::delay::wire::DriverLoad;
+use crate::engine::delay::wire::{DriverLoad, WireModel};
 use crate::engine::graph::{ArcKind, ArcSense, TimingGraph};
 use crate::engine::input::libview::{Sense, TimingLib};
 use crate::engine::input::{NetTarget, NetlistView, NodeKind};
@@ -427,6 +427,25 @@ impl<'a> LoweredCorner<'a> {
             wires: Vec::new(),
             lower_s,
         })
+    }
+
+    /// Add the extracted net delays to incoming CSR arcs (STA-REQ-0704).
+    pub fn set_wire_model(&mut self, graph: &TimingGraph, wire: &dyn WireModel) {
+        if wire.scope_name() != "spef_elmore" {
+            return;
+        }
+        self.wires = vec![WireRec::default(); self.csr.in_arcs.len()];
+        for (i, &ai) in self.csr_arc_to_graph_arc.iter().enumerate() {
+            let arc = &graph.arcs()[ai as usize];
+            if let ArcKind::Net { net } = arc.kind {
+                for tr in Tr::ALL {
+                    for an in An::ALL {
+                        self.wires[i].delay[tr.index() * 2 + an.index()] =
+                            wire.load_delay(net, arc.dst, tr, an, 0.0).delay;
+                    }
+                }
+            }
+        }
     }
 
     /// Borrows this lowered corner as a [`TimingProblem`] for `rusteda_compute::timing`.

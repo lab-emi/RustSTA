@@ -135,7 +135,12 @@ pub fn verify_sta_store(
     let mut slacks_compared = 0usize;
     let mut max_abs_diff = 0.0f64;
 
-    let run_independent = matches!(method, CheckMethod::Independent | CheckMethod::Both);
+    let wants_independent = matches!(method, CheckMethod::Independent | CheckMethod::Both);
+    let extracted = base_rev.has_table("parasitics") || scope_rep.clock_model != "ideal";
+    let run_independent = wants_independent && !extracted;
+    if wants_independent && extracted {
+        undecided_reasons.push("independent checker does not yet support extracted RC or propagated clocks; use full recomputation and external RC differential validation".into());
+    }
     let run_full = matches!(method, CheckMethod::Full | CheckMethod::Both);
     let methods: Vec<&'static str> = match method {
         CheckMethod::Independent => vec!["independent"],

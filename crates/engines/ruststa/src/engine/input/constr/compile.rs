@@ -252,6 +252,7 @@ fn compile_one_cmd(
             } else {
                 let id = ClockId(out.clocks.len() as u32);
                 out.clocks.push(CompiledClock {
+                    propagated: false,
                     id,
                     name: clk_name,
                     period_ns,
@@ -548,6 +549,14 @@ fn compile_one_cmd(
                         );
                     }
                 }
+            }
+        }
+        CmdKind::SetPropagatedClock { objects } | CmdKind::UnsetPropagatedClock { objects } => {
+            let ids =
+                resolve_clock_list(objects, index, &out.clocks, loc, cmd.name(), &mut out.diags);
+            for id in ids {
+                out.clocks[id.index()].propagated =
+                    matches!(cmd.kind, CmdKind::SetPropagatedClock { .. });
             }
         }
         CmdKind::SetClockTransition {

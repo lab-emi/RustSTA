@@ -96,6 +96,9 @@ pub fn exec_run(
         let (store_data, scope, comp, metrics) = run_sta_on_revision(ws, &base_rev, &opts, diags)?;
 
         let mut upstream_names = vec!["netlist", "constraints"];
+        if base_rev.has_table("parasitics") {
+            upstream_names.push("parasitics");
+        }
         let corner_lib_tables: Vec<String>;
         if args.corners.is_empty() {
             upstream_names.push("libraries");

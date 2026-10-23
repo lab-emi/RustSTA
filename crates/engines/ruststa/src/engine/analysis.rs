@@ -11,6 +11,8 @@
 //! loads and propagation state belong to one corner. The orchestrator wires every seam: the wire
 //! model, the gate delay, derates, the clock model, CPPR and the exception state machine.
 
+use crate::engine::delay::spef::{ParasiticInput, Spef};
+use std::sync::Arc;
 use std::time::Instant;
 
 use rustc_hash::FxHashMap;
@@ -51,6 +53,8 @@ use crate::engine::scope::{
 use crate::engine::types::{An, CornerId, NetRow, NodeId, TagId, Tr};
 
 mod electrical;
+mod loads;
+use loads::{build_net_load_overrides, build_wireload_config};
 
 use electrical::check_max_transitions;
 
@@ -71,7 +75,7 @@ pub enum WireModelOption {
 
 /// Options controlling [`EngineAnalysis::analyze`] (`STA-REQ-0015`, `STA-REQ-0125`,
 /// `STA-REQ-0400`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnalysisOptions {
     /// Compute propagation backend (`Cpu`, `Gpu`, `Cuda`).
     pub backend: BackendKind,
@@ -79,6 +83,8 @@ pub struct AnalysisOptions {
     pub precision: Precision,
     /// Wire-model selection policy.
     pub wire_model: WireModelOption,
+    /// Immutable extracted parasitics for one explicit corner (STA-REQ-0700).
+    pub parasitics: Option<Arc<ParasiticInput>>,
     /// Maximum number of propagation tags per corner (`DEFAULT_TAG_BUDGET` by default).
     pub tag_budget: usize,
     /// Maximum estimated bytes of the propagation state of one corner
@@ -99,6 +105,7 @@ impl Default for AnalysisOptions {
             backend: BackendKind::Cpu,
             precision: Precision::F64,
             wire_model: WireModelOption::Auto,
+            parasitics: None,
             tag_budget: DEFAULT_TAG_BUDGET,
             max_state_bytes: DEFAULT_MAX_STATE_BYTES,
         }
@@ -677,7 +684,7 @@ fn setup_corner<'l>(
 
     // 1. Resolve wire model (`STA-REQ-0122`..`0125`).
     let wl_cfg = build_wireload_config(netview, constraints);
-    let (wire_model, wl_diags) = match options.wire_model {
+    let (mut wire_model, wl_diags) = match options.wire_model {
         WireModelOption::Ideal => (ResolvedWireModel::Ideal(Ideal), Vec::new()),
         WireModelOption::Auto => ResolvedWireModel::resolve(netlist, corner_libs, &wl_cfg),
         WireModelOption::WireloadLumped => {
@@ -688,11 +695,55 @@ fn setup_corner<'l>(
     diags.extend(wl_diags);
 
     // 2. Compute per-net capacitive loads (`STA-REQ-0110`, `STA-REQ-0121`).
-    let load_overrides = build_net_load_overrides(netview, constraints, wire_model.is_ideal());
+    let load_overrides = build_net_load_overrides(
+        netview,
+        constraints,
+        wire_model.is_ideal() || options.parasitics.is_some(),
+    );
+    if let Some(input) = &options.parasitics {
+        if options.wire_model != WireModelOption::Auto {
+            return Err(Diag::error(
+                "T0070",
+                "an explicit wire model cannot override extracted parasitics",
+            ));
+        }
+        if input.corner != corner_name {
+            return Err(Diag::error(
+                "T0070",
+                format!(
+                    "SPEF corner {} does not annotate requested corner {corner_name}",
+                    input.corner
+                ),
+            ));
+        }
+        wire_model = ResolvedWireModel::Extracted(Spef::bind(
+            &input.data,
+            netview,
+            lib,
+            &load_overrides,
+            options.max_state_bytes,
+        )?);
+        diags.clear();
+        if input.data.coupling_records > 0 {
+            diags.push(Diag::warning(
+                "T0074",
+                "inter-net coupling grounded at factor 1; crosstalk not analyzed",
+            ));
+        }
+    }
     let net_loads = NetLoads::compute(netlist, lib, &wire_model, &load_overrides);
 
     // 3. Build ideal clock network (`STA-REQ-0200`).
-    let clock_model = IdealClockModel::build(graph, constraints);
+    let clock_model = crate::engine::prop::clocks::propagated::build_model(
+        netview,
+        graph,
+        lib,
+        &net_loads,
+        &wire_model,
+        constraints,
+        options,
+        &mut diags,
+    )?;
 
     // 4. Initialize the tag table and the timing exceptions (`STA-REQ-0217`, `STA-REQ-0220`,
     // `STA-REQ-0271`).
@@ -705,7 +756,27 @@ fn setup_corner<'l>(
     // Memory budget of the propagation state, checked before any of it is allocated (AGENTS
     // rule 9.2, `STA-REQ-0024`).
     let state_bytes =
-        graph.num_nodes() as u64 * u64::from(tags.ntags_for_compute()) * STATE_BYTES_PER_NODE_TAG;
+        (graph.num_nodes() as u64 * u64::from(tags.ntags_for_compute()) * STATE_BYTES_PER_NODE_TAG)
+            .saturating_add(
+                graph.num_nodes() as u64
+                    * constraints
+                        .clocks
+                        .iter()
+                        .filter(|c| c.propagated && !c.is_virtual())
+                        .count() as u64
+                    * 128,
+            )
+            .saturating_add(
+                options
+                    .parasitics
+                    .as_ref()
+                    .map_or(0, |p| p.data.estimated_state_bytes()),
+            )
+            .saturating_add(if options.parasitics.is_some() {
+                graph.arcs().len() as u64 * 64
+            } else {
+                0
+            });
     if state_bytes > options.max_state_bytes {
         let gib = |b: u64| b as f64 / f64::from(1u32 << 30);
         return Err(Diag::error(
@@ -757,6 +828,7 @@ fn setup_corner<'l>(
         start_build.rows,
         &latch_maps,
     )?;
+    lowered.set_wire_model(graph, &wire_model);
     pin_latch_gq_slews(graph, &start_build.launch_slews, &mut lowered);
 
     Ok(CornerSetup {
@@ -967,108 +1039,6 @@ fn analyze_one_corner(
         unanalyzed_arcs,
         diags,
     })
-}
-
-fn build_wireload_config(
-    netview: &NetlistView<'_>,
-    constraints: &CompiledConstraints,
-) -> WireloadConfig {
-    let mut cfg = WireloadConfig::new();
-    if let Some(m) = constraints
-        .wire_load
-        .model_max
-        .as_ref()
-        .or(constraints.wire_load.model_min.as_ref())
-    {
-        cfg.wire_load_model = Some(m.clone());
-    }
-    if let Some(lib) = constraints
-        .wire_load
-        .models
-        .last()
-        .and_then(|m| m.library.clone())
-        .or_else(|| {
-            constraints
-                .wire_load
-                .selection_groups
-                .last()
-                .and_then(|s| s.library.clone())
-        })
-    {
-        cfg.wire_load_library = Some(lib);
-    }
-    if let Some(sel) = constraints
-        .wire_load
-        .selection_max
-        .as_ref()
-        .or(constraints.wire_load.selection_min.as_ref())
-    {
-        cfg.wire_load_selection_group = Some(sel.clone());
-    }
-    if let Some(mode) = constraints.wire_load.mode {
-        cfg.wire_load_mode = Some(mode.as_str().to_string());
-    }
-
-    // Explicit `set_load -wire_load` on nets or ports.
-    for (&net_row, nl) in &constraints.net_loads {
-        if nl.wire_load {
-            let target = match netview.resolve_net(net_row) {
-                NetTarget::Net(canon) => canon,
-                NetTarget::Const(_) => net_row,
-            };
-            let entry = cfg
-                .net_wire_load_overrides
-                .entry(target)
-                .or_insert([0.0, 0.0]);
-            entry[0] += nl.load_pf[0];
-            entry[1] += nl.load_pf[1];
-        }
-    }
-    for (&port_node, pl) in &constraints.port_loads {
-        if pl.wire_load
-            && !pl.pin_load
-            && let NetTarget::Net(canon) = netview.node_net(port_node)
-        {
-            let entry = cfg
-                .net_wire_load_overrides
-                .entry(canon)
-                .or_insert([0.0, 0.0]);
-            entry[0] += pl.load_pf[0];
-            entry[1] += pl.load_pf[1];
-        }
-    }
-    cfg
-}
-
-fn build_net_load_overrides(
-    netview: &NetlistView<'_>,
-    constraints: &CompiledConstraints,
-    wire_is_ideal: bool,
-) -> NetLoadOverrides {
-    let mut ov = NetLoadOverrides::new();
-    for (&port_node, pl) in &constraints.port_loads {
-        if pl.wire_load && !pl.pin_load {
-            if wire_is_ideal && let NetTarget::Net(canon) = netview.node_net(port_node) {
-                ov.add_net_wire_load(canon, pl.load_pf[0], pl.load_pf[1]);
-            }
-        } else {
-            ov.add_port_bit_load(port_node.index() as u32, pl.load_pf[0], pl.load_pf[1]);
-        }
-    }
-    for (&net_row, nl) in &constraints.net_loads {
-        let target = match netview.resolve_net(net_row) {
-            NetTarget::Net(canon) => canon,
-            NetTarget::Const(_) => net_row,
-        };
-        if nl.wire_load && !nl.pin_load {
-            if wire_is_ideal {
-                ov.add_net_wire_load(target, nl.load_pf[0], nl.load_pf[1]);
-            }
-        } else {
-            ov.add_net_pin_load(target, nl.load_pf[0], nl.load_pf[1]);
-        }
-    }
-    ov
 }
 
 fn count_applied_exceptions(constraints: &CompiledConstraints) -> ScopeExceptions {

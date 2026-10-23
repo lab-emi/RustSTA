@@ -73,7 +73,8 @@ pub fn update_sta_on_revision(
     verify_full: bool,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<UpdateOutcome, Error> {
-    let (analysis_opts, backend, store_precision, store_mode) = analysis_settings(opts)?;
+    let (mut analysis_opts, backend, store_precision, store_mode) = analysis_settings(opts)?;
+    analysis_opts.parasitics = crate::ws_io::load_parasitics(rev)?;
     let netlist_rbin: Rbin = rusteda_workspace::netlist::open_rev(rev)?;
     let frozen: FrozenNetlist<'_> = rusteda_workspace::netlist::decode(&netlist_rbin)?;
     let (sdc_model, _) = load_sdc_from_revision(rev)?;
@@ -286,6 +287,9 @@ pub fn exec_update(
     let base_rev = txn.base().clone();
 
     let mut upstream_names = vec!["netlist", "constraints"];
+    if txn.base().has_table("parasitics") {
+        upstream_names.push("parasitics");
+    }
     let corner_lib_tables: Vec<String>;
     if args.corners.is_empty() {
         upstream_names.push("libraries");

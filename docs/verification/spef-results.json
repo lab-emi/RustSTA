@@ -1,0 +1,853 @@
+{
+  "schema": "ruststa.spef-evidence.v1",
+  "version": "0.2.0",
+  "date": "2026-10-23",
+  "base_commit": "2d8180f3bd93c1958c9b893831f2d8c60e89fac9",
+  "local_cases_manifest_sha256": "510feebef0d792439090bb33b57e9d8c165dca995e5c5836c2185abff5c145d2",
+  "model_status": "passed",
+  "strict_reference_status": "partial",
+  "scope_note": "Declared lumped-NLDM/Elmore model, not equivalence to the reference default waveform calculator.",
+  "tests": {
+    "workspace_passed": 669,
+    "wall_time": "1:16.01",
+    "peak_rss_kib": 674404,
+    "exit_code": 0
+  },
+  "clippy": {
+    "all_features": true,
+    "wall_time": "0:00.15",
+    "peak_rss_kib": 154004,
+    "exit_code": 0
+  },
+  "build": {
+    "wall_time": "0:57.83",
+    "peak_rss_kib": 804200,
+    "exit_code": 0
+  },
+  "dual_pdk_actual_resize": {
+    "status": "passed",
+    "wall_time": "0:00.33",
+    "peak_rss_kib": 136940,
+    "exit_code": 0
+  },
+  "cuda_differential": {
+    "status": "passed",
+    "tests": 2,
+    "tolerance": "bitwise",
+    "wall_time": "0:00.40",
+    "peak_rss_kib": 245648,
+    "exit_code": 0
+  },
+  "dependency_check": {
+    "status": "passed",
+    "mode": "cached advisory database / offline",
+    "wall_time": "0:00.21",
+    "peak_rss_kib": 86920,
+    "exit_code": 0
+  },
+  "integration": {
+    "receipts": 75,
+    "wall_time": "0:02.26",
+    "peak_rss_kib": 120300,
+    "exit_code": 3
+  },
+  "tools": {
+    "rusteda": {
+      "file": "rusteda",
+      "sha256": "29a6aa59af1d32025b285d3aba144f9a9fbc107f680cd340d1d322c4399456bb",
+      "bytes": 29108528,
+      "version": "rusteda 0.2.0"
+    },
+    "ruststa": {
+      "file": "ruststa",
+      "sha256": "5debe558f75dc4f28d8ff4f8335f72246c27606761c667182922346cd1bceeac",
+      "bytes": 59027024,
+      "version": "ruststa 0.2.0 (backends: cpu)"
+    },
+    "opensta": {
+      "file": "sta",
+      "sha256": "49ddbd40385e6b54152aed6d7435e4114e409e5f168884d8945374a42f00301b",
+      "bytes": 9077264,
+      "version": "3.1.0"
+    },
+    "ngspice": {
+      "file": "ngspice",
+      "sha256": "25b6a73fafd9b489b92347a6c55fe307db502c1638f53d7d0bf439b5f7c65e38",
+      "bytes": 8593080,
+      "version": "******\n** ngspice-45.2 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2025, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Fri Sep 12 11:58:13 UTC 2025\n******"
+    }
+  },
+  "nodal": [
+    {
+      "case": "branch",
+      "ruststa_ns": 0.30000000000000004,
+      "nodal_ns": 0.30000000000000004,
+      "difference_ns": 0.0,
+      "status": "passed",
+      "compression": "gzip",
+      "transport_controls": {
+        "bad_crc": "rejected",
+        "decoded_budget": "rejected",
+        "fifo": "rejected"
+      }
+    },
+    {
+      "case": "zero_resistance",
+      "ruststa_ns": 0.08,
+      "nodal_ns": 0.08,
+      "difference_ns": 0.0,
+      "status": "passed",
+      "compression": "gzip"
+    },
+    {
+      "case": "asymmetric",
+      "ruststa_ns": 0.11645,
+      "nodal_ns": 0.11645000000000003,
+      "difference_ns": 2.7755575615628914e-17,
+      "status": "passed",
+      "compression": "gzip"
+    },
+    {
+      "case": "wide_range",
+      "ruststa_ns": 0.3327172,
+      "nodal_ns": 0.3327172,
+      "difference_ns": 0.0,
+      "status": "passed",
+      "compression": "gzip"
+    }
+  ],
+  "pdks": [
+    {
+      "pdk": "sky130",
+      "inputs": {
+        "library": {
+          "file": "sky130_fd_sc_hd__tt_025C_1v80.lib",
+          "sha256": "8e78e14442062dba34d414fca6490b2f6b96038d4510d1438ca44fee31487135",
+          "bytes": 12841637
+        },
+        "netlist": {
+          "file": "sky130_exported.v",
+          "sha256": "1ad8fa185c81674e73aced9f851af3a9c45bc15e18d9830e60e9ca5727041be9",
+          "bytes": 1277
+        },
+        "sdc": {
+          "file": "sky130_postroute.sdc",
+          "sha256": "f557ef93d45ea9e904843d478ff5691933f6ceb577e6e34e372676b14aa9bab6",
+          "bytes": 531
+        },
+        "spef": {
+          "file": "routing-sky130.spef.gz",
+          "sha256": "c6278709eb87ffff075457efc1a739f98edb3d503622415cca1482c6866d13db",
+          "bytes": 161145
+        }
+      },
+      "import": {
+        "assigns": 4,
+        "cells": 13,
+        "constraints_commands": 12,
+        "constraints_sources": 1,
+        "libraries": 1,
+        "library_cells": 428,
+        "nets": 23,
+        "ports": 6,
+        "spef_compression": "gzip",
+        "spef_corner": "tt",
+        "spef_decoded_bytes": 551074,
+        "spef_elements": 19993,
+        "spef_nets": 19,
+        "spef_nodes": 5083,
+        "spef_source_bytes": 161145,
+        "top": "lane_smoke"
+      },
+      "scope": {
+        "corner": "tt",
+        "wire_model": "spef_elmore",
+        "parasitics": "spef",
+        "drc_status": "unchecked",
+        "wire_load": null,
+        "delay_calculator": "nldm_lumped_elmore",
+        "coupling": "grounded_factor_1",
+        "physical_clock_domains": 1,
+        "clock_model": "propagated",
+        "cppr": "off",
+        "backend": "cpu",
+        "precision": "f64"
+      },
+      "completeness": {
+        "constrained_endpoints": 8,
+        "unconstrained_endpoints": 0,
+        "clock_domains": [
+          "core"
+        ],
+        "unconstrained_by_reason": {},
+        "unconstrained_inputs": 0,
+        "disabled_arcs": 0,
+        "unanalyzed_arcs": {
+          "min_pulse_width": 4
+        }
+      },
+      "metrics": {
+        "wns_ns": 0.0,
+        "tns_ns": 0.0,
+        "violating_endpoints": 0,
+        "whs_ns": -0.0009058254489793249,
+        "ths_ns": -0.0009058254489793249,
+        "hold_violating_endpoints": 1,
+        "worst_setup_slack_ns": 8.94220296925516,
+        "worst_hold_slack_ns": -0.0009058254489793249
+      },
+      "diagnostic_codes": [
+        "D0021",
+        "T0015",
+        "T0074",
+        "T0076"
+      ],
+      "full_recompute": "agree",
+      "incremental_noop": "agree",
+      "full_r_reference": {
+        "max_difference_ns": 0.003148661183738244,
+        "tolerance_ns": 0.001,
+        "status": "different",
+        "comparisons": [
+          {
+            "endpoint": "y[1]",
+            "kind": "setup",
+            "native_ns": 8.94220296925516,
+            "reference_ns": 8.945290565491,
+            "difference_ns": 0.0030875962358400955
+          },
+          {
+            "endpoint": "y[1]",
+            "kind": "hold",
+            "native_ns": 0.8822570305337383,
+            "reference_ns": 0.87910836935,
+            "difference_ns": 0.003148661183738244
+          },
+          {
+            "endpoint": "y[0]",
+            "kind": "setup",
+            "native_ns": 8.994228333526271,
+            "reference_ns": 8.996977806091,
+            "difference_ns": 0.0027494725647283502
+          },
+          {
+            "endpoint": "y[0]",
+            "kind": "hold",
+            "native_ns": 0.8542482554170067,
+            "reference_ns": 0.851447284222,
+            "difference_ns": 0.002800971195006663
+          },
+          {
+            "endpoint": "z[0]",
+            "kind": "setup",
+            "native_ns": 9.268839735182917,
+            "reference_ns": 9.270280838013,
+            "difference_ns": 0.001441102830083807
+          },
+          {
+            "endpoint": "z[0]",
+            "kind": "hold",
+            "native_ns": 0.599727916179154,
+            "reference_ns": 0.598270237446,
+            "difference_ns": 0.0014576787331539443
+          },
+          {
+            "endpoint": "z[1]",
+            "kind": "setup",
+            "native_ns": 9.289704388598864,
+            "reference_ns": 9.290099143982,
+            "difference_ns": 0.0003947553831356032
+          },
+          {
+            "endpoint": "z[1]",
+            "kind": "hold",
+            "native_ns": 0.5649813008519059,
+            "reference_ns": 0.564393520355,
+            "difference_ns": 0.0005877804969058875
+          },
+          {
+            "endpoint": "r2/D",
+            "kind": "setup",
+            "native_ns": 9.312438700929128,
+            "reference_ns": 9.314030647278,
+            "difference_ns": 0.0015919463488724972
+          },
+          {
+            "endpoint": "r2/D",
+            "kind": "hold",
+            "native_ns": 0.029213195006075776,
+            "reference_ns": 0.030106863007,
+            "difference_ns": 0.0008936680009242227
+          },
+          {
+            "endpoint": "r3/D",
+            "kind": "setup",
+            "native_ns": 9.365451551635402,
+            "reference_ns": 9.366862297058,
+            "difference_ns": 0.0014107454225982252
+          },
+          {
+            "endpoint": "r3/D",
+            "kind": "hold",
+            "native_ns": 0.0025028662112034916,
+            "reference_ns": 0.00387931359,
+            "difference_ns": 0.0013764473787965083
+          },
+          {
+            "endpoint": "r1/D",
+            "kind": "setup",
+            "native_ns": 9.707689693026705,
+            "reference_ns": 9.706031799316,
+            "difference_ns": 0.0016578937107052383
+          },
+          {
+            "endpoint": "r1/D",
+            "kind": "hold",
+            "native_ns": 0.006667598082424175,
+            "reference_ns": 0.008136824705,
+            "difference_ns": 0.0014692266225758248
+          },
+          {
+            "endpoint": "r0/D",
+            "kind": "setup",
+            "native_ns": 9.71203494895505,
+            "reference_ns": 9.710154533386,
+            "difference_ns": 0.0018804155690510527
+          },
+          {
+            "endpoint": "r0/D",
+            "kind": "hold",
+            "native_ns": -0.0009058254489793249,
+            "reference_ns": 0.0001948719,
+            "difference_ns": 0.001100697348979325
+          }
+        ],
+        "reference_delay_calculator": "default"
+      },
+      "zero_r_calibration": {
+        "max_difference_ns": 4.6773127593269237e-07,
+        "tolerance_ns": 0.001,
+        "status": "passed",
+        "comparisons": [
+          {
+            "endpoint": "y[1]",
+            "kind": "setup",
+            "native_ns": 8.944784947379889,
+            "reference_ns": 8.944785118103,
+            "difference_ns": 1.7072311209176405e-07
+          },
+          {
+            "endpoint": "y[1]",
+            "kind": "hold",
+            "native_ns": 0.8796750524090088,
+            "reference_ns": 0.879675030708,
+            "difference_ns": 2.1701008767749386e-08
+          },
+          {
+            "endpoint": "y[0]",
+            "kind": "setup",
+            "native_ns": 8.996469793769558,
+            "reference_ns": 8.996469497681,
+            "difference_ns": 2.960885581160255e-07
+          },
+          {
+            "endpoint": "y[0]",
+            "kind": "hold",
+            "native_ns": 0.8520067951737191,
+            "reference_ns": 0.852006793022,
+            "difference_ns": 2.1517191362008248e-09
+          },
+          {
+            "endpoint": "z[0]",
+            "kind": "setup",
+            "native_ns": 9.27217947071446,
+            "reference_ns": 9.272179603577,
+            "difference_ns": 1.3286253874866816e-07
+          },
+          {
+            "endpoint": "z[0]",
+            "kind": "hold",
+            "native_ns": 0.5951001666254803,
+            "reference_ns": 0.595100164413,
+            "difference_ns": 2.21248031007093e-09
+          },
+          {
+            "endpoint": "z[1]",
+            "kind": "setup",
+            "native_ns": 9.292445026166648,
+            "reference_ns": 9.2924451828,
+            "difference_ns": 1.5663335162230396e-07
+          },
+          {
+            "endpoint": "z[1]",
+            "kind": "hold",
+            "native_ns": 0.5622411315296072,
+            "reference_ns": 0.562241137028,
+            "difference_ns": 5.498392852132383e-09
+          },
+          {
+            "endpoint": "r2/D",
+            "kind": "setup",
+            "native_ns": 9.313066014812724,
+            "reference_ns": 9.313066482544,
+            "difference_ns": 4.6773127593269237e-07
+          },
+          {
+            "endpoint": "r2/D",
+            "kind": "hold",
+            "native_ns": 0.02924657287473048,
+            "reference_ns": 0.029246550053,
+            "difference_ns": 2.282173048109848e-08
+          },
+          {
+            "endpoint": "r3/D",
+            "kind": "setup",
+            "native_ns": 9.365953553353492,
+            "reference_ns": 9.365953445435,
+            "difference_ns": 1.0791849192059999e-07
+          },
+          {
+            "endpoint": "r3/D",
+            "kind": "hold",
+            "native_ns": 0.0016514237502610052,
+            "reference_ns": 0.001651401282,
+            "difference_ns": 2.2468261005187395e-08
+          },
+          {
+            "endpoint": "r1/D",
+            "kind": "setup",
+            "native_ns": 9.708986322136445,
+            "reference_ns": 9.708986282349,
+            "difference_ns": 3.9787444450212206e-08
+          },
+          {
+            "endpoint": "r1/D",
+            "kind": "hold",
+            "native_ns": 0.00408567393543019,
+            "reference_ns": 0.004085676279,
+            "difference_ns": 2.3435698104368186e-09
+          },
+          {
+            "endpoint": "r0/D",
+            "kind": "setup",
+            "native_ns": 9.715052511095879,
+            "reference_ns": 9.715052604675,
+            "difference_ns": 9.357912134078106e-08
+          },
+          {
+            "endpoint": "r0/D",
+            "kind": "hold",
+            "native_ns": -0.0017294401110686253,
+            "reference_ns": -0.001729422249,
+            "difference_ns": 1.7862068625194502e-08
+          }
+        ],
+        "reference_delay_calculator": "default"
+      }
+    },
+    {
+      "pdk": "gf180",
+      "inputs": {
+        "library": {
+          "file": "gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib",
+          "sha256": "f9dee07cf158324934b0c59144d970a2e8313f43533ede6283ec3c136f82fe53",
+          "bytes": 20107439
+        },
+        "netlist": {
+          "file": "gf180_exported.v",
+          "sha256": "ed1022d774cfe365fb879344f013363e12ca122936003131a52c5f6e68d1d5a4",
+          "bytes": 1389
+        },
+        "sdc": {
+          "file": "gf180_postroute.sdc",
+          "sha256": "f557ef93d45ea9e904843d478ff5691933f6ceb577e6e34e372676b14aa9bab6",
+          "bytes": 531
+        },
+        "spef": {
+          "file": "routing-gf180.spef.gz",
+          "sha256": "47e7d23fb35bd807473b61014b5e66597e6615131360f6a8e08d48a2cd50ea9f",
+          "bytes": 181895
+        }
+      },
+      "import": {
+        "assigns": 4,
+        "cells": 13,
+        "constraints_commands": 12,
+        "constraints_sources": 1,
+        "libraries": 1,
+        "library_cells": 229,
+        "nets": 23,
+        "ports": 6,
+        "spef_compression": "gzip",
+        "spef_corner": "tt",
+        "spef_decoded_bytes": 635802,
+        "spef_elements": 22967,
+        "spef_nets": 19,
+        "spef_nodes": 5077,
+        "spef_source_bytes": 181895,
+        "top": "lane_smoke"
+      },
+      "scope": {
+        "corner": "tt",
+        "wire_model": "spef_elmore",
+        "parasitics": "spef",
+        "drc_status": "unchecked",
+        "wire_load": null,
+        "delay_calculator": "nldm_lumped_elmore",
+        "coupling": "grounded_factor_1",
+        "physical_clock_domains": 1,
+        "clock_model": "propagated",
+        "cppr": "off",
+        "backend": "cpu",
+        "precision": "f64"
+      },
+      "completeness": {
+        "constrained_endpoints": 8,
+        "unconstrained_endpoints": 0,
+        "clock_domains": [
+          "core"
+        ],
+        "unconstrained_by_reason": {},
+        "unconstrained_inputs": 0,
+        "disabled_arcs": 0,
+        "unanalyzed_arcs": {
+          "min_pulse_width": 8,
+          "minimum_period": 8
+        }
+      },
+      "metrics": {
+        "wns_ns": 0.0,
+        "tns_ns": 0.0,
+        "violating_endpoints": 0,
+        "whs_ns": -0.6406544529279281,
+        "ths_ns": -2.2088885467536032,
+        "hold_violating_endpoints": 4,
+        "worst_setup_slack_ns": 7.308722213649759,
+        "worst_hold_slack_ns": -0.6406544529279281
+      },
+      "diagnostic_codes": [
+        "D0021",
+        "T0015",
+        "T0074",
+        "T0076"
+      ],
+      "full_recompute": "agree",
+      "incremental_noop": "agree",
+      "full_r_reference": {
+        "max_difference_ns": 0.00679281354870831,
+        "tolerance_ns": 0.001,
+        "status": "different",
+        "comparisons": [
+          {
+            "endpoint": "y[0]",
+            "kind": "setup",
+            "native_ns": 7.308722213649759,
+            "reference_ns": 7.315430164337,
+            "difference_ns": 0.006707950687241393
+          },
+          {
+            "endpoint": "y[0]",
+            "kind": "hold",
+            "native_ns": 2.3531630337327085,
+            "reference_ns": 2.346370220184,
+            "difference_ns": 0.00679281354870831
+          },
+          {
+            "endpoint": "y[1]",
+            "kind": "setup",
+            "native_ns": 7.360413098964868,
+            "reference_ns": 7.366880893707,
+            "difference_ns": 0.006467794742132327
+          },
+          {
+            "endpoint": "y[1]",
+            "kind": "hold",
+            "native_ns": 2.32126849543777,
+            "reference_ns": 2.314773797989,
+            "difference_ns": 0.006494697448769848
+          },
+          {
+            "endpoint": "r3/D",
+            "kind": "setup",
+            "native_ns": 7.946917549253103,
+            "reference_ns": 7.949203968048,
+            "difference_ns": 0.002286418794897216
+          },
+          {
+            "endpoint": "r3/D",
+            "kind": "hold",
+            "native_ns": -0.6406544529279281,
+            "reference_ns": -0.635652005672,
+            "difference_ns": 0.005002447255928133
+          },
+          {
+            "endpoint": "r2/D",
+            "kind": "setup",
+            "native_ns": 8.001416394325929,
+            "reference_ns": 8.003061294556,
+            "difference_ns": 0.0016449002300706894
+          },
+          {
+            "endpoint": "r2/D",
+            "kind": "hold",
+            "native_ns": -0.58549889118677,
+            "reference_ns": -0.58172416687,
+            "difference_ns": 0.0037747243167700617
+          },
+          {
+            "endpoint": "z[0]",
+            "kind": "setup",
+            "native_ns": 9.0272438238426,
+            "reference_ns": 9.028297424316,
+            "difference_ns": 0.0010536004733996407
+          },
+          {
+            "endpoint": "z[0]",
+            "kind": "hold",
+            "native_ns": 0.7954273052859794,
+            "reference_ns": 0.794724524021,
+            "difference_ns": 0.0007027812649793574
+          },
+          {
+            "endpoint": "z[1]",
+            "kind": "setup",
+            "native_ns": 9.086546012931144,
+            "reference_ns": 9.087084770203,
+            "difference_ns": 0.0005387572718564826
+          },
+          {
+            "endpoint": "z[1]",
+            "kind": "hold",
+            "native_ns": 0.7587099516076027,
+            "reference_ns": 0.758463323116,
+            "difference_ns": 0.0002466284916027295
+          },
+          {
+            "endpoint": "r1/D",
+            "kind": "setup",
+            "native_ns": 9.652752479723551,
+            "reference_ns": 9.6487159729,
+            "difference_ns": 0.004036506823551278
+          },
+          {
+            "endpoint": "r1/D",
+            "kind": "hold",
+            "native_ns": -0.4907308992221959,
+            "reference_ns": -0.487347573042,
+            "difference_ns": 0.0033833261801959336
+          },
+          {
+            "endpoint": "r0/D",
+            "kind": "setup",
+            "native_ns": 9.653795497158836,
+            "reference_ns": 9.649753570557,
+            "difference_ns": 0.00404192660183611
+          },
+          {
+            "endpoint": "r0/D",
+            "kind": "hold",
+            "native_ns": -0.4920043034167093,
+            "reference_ns": -0.488595664501,
+            "difference_ns": 0.0034086389157093056
+          }
+        ],
+        "reference_delay_calculator": "default"
+      },
+      "zero_r_calibration": {
+        "max_difference_ns": 7.442756171371911e-07,
+        "tolerance_ns": 0.001,
+        "status": "passed",
+        "comparisons": [
+          {
+            "endpoint": "y[0]",
+            "kind": "setup",
+            "native_ns": 7.311832771214926,
+            "reference_ns": 7.311832904816,
+            "difference_ns": 1.3360107420368195e-07
+          },
+          {
+            "endpoint": "y[0]",
+            "kind": "hold",
+            "native_ns": 2.3500524761675416,
+            "reference_ns": 2.350052595139,
+            "difference_ns": 1.1897145846262447e-07
+          },
+          {
+            "endpoint": "y[1]",
+            "kind": "setup",
+            "native_ns": 7.363044352956321,
+            "reference_ns": 7.36304473877,
+            "difference_ns": 3.858136787826538e-07
+          },
+          {
+            "endpoint": "y[1]",
+            "kind": "hold",
+            "native_ns": 2.318637241446316,
+            "reference_ns": 2.318637371063,
+            "difference_ns": 1.296166840525359e-07
+          },
+          {
+            "endpoint": "r3/D",
+            "kind": "setup",
+            "native_ns": 7.947668988416224,
+            "reference_ns": 7.947669506073,
+            "difference_ns": 5.176567761111528e-07
+          },
+          {
+            "endpoint": "r3/D",
+            "kind": "hold",
+            "native_ns": -0.640927152825643,
+            "reference_ns": -0.640927195549,
+            "difference_ns": 4.272335696331453e-08
+          },
+          {
+            "endpoint": "r2/D",
+            "kind": "setup",
+            "native_ns": 8.002269000597384,
+            "reference_ns": 8.002269744873,
+            "difference_ns": 7.442756171371911e-07
+          },
+          {
+            "endpoint": "r2/D",
+            "kind": "hold",
+            "native_ns": -0.5852185760194097,
+            "reference_ns": -0.585218608379,
+            "difference_ns": 3.235959022962476e-08
+          },
+          {
+            "endpoint": "z[0]",
+            "kind": "setup",
+            "native_ns": 9.030274578557119,
+            "reference_ns": 9.030274391174,
+            "difference_ns": 1.8738311879928915e-07
+          },
+          {
+            "endpoint": "z[0]",
+            "kind": "hold",
+            "native_ns": 0.7924876894743894,
+            "reference_ns": 0.792487680912,
+            "difference_ns": 8.56238946411736e-09
+          },
+          {
+            "endpoint": "z[1]",
+            "kind": "setup",
+            "native_ns": 9.088340702037621,
+            "reference_ns": 9.088340759277,
+            "difference_ns": 5.723937768209453e-08
+          },
+          {
+            "endpoint": "z[1]",
+            "kind": "hold",
+            "native_ns": 0.756996444080598,
+            "reference_ns": 0.756996512413,
+            "difference_ns": 6.83324020700482e-08
+          },
+          {
+            "endpoint": "r1/D",
+            "kind": "setup",
+            "native_ns": 9.652736082666644,
+            "reference_ns": 9.652735710144,
+            "difference_ns": 3.7252264384335376e-07
+          },
+          {
+            "endpoint": "r1/D",
+            "kind": "hold",
+            "native_ns": -0.4907145021652902,
+            "reference_ns": -0.490714490414,
+            "difference_ns": 1.1751290218686705e-08
+          },
+          {
+            "endpoint": "r0/D",
+            "kind": "setup",
+            "native_ns": 9.653769930572377,
+            "reference_ns": 9.653769493103,
+            "difference_ns": 4.3746937627986426e-07
+          },
+          {
+            "endpoint": "r0/D",
+            "kind": "hold",
+            "native_ns": -0.49197873683024906,
+            "reference_ns": -0.491978704929,
+            "difference_ns": 3.190124908680758e-08
+          }
+        ],
+        "reference_delay_calculator": "default"
+      }
+    }
+  ],
+  "source_sha256": {
+    "Cargo.lock": "2b247db49a5436f76a029af55c3ceb19acbc8f1fffb4f26d3e7e664d5b9f0b1d",
+    "Cargo.toml": "c310527625fa509c4c2c10f117e73df30313fe44bce1f59b2b19fa444b55ecb8",
+    "crates/apps/rusteda-cli/Cargo.toml": "5756bd94c68cbb105810ebbe3f03ba9c7ad8d55abb0dfd35eda20658f3dd7c0b",
+    "crates/apps/rusteda-cli/src/import.rs": "b2cfc3a2c59308d10ce4cd8668f363d47b6cfcf01ddfa55edb0ad1dc9192710c",
+    "crates/apps/rusteda-cli/src/import_spef.rs": "66e78dccf79786d4f953c3ef93bb5ad9e416b6feeb850efc4905d66cf65f35a3",
+    "crates/apps/rusteda-cli/src/lib.rs": "8f3c334e6bec3fd9c7c20d6232517bba249e274514d0faf7b3c2df655590368f",
+    "crates/apps/rusteda-cli/tests/import_spef.rs": "a654ca94d62a081d4685418b365070fd459f208550d5ad85742f0035a2474273",
+    "crates/apps/ruststa-cli/src/check.rs": "ecfe2c8f5cabf0ef06c05ccb66536cbd3f07699c12ec97eae95f0b5c4d0dbc55",
+    "crates/apps/ruststa-cli/src/path.rs": "ed87ae36d4f6c0b77021d8647245420148ad715bc695ba983b099c47725bbaa9",
+    "crates/apps/ruststa-cli/src/run.rs": "b62da0cb0df9407598fcfb42804c00ea1657bf3635dd435a7406fa5b9368b779",
+    "crates/apps/ruststa-cli/src/update.rs": "10be9923f45701f6fdbd5b7db077616f24228434b24149405ab92870dd16674a",
+    "crates/apps/ruststa-cli/src/whatif.rs": "07c441418689551e0ef57d4477745313ea20cb3b1374c28d6f049d80876afe89",
+    "crates/apps/ruststa-cli/src/ws_io.rs": "f70d3f4609a68a2abcb5790f6d721e94aeeebd35b34b7e761c699f71a5160f93",
+    "crates/engines/ruststa/src/engine/analysis.rs": "41b4ceeaf99c38978d7050b3af86b08f9cbbb74891dc1f8a8c3977489346885b",
+    "crates/engines/ruststa/src/engine/analysis/loads.rs": "fcbd05f099c4287b90dff0f5b7864cccfe21d00a75b74679d44247dc2622514b",
+    "crates/engines/ruststa/src/engine/delay/spef.rs": "c85c6603928ab7bbdb7a7670d51763767a90e3e46abcf437dbd846d10cf9d304",
+    "crates/engines/ruststa/src/engine/delay/spef/tree.rs": "e0aa87e01047945d304cb8f5b2ec9ddfac86657082a63f55ead8b15f349bef1a",
+    "crates/engines/ruststa/src/engine/delay/wire.rs": "738c4e85bdd88b384479a4831a3e77626c8cdd4bc28b41e0cb478644bb6b9ee4",
+    "crates/engines/ruststa/src/engine/incr/session.rs": "3002b2db63bde560f823a549ed29f6fea381e1c1d5a9f8bb03efa3a6c4dbd323",
+    "crates/engines/ruststa/src/engine/input/constr/compile.rs": "4f001d0785b09d8d6cad61c8a1f3cfc13183a27562bb324c1a52788fb38c9393",
+    "crates/engines/ruststa/src/engine/input/constr/model.rs": "6017f07a40be155d88b14cf4d74d9425b60e3d11af641f51d23a569d8b04d6e1",
+    "crates/engines/ruststa/src/engine/input/constr/query.rs": "8b32b441fca969e428747de550c5bfb235cef71256ba599cb7f41bb4c5d378f5",
+    "crates/engines/ruststa/src/engine/prop/clocks/ideal.rs": "731e182710c981e47dba95ef99d7b0a45ff81470267c5998d58d83c10f92e3a7",
+    "crates/engines/ruststa/src/engine/prop/clocks/propagated.rs": "d8c9edc4e6d10c7b0cc59c4e94ae231743dd662754296f98c36d1a637e1f5c2c",
+    "crates/engines/ruststa/src/engine/prop/lower.rs": "59722867564880eadd79635fa30d8f2dfe3bf893ea2bb2de6a668362add73b3b",
+    "crates/engines/ruststa/src/engine/prop/relation.rs": "03b04b144e126d8207c7016cea47cee4f3f03f5cded758ef41c3a3f59f906964",
+    "crates/engines/ruststa/src/engine/prop/starts.rs": "81791020366b871fe46586bbe6e834b6f8ef16b4e31cb83c1d1c2ea100cd05b3",
+    "crates/engines/ruststa/src/engine/store/from_analysis.rs": "3eb6eb639e5ffde27fbe63e3bf5f9f46e98e363ae84e5bfb857494c0bbec6132",
+    "crates/engines/ruststa/src/engine/store/from_analysis/steps.rs": "3723500eed86cc1b672d1255f10d6d2e0ef138548e042f8a0e0e6fa09d647986",
+    "crates/engines/ruststa/tests/constraints_compile.rs": "2037bba765e598bdeb56b07591c38f7d2f70259bc1d3697b3f5c96762838c1eb",
+    "crates/engines/ruststa/tests/extracted.rs": "81ed415c2bfb0b1fcfa8151a62f61bb424c8d54c241d85aaedcc8465be8c31e5",
+    "crates/formats/rusteda-formats/Cargo.toml": "f39ba31d54ce883fc8c962d633baf321ea63ce7a219dbaca0eb43345892245a7",
+    "crates/formats/rusteda-formats/src/lib.rs": "d34dfed5c1ee49738b521aed5e94ed0f659c6b894bfb1f50c798e785205b1ed0",
+    "crates/formats/rusteda-formats/src/sdc/schema.rs": "ce08ff6bf08a47a3bd41ad6eb5f0bfc310649e1b5d37c9543151a80ab24c1ca6",
+    "crates/formats/rusteda-formats/src/sdc/schema/build.rs": "321f503ccc18a88ef4c0abb364180b66afdb9290618a09b38cae8a3a298edecb",
+    "crates/formats/rusteda-formats/src/spef/mod.rs": "f2d9d26c71721815974d50e68b5b052f1f1676bed4511cd56481fb0f8cf9ed60",
+    "crates/formats/rusteda-formats/src/spef/parse.rs": "53f68f80a989d029200d1d4da87043c1fd77eeec3eac5cf743b690493a2abdc9",
+    "crates/formats/rusteda-formats/src/spef/source.rs": "b40781307487f19857ee2ce57497c62d2445476d4039b2d947f931f48ff18db9",
+    "crates/formats/rusteda-formats/src/spef/tests.rs": "94366656884cf628606d51404250dc09290cc21e53392d3771f779caca073af1",
+    "crates/formats/rusteda-formats/tests/sdc_commands.rs": "8287f0f3a5e4948cefe16a5952813dee1637fa70b3b666f8321ca67901c8cc12",
+    "verification/suites/sta/spef.toml": "cd7116b31360fa717e033cea3a366cecbf3fe031c0ebe2fdafe894c10f1baae8",
+    "verification/spef_acceptance.py": "199586b80b4a17b09bb72f237ff5f09eb62c864575a7e5674341eeb1b0e34997",
+    "verification/fixtures/synthetic/spef/moments.json": "4d8ba9cc1044191e6f03b09bdf952decfe3554cee40dd9fcdd87a4c29563c747",
+    "docs/_tools/spef_report.py": "6cca2c1006af1ad61a567d4ec9dde3992bced603193e5f84dac22fb36776ef57",
+    "docs/_tools/site_hooks.py": "5f7e6a29a0f686134a97d31b16aced7881f2194b150e6d532e13626a6b5e47ff"
+  },
+  "requirements": {
+    "defined": 497,
+    "gaps": 0
+  },
+  "report_validation": {
+    "status": "passed",
+    "mode": "static HTML and link checks; no browser visual review",
+    "site_pages": 64,
+    "site_local_references": 6408,
+    "source_pages": 63,
+    "source_local_references": 283,
+    "failures": 0,
+    "build": {
+      "wall_time": "0:00.62",
+      "peak_rss_kib": 44508,
+      "exit_code": 0
+    },
+    "site_links": {
+      "wall_time": "0:00.28",
+      "peak_rss_kib": 19704,
+      "exit_code": 0
+    },
+    "source_links": {
+      "wall_time": "0:00.28",
+      "peak_rss_kib": 28004,
+      "exit_code": 0
+    }
+  }
+}

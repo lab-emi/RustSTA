@@ -349,6 +349,7 @@ pub fn exec_whatif(
     let corner_names: Vec<String> = corner_libs.iter().map(|(n, _)| n.clone()).collect();
     let options = SessionOptions {
         analysis: AnalysisOptions {
+            parasitics: crate::ws_io::load_parasitics(&rev)?,
             max_state_bytes,
             ..AnalysisOptions::default()
         },
@@ -449,7 +450,18 @@ pub fn exec_whatif(
     let st = &session.state().scope;
     scope.insert("corners", &corner_names)?;
     scope.insert("wire_model", &st.wire_model)?;
-    scope.insert("parasitics", &"none")?;
+    scope.insert(
+        "parasitics",
+        &if st.wire_model == "spef_elmore" {
+            "spef"
+        } else {
+            "none"
+        },
+    )?;
+    if st.wire_model == "spef_elmore" {
+        scope.insert("delay_calculator", &"nldm_lumped_elmore")?;
+        scope.insert("coupling", &"grounded_factor_1")?;
+    }
     scope.insert("drc_status", &"unchecked")?;
     scope.insert("clock_model", &st.clock_model)?;
     scope.insert("cppr", &"off")?;

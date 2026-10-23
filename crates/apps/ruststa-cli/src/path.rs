@@ -27,7 +27,7 @@ fn format_path_json(p: &QueriedPath, v: &StaStoreView<'_>) -> Result<JsonObject,
     let (logic_levels, cell_delay_ns, wire_delay_ns, cell_pct, wire_pct) = path_delay_breakdown(p);
 
     let mut points_json = Vec::with_capacity(p.points.len());
-    for pt in &p.points {
+    for (index, pt) in p.points.iter().enumerate() {
         let pt_handle = node_handle_string(pt.node, num_port_bits);
         let (inst_opt, cell_opt) = if pt.node.0 < num_port_bits {
             (None::<String>, None::<String>)
@@ -46,7 +46,8 @@ fn format_path_json(p: &QueriedPath, v: &StaStoreView<'_>) -> Result<JsonObject,
 
         let arc_str = match pt.kind {
             PathPointKind::ClockLaunch => "launch",
-            PathPointKind::Port => "input",
+            PathPointKind::Port if index == 0 => "input",
+            PathPointKind::Port => "net",
             PathPointKind::Cell => "cell",
             PathPointKind::Net => "net",
         };

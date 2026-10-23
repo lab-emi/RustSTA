@@ -27,6 +27,7 @@ use crate::engine::input::constr::CompiledConstraints;
 use crate::engine::input::netview::NodeKind;
 use crate::engine::prop::backward::{BackwardPass, ByNode};
 use crate::engine::prop::checks::{EndpointCheckKind, SlackRecord};
+use crate::engine::prop::clocks::ClockModel;
 use crate::engine::prop::endpoints::EndpointStatus;
 use crate::engine::prop::lower::LoweredCorner;
 use crate::engine::prop::starts::build_start_rows;
@@ -935,7 +936,7 @@ pub fn build_store_with_ctx(
         top: nv.module_name().to_owned(),
         corners: corner_names,
         wire_model: wire_scope.wire_model.to_owned(),
-        clock_model: String::from("ideal"),
+        clock_model: analysis.corners[0].clock_model.scope_name().to_owned(),
         cppr: String::from("off"),
         backend: backend_name.to_owned(),
         precision,
@@ -1064,7 +1065,7 @@ fn compute_corner_backward_pass(
         &ca.exceptions,
         &ca.net_loads,
         &NoDerate,
-    ) && let Ok(lowered) = LoweredCorner::lower(
+    ) && let Ok(mut lowered) = LoweredCorner::lower(
         analysis.netview,
         analysis.graph,
         &ca.lib,
@@ -1073,6 +1074,7 @@ fn compute_corner_backward_pass(
         start_build.rows,
         &ca.latch_maps,
     ) {
+        lowered.set_wire_model(analysis.graph, &ca.wire_model);
         bp.propagate(analysis.graph, &lowered, &values);
     }
     bp

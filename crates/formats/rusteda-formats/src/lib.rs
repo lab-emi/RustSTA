@@ -6,4 +6,5 @@
 
 pub mod liberty;
 pub mod sdc;
+pub mod spef;
 pub mod verilog;

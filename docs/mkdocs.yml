@@ -89,6 +89,7 @@ nav:
       - Your first timing run: guide/quickstart.md
   - Workflows:
       - Analyze a design: guide/timing.md
+      - Import SPEF parasitics: guide/spef.md
       - Automate with an agent: guide/agents.md
       - Check timing results: guide/checking.md
       - CPU and CUDA backends: guide/backends.md
@@ -102,6 +103,8 @@ nav:
           - Static timing analysis: specs/sta/README.md
           - Inputs and corners: specs/sta/inputs.md
           - Delay and wire load: specs/sta/delay.md
+          - Detailed parasitics: specs/sta/parasitics.md
+          - Propagated primary clocks: specs/sta/propagated-clock.md
           - Constant propagation: specs/sta/constants.md
           - Clocks and checks: specs/sta/checks.md
           - Timing exceptions: specs/sta/exceptions.md
@@ -130,6 +133,7 @@ nav:
   - Evidence:
       - Verification scope: verification/index.md
       - Dual-PDK verification: verification/pdk.md
+      - SPEF verification: verification/spef.md
       - Timing verification specification: specs/sta/verification.md
       - Requirements and evidence: verification/requirements.md
   - Project:

@@ -24,6 +24,9 @@ pub(crate) struct ImportCommand {
     pub netlist: Option<PathBuf>,
     pub sdc_files: Vec<PathBuf>,
     pub sdc_env: Vec<String>,
+    pub spef: Option<PathBuf>,
+    pub spef_corner: Option<String>,
+    pub spef_limits: rusteda_formats::spef::Limits,
 }
 
 /// Runs `rusteda import` (RCLI-REQ-0011).
@@ -34,9 +37,15 @@ pub(crate) fn run_import(
     inv: &Invocation,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<OutputOutcome, Error> {
-    if cmd.libs.is_empty() && cmd.rtl.is_none() && cmd.netlist.is_none() && cmd.sdc_files.is_empty()
+    if cmd.libs.is_empty()
+        && cmd.rtl.is_none()
+        && cmd.netlist.is_none()
+        && cmd.sdc_files.is_empty()
+        && cmd.spef.is_none()
     {
-        let err = Error::usage("import requires at least one of --lib, --rtl, --netlist, or --sdc");
+        let err = Error::usage(
+            "import requires at least one of --lib, --rtl, --netlist, --sdc, or --spef",
+        );
         let _ = ws.log_rejected(inv, None, &err);
         return Err(err);
     }
@@ -72,6 +81,18 @@ pub(crate) fn run_import(
                 &mut txn,
                 &cmd.sdc_files,
                 &cmd.sdc_env,
+                &mut metrics,
+                diags,
+            )?;
+        }
+        if let Some(path) = &cmd.spef {
+            crate::import_spef::import_spef(
+                &mut txn,
+                path,
+                cmd.spef_corner
+                    .as_deref()
+                    .ok_or_else(|| Error::usage("--spef requires --spef-corner"))?,
+                cmd.spef_limits,
                 &mut metrics,
                 diags,
             )?;
