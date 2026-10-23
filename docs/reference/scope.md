@@ -8,15 +8,16 @@
 - **Workspace & binary containers:** `RBIN v1` (`NETLIST v1`, `LIBERTY v1`, `CONSTR v1`, `STA v2`),
   `sta_check.json` (`ruststa.sta_check.v1`), multi-corner library resolution, and carry-forward
   revision transactions.
-- **Detailed parasitics:** bounded plain/gzip SPEF import into `PARASIT v1`,
-  explicit extraction corner, unit/name mapping, complete net/pin annotation,
+- **Detailed parasitics:** bounded plain/gzip SPEF import into `PARASIT v2`,
+  one explicit extraction per corner, unit/name mapping, complete net/pin annotation,
   zero-resistance contraction and RC-tree first moments. Coupling is grounded
   at factor 1; unsupported meshes and missing annotation are errors.
 - **Liberty timing & wire-load model:** 1D/2D/3D NLDM delay, transition, and constraint tables,
   per-table index overrides, `Table::mid_slew`, rise/fall and min/max pin capacitance ranges,
   driver output-pin capacitance, `three_state` functions and enable/disable arcs, `when` Boolean
   conditions, clock-gating attributes, `wire_load` / `wire_load_selection` (`WireloadLumped` and
-  `Ideal`), and electrical limit attributes (`max_transition`, `max_capacitance`, `max_fanout`).
+  `Ideal`), electrical limit attributes (`max_transition`, `max_capacitance`, `max_fanout`,
+  `fanout_load`), and `min_pulse_width` / `minimum_period` groups.
 - **SDC subset (`CONSTR v1`):** bounded Tcl interpreter (`set`, `list`, `expr`, `if`, `foreach`,
   `source`, explicit `--sdc-env NAME=VALUE`; `proc` and other Tcl outside the subset are errors
   `D0006`), `create_clock` (with `-add`),
@@ -35,6 +36,10 @@
   applied by `ruststa run` and `ruststa update` (`STA-REQ-0271`), incremental cone invalidation in
   timing sessions (`TimingSession`), and engine-independent checking (`ruststa-check`) that also
   reports every endpoint check only one side times (`STA-REQ-0307`).
+- **Pin limit checks (0.4):** minimum pulse width and minimum period of clock pins, and the
+  design rules `max_transition`, `max_capacitance` and `max_fanout` from the library and the
+  constraints, in the `limits` table, with a hold-fix report for physical repair
+  ([limits](../specs/sta/limits.md)).
 
 ## Current limits
 

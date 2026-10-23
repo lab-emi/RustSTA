@@ -77,10 +77,13 @@ pub fn build_model(
         .filter(|c| c.propagated && !c.is_virtual())
         .count() as u64;
     let clocks = constraints.clocks.len() as u64;
+    // The largest extracted corner bounds the RC state of any one corner.
     let rc = options
         .parasitics
-        .as_ref()
-        .map_or(0, |p| p.data.estimated_state_bytes());
+        .iter()
+        .map(|p| p.data.estimated_state_bytes())
+        .max()
+        .unwrap_or(0);
     let state = n
         .saturating_mul(clocks.max(1))
         .saturating_mul(320)

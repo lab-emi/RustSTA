@@ -120,6 +120,54 @@ pub enum ReportSection {
     Checks,
     Unconstrained,
     Notes,
+    /// Counts of the pin limit checks per corner and kind (`STA-REQ-0811`).
+    Limits,
+    /// Minimum pulse width rows, high and low (`STA-REQ-0811`).
+    #[value(name = "pulse_width")]
+    PulseWidth,
+    /// Minimum period rows (`STA-REQ-0811`).
+    #[value(name = "min_period")]
+    MinPeriod,
+    /// Design-rule rows: transition, capacitance and fanout (`STA-REQ-0811`).
+    Drv,
+    /// `max_transition` rows (`STA-REQ-0811`).
+    #[value(name = "max_transition")]
+    MaxTransition,
+    /// `max_capacitance` rows (`STA-REQ-0811`).
+    #[value(name = "max_capacitance")]
+    MaxCapacitance,
+    /// `max_fanout` rows (`STA-REQ-0811`).
+    #[value(name = "max_fanout")]
+    MaxFanout,
+    /// Hold-violating endpoints with their worst hold paths, per corner (`STA-REQ-0830`).
+    #[value(name = "hold_fix")]
+    HoldFix,
+}
+
+/// The wire model a timing command can require (`--require-wire-model`, `STA-REQ-0821`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum WireModelArg {
+    /// Extracted parasitics (SPEF) on every analyzed corner.
+    #[value(name = "spef_rc")]
+    SpefRc,
+    /// Ideal wires.
+    #[value(name = "ideal")]
+    Ideal,
+    /// Lumped wire-load models.
+    #[value(name = "wireload_lumped")]
+    WireloadLumped,
+}
+
+impl WireModelArg {
+    /// The `scope.wire_model` name.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SpefRc => "spef_rc",
+            Self::Ideal => "ideal",
+            Self::WireloadLumped => "wireload_lumped",
+        }
+    }
 }
 
 /// Pre-scanned global flags before full Clap parsing (`STA-REQ-0501`).
@@ -226,6 +274,9 @@ pub fn prescan(args: &[OsString]) -> PreScan {
                 | "--max-edits"
                 | "--max-state-gib"
                 | "--timeout"
+                | "--max-limit-rows"
+                | "--require-wire-model"
+                | "--target-margin"
         ) {
             i += 2;
             continue;
@@ -367,6 +418,20 @@ pub struct RunArgs {
     #[arg(long = "max-state-gib", default_value_t = 16.0, value_name = "GIB")]
     pub max_state_gib: f64,
 
+    /// Rows kept per corner and check kind in the `limits` table; every check is counted
+    /// (`STA-REQ-0810`).
+    #[arg(
+        long = "max-limit-rows",
+        default_value_t = ruststa::engine::limits::DEFAULT_MAX_LIMIT_ROWS,
+        value_name = "N"
+    )]
+    pub max_limit_rows: usize,
+
+    /// Fail with `T0135` unless every analyzed corner uses this wire model (`spef_rc`, `ideal`,
+    /// `wireload_lumped`; `STA-REQ-0821`).
+    #[arg(long = "require-wire-model", value_enum, value_name = "MODEL")]
+    pub require_wire_model: Option<WireModelArg>,
+
     /// Storage mode for `sta.rbin` (`full` or `summary`).
     #[arg(
         long = "sta-store",
@@ -415,6 +480,20 @@ pub struct UpdateArgs {
     /// Limit of the estimated propagation state of one corner, in GiB (`T0023` above it).
     #[arg(long = "max-state-gib", default_value_t = 16.0, value_name = "GIB")]
     pub max_state_gib: f64,
+
+    /// Rows kept per corner and check kind in the `limits` table; every check is counted
+    /// (`STA-REQ-0810`).
+    #[arg(
+        long = "max-limit-rows",
+        default_value_t = ruststa::engine::limits::DEFAULT_MAX_LIMIT_ROWS,
+        value_name = "N"
+    )]
+    pub max_limit_rows: usize,
+
+    /// Fail with `T0135` unless every analyzed corner uses this wire model (`spef_rc`, `ideal`,
+    /// `wireload_lumped`; `STA-REQ-0821`).
+    #[arg(long = "require-wire-model", value_enum, value_name = "MODEL")]
+    pub require_wire_model: Option<WireModelArg>,
 
     /// Storage mode for `sta.rbin` (`full` or `summary`).
     #[arg(
@@ -525,7 +604,9 @@ pub struct ReportArgs {
     #[arg(long = "rev", default_value = "HEAD", value_name = "REV")]
     pub rev: String,
 
-    /// Report sections to include (`summary`, `paths`, `endpoints`, `pins`, `clocks`, `checks`, `unconstrained`, `notes`).
+    /// Report sections to include (`summary`, `paths`, `endpoints`, `pins`, `clocks`, `checks`,
+    /// `unconstrained`, `notes`, `limits`, `pulse_width`, `min_period`, `drv`, `max_transition`,
+    /// `max_capacitance`, `max_fanout`, `hold_fix`).
     #[arg(
         long = "section",
         value_enum,
@@ -550,13 +631,20 @@ pub struct ReportArgs {
     #[arg(long = "reverse")]
     pub reverse: bool,
 
-    /// Filter expression (`slack<0`, `violating`, `clock=<NAME>`, `kind=setup|hold`, `endpoint~<SUBSTR>`, `pin~<SUBSTR>`).
+    /// Filter expression (`violating`, `slack<X`, `setup<X`, `hold<X`, `clock=<NAME>`,
+    /// `kind=setup|hold`, `endpoint~<SUBSTR>`, `pin~<SUBSTR>`). With `--kind setup` or `--kind hold`
+    /// the endpoint filters and sorting use that slack only.
     #[arg(long = "filter", value_name = "EXPR")]
     pub filter: Option<String>,
 
     /// Maximum rows per tabular section.
     #[arg(long = "limit", value_name = "N")]
     pub limit: Option<usize>,
+
+    /// Hold slack target of `--section hold_fix`: endpoints below it are listed, with the delay
+    /// they need to reach it (ns, default 0; `STA-REQ-0830`).
+    #[arg(long = "target-margin", default_value_t = 0.0, value_name = "NS")]
+    pub target_margin: f64,
 
     /// Print full precision values without rounding in text mode.
     #[arg(long = "exact")]
@@ -593,6 +681,10 @@ pub struct WhatifArgs {
     /// Wall-clock budget in seconds; candidates beyond it are not evaluated (`T0108`, exit 5).
     #[arg(long = "timeout", value_name = "SECONDS")]
     pub timeout: Option<f64>,
+
+    /// Fail with `T0135` unless every analyzed corner uses this wire model (`STA-REQ-0821`).
+    #[arg(long = "require-wire-model", value_enum, value_name = "MODEL")]
+    pub require_wire_model: Option<WireModelArg>,
 }
 
 /// Arguments for `ruststa completions` (`STA-REQ-0565`).

@@ -5,7 +5,8 @@ grounded coupling (factor 1), physical pin capacitances and bounded tree
 reductions. Version 0.3 replaces the original lumped/first-moment-only timing
 interpretation with [effective-load and threshold/slew models](rc-waveforms.md).
 No crosstalk, CCS or propagated-clock signoff claim is made. Internal units are
-ns, pF and kOhm; PARASIT v1 source storage is unchanged.
+ns, pF and kOhm. Version 0.4 binds one source per corner in a `PARASIT` v2 table
+(RCLI-REQ-0075, STA-REQ-0820); version 1 tables remain readable.
 
 **STA-REQ-0700**: `rusteda import --spef FILE --spef-corner NAME` atomically
   commits a `PARASIT` v1 mmap container, source identity and parser budgets.

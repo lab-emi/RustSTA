@@ -7,8 +7,10 @@
 //! defined twice in one corner is an error. The view gives typed timing arcs
 //! ([`LibArc`](super::super::types::LibArc)): combinational (also `_rise`/`_fall`), clock edges,
 //! the setup, hold, recovery and removal checks, and the three-state enable and disable arcs.
-//! Preset and clear arcs are kept but not propagated; non-sequential, minimum pulse width and
-//! minimum period arcs are counted per instance as unanalyzed arcs. Table axes are typed by role,
+//! Preset and clear arcs are kept but not propagated; minimum pulse width and minimum period arcs
+//! become the pulse checks of their pin ([`PulseCheck`], `STA-REQ-0800`); non-sequential, skew,
+//! no-change and clock-tree-path arcs are counted per instance as unanalyzed arcs. Table axes are
+//! typed by role,
 //! up to three, with per-table index overrides. Slew thresholds and the slew derate are recorded
 //! per corner.
 
@@ -212,6 +214,32 @@ pub struct PresetClearArc {
     pub slew: [TableId; 2],
 }
 
+/// Kind of a pulse check of a clock pin (`STA-REQ-0800`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PulseCheckKind {
+    /// `min_pulse_width`: `rise_constraint` is the minimum width of the high pulse and
+    /// `fall_constraint` the minimum width of the low pulse.
+    Width,
+    /// `minimum_period`: `rise_constraint` and `fall_constraint` are minimum periods measured
+    /// between rising and between falling edges.
+    Period,
+}
+
+/// A `min_pulse_width` or `minimum_period` timing group of a cell pin (`STA-REQ-0800`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PulseCheck {
+    /// The constrained pin (the pin that owns the timing group) in [`TimingCell::pins`].
+    pub pin: usize,
+    /// Pulse width or period.
+    pub kind: PulseCheckKind,
+    /// Constraint tables `[rise_constraint, fall_constraint]`, indexed by the transition time of
+    /// the pin at the edge that opens the pulse (or at the edge of the period).
+    pub table: [TableId; 2],
+    /// True when the group has a `when` condition: every condition is taken as possible and the
+    /// worst group of a pin applies (`STA-REQ-0801`).
+    pub conditional: bool,
+}
+
 /// A pin of a [`TimingCell`] with its capacitances, design-rule limits, and Boolean functions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CellPin {
@@ -264,6 +292,8 @@ pub struct TimingCell {
     pub checks: Vec<CellCheck>,
     /// Recorded `preset` and `clear` arcs (`STA-REQ-0011`).
     pub preset_clear_arcs: Vec<PresetClearArc>,
+    /// Minimum pulse width and minimum period checks of the cell's pins (`STA-REQ-0800`).
+    pub pulse_checks: Vec<PulseCheck>,
     /// Count of unanalyzed timing arcs on this cell grouped by `timing_type` (`STA-REQ-0015`).
     pub unanalyzed_by_type: BTreeMap<String, usize>,
     /// Total count of unanalyzed timing arcs on a single instance of this cell (`STA-REQ-0015`).
@@ -387,6 +417,7 @@ impl TimingLib {
                     arcs: Vec::new(),
                     checks: Vec::new(),
                     preset_clear_arcs: Vec::new(),
+                    pulse_checks: Vec::new(),
                     unanalyzed_by_type: BTreeMap::new(),
                     unanalyzed_arcs: 0,
                     notes: Vec::new(),
@@ -534,6 +565,20 @@ impl TimingLib {
         )
     }
 
+    /// Evaluates the constraint of pulse check `check` for transition `tr` (`rise_constraint` for
+    /// [`Tr::Rise`]) at the pin's transition time `slew` (ns), recording any axis extrapolation
+    /// in `tracker`; `None` when the group has no table for `tr` (`STA-REQ-0800`).
+    pub fn eval_pulse(
+        &self,
+        check: &PulseCheck,
+        tr: Tr,
+        slew: f64,
+        tracker: &mut RangeTracker,
+    ) -> Option<f64> {
+        let id = check.table[tr.index()];
+        (id != NO_TABLE).then(|| self.lut_bank.eval_tracked(id, [slew, slew, 0.0], tracker))
+    }
+
     /// Counts unanalyzed arcs across all instances in `netlist` and emits one aggregated `T0015`
     /// warning per unanalyzed `timing_type` (`STA-REQ-0015`).
     #[must_use]
@@ -632,8 +677,50 @@ fn compile_arc(
         TimingType::from_name(tt_raw)
     };
 
-    // Unanalyzed arc types (some like `minimum_period` / `min_pulse_width` may self-reference or
-    // omit `related_pin`, so classify them before resolving `related_pin`).
+    // Pulse checks (`STA-REQ-0800`) constrain the pin that owns the group; their `related_pin`
+    // names the same pin or is omitted, so they are classified before `related_pin` is resolved.
+    if matches!(tt, TimingType::MinPulseWidth | TimingType::MinimumPeriod) {
+        let kind = if tt == TimingType::MinPulseWidth {
+            PulseCheckKind::Width
+        } else {
+            PulseCheckKind::Period
+        };
+        let mut add_check = |t: &Option<Table>, attr: &str| -> Result<TableId, Diag> {
+            match t {
+                Some(tab) => lut_bank.add_table(
+                    tab,
+                    &lib.templates,
+                    TableKind::Check,
+                    tu,
+                    cu,
+                    format!("cell {} pin {} ({}) {attr}", tc.name, p.name, tt.name()),
+                ),
+                None => Ok(NO_TABLE),
+            }
+        };
+        let table = [
+            add_check(&a.rise_constraint, "rise_constraint")?,
+            add_check(&a.fall_constraint, "fall_constraint")?,
+        ];
+        if table == [NO_TABLE; 2] {
+            tc.notes.push(format!(
+                "pin {}: '{}' group without a constraint table ignored (STA-REQ-0800)",
+                p.name,
+                tt.name()
+            ));
+        } else {
+            tc.pulse_checks.push(PulseCheck {
+                pin: to,
+                kind,
+                table,
+                conditional: a.when_text.is_some(),
+            });
+        }
+        return Ok(());
+    }
+
+    // Unanalyzed arc types (some may self-reference or omit `related_pin`, so classify them
+    // before resolving `related_pin`).
     if is_unanalyzed_type(&tt) {
         let key = tt.name().to_string();
         *tc.unanalyzed_by_type.entry(key).or_insert(0) += 1;
@@ -812,8 +899,6 @@ fn is_unanalyzed_type(tt: &TimingType) -> bool {
             | TimingType::NonSeqSetupFalling
             | TimingType::NonSeqHoldRising
             | TimingType::NonSeqHoldFalling
-            | TimingType::MinPulseWidth
-            | TimingType::MinimumPeriod
             | TimingType::SkewRising
             | TimingType::SkewFalling
             | TimingType::NochangeHighHigh

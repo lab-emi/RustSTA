@@ -196,7 +196,7 @@ than 4095 pins of one instance or a cell name past string 2^20 - 1 (the fields o
 is `INTERNAL`. `StaTableBuilder::stage(txn, upstream)` adds the table as
 `sta` (`sta.rbin`) with `upstream` in its header (WS-REQ-0038) and sets the summary values
 `setup_wns_ns`, `setup_tns_ns`, `setup_violating_endpoints`, `hold_wns_ns`, `hold_tns_ns`,
-`hold_violating_endpoints`, `max_trans_violating`, `max_cap_violating`, `total_endpoints`,
+`hold_violating_endpoints`, the design-rule values of WS-REQ-0137, `total_endpoints`,
 `unconstrained_endpoints` and `corners`, and the status `timing` (`met` or `violated`), of the
 timing table; `to_bytes(upstream)` returns the bytes.
 
@@ -204,3 +204,8 @@ timing table; `to_bytes(upstream)` returns the bytes.
 written as `+0.0` and NaN as the quiet NaN `0x7ff8_0000_0000_0000`, and every table it writes
 passes the validation of WS-REQ-0128 and WS-REQ-0129 and reads back with the queries of
 WS-REQ-0131 to WS-REQ-0134.
+
+
+**WS-REQ-0137** The builder checks no design rule: it sets the summary values
+`max_trans_violating` and `max_cap_violating` to `null` and `drv_status` to `"unchecked"`, never
+to zero, and its `SUMMARY` rows hold no design-rule counts.

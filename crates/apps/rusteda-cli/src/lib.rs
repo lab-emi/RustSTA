@@ -136,11 +136,13 @@ pub struct InitArgs {}
 
 #[derive(Args, Debug)]
 pub struct ImportArgs {
-    /// Detailed RC SPEF; requires an explicit extraction corner.
-    #[arg(long, requires = "spef_corner")]
-    pub spef: Option<PathBuf>,
-    #[arg(long, requires = "spef")]
-    pub spef_corner: Option<String>,
+    /// Detailed RC SPEF (repeatable); each needs an extraction corner, paired in order with
+    /// `--spef-corner`.
+    #[arg(long, requires = "spef_corner", value_name = "FILE")]
+    pub spef: Vec<PathBuf>,
+    /// The library corner of each `--spef`, in the same order (repeatable).
+    #[arg(long, requires = "spef", value_name = "NAME")]
+    pub spef_corner: Vec<String>,
     #[arg(long, default_value_t = 32, requires = "spef")]
     pub max_spef_mib: usize,
     #[arg(long, default_value_t = 100_000, requires = "spef")]
@@ -734,6 +736,22 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
                 None
             };
 
+            if imp.spef.len() != imp.spef_corner.len() {
+                let e = Error::usage(
+                    "every --spef FILE needs its own --spef-corner NAME, paired in order",
+                );
+                let _ = ws.log_rejected(&inv, base_rev_parsed, &e);
+                return finish_error(
+                    sub_name,
+                    Some(&ws_arg),
+                    base_rev_parsed,
+                    e,
+                    Vec::new(),
+                    format,
+                    quiet,
+                );
+            }
+
             if imp.sdc.is_empty() && !imp.sdc_env.is_empty() {
                 let e = Error::usage("--sdc-env requires --sdc <FILE>...");
                 let _ = ws.log_rejected(&inv, base_rev_parsed, &e);
@@ -756,8 +774,12 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
                 netlist: imp.netlist.clone(),
                 sdc_files: imp.sdc.clone(),
                 sdc_env: imp.sdc_env.clone(),
-                spef: imp.spef.clone(),
-                spef_corner: imp.spef_corner.clone(),
+                spefs: imp
+                    .spef
+                    .iter()
+                    .cloned()
+                    .zip(imp.spef_corner.iter().cloned())
+                    .collect(),
                 spef_limits: rusteda_formats::spef::Limits {
                     max_bytes: imp.max_spef_mib.saturating_mul(1 << 20),
                     max_nets: imp.max_rc_nets,

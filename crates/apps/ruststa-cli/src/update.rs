@@ -32,10 +32,12 @@ use crate::args::{CheckMethod, PrecisionArg, StoreArg, UpdateArgs};
 use crate::check::{validate_tolerance, verify_sta_store};
 use crate::run::{build_run_text_lines, validate_state_gib};
 use crate::ws_io::{
-    StaRunOptions, analysis_error, analysis_settings, compile_constraints, compute_metric_deltas,
+    AnalysisTables, StaRunOptions, analysis_error, analysis_settings, check_wire_model,
+    check_wire_model_inputs, compile_constraints, compute_metric_deltas,
     envelope_headers_from_store, json_object_to_map, load_corner_libraries, load_sdc_from_revision,
-    map_store_error, parse_backend, table_of_analysis, top_paths_from_store,
+    map_store_error, parse_backend, table_of_analysis, top_paths_from_store, validate_limit_rows,
 };
+use ruststa::engine::limits::table::{LimitsData, TABLE_NAME as LIMITS_TABLE};
 
 /// Code of an incremental table that differs from the table of a full computation
 /// (`--verify-full`, `STA-REQ-0612`).
@@ -48,6 +50,8 @@ pub const CODE_FULL_FALLBACK: DiagCode = DiagCode::of("T0110");
 pub struct UpdateOutcome {
     /// The timing table to commit.
     pub store: StaStoreData,
+    /// The pin limit table to commit (`STA-REQ-0806`).
+    pub limits: LimitsData,
     /// Envelope headers of the table.
     pub scope: JsonObject,
     pub completeness: JsonObject,
@@ -74,11 +78,13 @@ pub fn update_sta_on_revision(
     diags: &mut Vec<Diagnostic>,
 ) -> Result<UpdateOutcome, Error> {
     let (mut analysis_opts, backend, store_precision, store_mode) = analysis_settings(opts)?;
-    analysis_opts.parasitics = crate::ws_io::load_parasitics(rev)?;
+    check_wire_model_inputs(rev, opts.require_wire_model, diags)?;
     let netlist_rbin: Rbin = rusteda_workspace::netlist::open_rev(rev)?;
     let frozen: FrozenNetlist<'_> = rusteda_workspace::netlist::decode(&netlist_rbin)?;
     let (sdc_model, _) = load_sdc_from_revision(rev)?;
     let corner_libs = load_corner_libraries(ws, rev, &opts.corners, diags)?;
+    let analyzed: Vec<String> = corner_libs.iter().map(|(n, _)| n.clone()).collect();
+    analysis_opts.parasitics = crate::ws_io::load_parasitics(rev, &analyzed)?;
     let corner_refs: Vec<CornerLibs<'_>> = corner_libs
         .iter()
         .map(|(name, libs)| CornerLibs::new(name.as_str(), libs.as_slice()))
@@ -157,7 +163,14 @@ pub fn update_sta_on_revision(
             (analysis, stats)
         }
     };
-    let (store, scope, completeness, metrics) = table_of_analysis(
+    check_wire_model(&analysis, opts.require_wire_model, diags)?;
+    let AnalysisTables {
+        store,
+        limits,
+        scope,
+        completeness,
+        metrics,
+    } = table_of_analysis(
         &analysis,
         None,
         &corner_libs,
@@ -165,6 +178,7 @@ pub fn update_sta_on_revision(
         store_precision,
         store_mode,
         opts.max_paths,
+        opts.max_limit_rows,
         diags,
     )?;
     drop(analysis);
@@ -174,7 +188,7 @@ pub fn update_sta_on_revision(
             EngineAnalysis::analyze(&frozen, &corner_refs, compiled, &analysis_opts, Ctx::NONE)
                 .map_err(|d| analysis_error(&d, diags))?;
         let mut scratch = Vec::new();
-        let (full_store, ..) = table_of_analysis(
+        let full_tables = table_of_analysis(
             &full,
             None,
             &corner_libs,
@@ -182,11 +196,19 @@ pub fn update_sta_on_revision(
             store_precision,
             store_mode,
             opts.max_paths,
+            opts.max_limit_rows,
             &mut scratch,
         )?;
-        if full_store.to_bytes()? != store.to_bytes()? {
+        if full_tables.store.to_bytes()? != store.to_bytes()? {
             let msg = "--verify-full: the incrementally computed sta.rbin differs from the \
                        sta.rbin of a full computation";
+            diags.push(Diagnostic::new(Severity::Error, CODE_VERIFY_FULL, msg));
+            return Err(Error::input_rejected(msg));
+        }
+        // The limit table of the same analysis is byte-identical too (`STA-REQ-0806`).
+        if full_tables.limits.to_bytes()? != limits.to_bytes()? {
+            let msg = "--verify-full: the incrementally computed limits.rbin differs from the \
+                       limits.rbin of a full computation";
             diags.push(Diagnostic::new(Severity::Error, CODE_VERIFY_FULL, msg));
             return Err(Error::input_rejected(msg));
         }
@@ -204,6 +226,7 @@ pub fn update_sta_on_revision(
     }
     Ok(UpdateOutcome {
         store,
+        limits,
         scope,
         completeness,
         metrics,
@@ -261,8 +284,9 @@ pub fn exec_update(
     inv: &Invocation,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<(Envelope, Vec<String>, i32), Error> {
-    if let Err(err) =
-        validate_tolerance(args.tolerance).and_then(|()| validate_state_gib(args.max_state_gib))
+    if let Err(err) = validate_tolerance(args.tolerance)
+        .and_then(|()| validate_state_gib(args.max_state_gib))
+        .and_then(|()| validate_limit_rows(args.max_limit_rows))
     {
         let parsed = BaseRev::parse(&args.base_rev).ok().map(|b| b.rev());
         let _ = ws.log_rejected(inv, parsed, &err);
@@ -333,8 +357,17 @@ pub fn exec_update(
         let entry_matches = base_rev
             .table(TABLE_NAME)
             .is_ok_and(|t| t.upstream == current_upstream);
+        // A table of an older analysis without the limit checks is analyzed again.
+        let limits_current = base_rev
+            .table(LIMITS_TABLE)
+            .is_ok_and(|t| t.upstream == current_upstream);
+        let wire_ok = args
+            .require_wire_model
+            .is_none_or(|w| scope_rep.wire_model == w.as_str());
 
         if entry_matches
+            && limits_current
+            && wire_ok
             && scope_rep.precision == want_prec
             && scope_rep.store_mode == want_mode
             && !args.check
@@ -429,6 +462,8 @@ pub fn exec_update(
         max_paths: args.max_paths,
         store_mode: args.sta_store,
         max_state_gib: args.max_state_gib,
+        max_limit_rows: args.max_limit_rows,
+        require_wire_model: args.require_wire_model,
     };
 
     let step_res = (|| {
@@ -436,13 +471,15 @@ pub fn exec_update(
         let inc = incremental_object(&outcome)?;
         let UpdateOutcome {
             store,
+            limits,
             scope,
             completeness,
             metrics,
             ..
         } = outcome;
 
-        store.stage_to_txn(&mut txn, current_upstream)?;
+        store.stage_to_txn(&mut txn, current_upstream.clone())?;
+        limits.stage_to_txn(&mut txn, current_upstream)?;
         let store_bytes = store.to_bytes()?;
         let opened_store = StaStore::from_bytes(store_bytes).map_err(map_store_error)?;
         let (top_paths, truncated_paths) = top_paths_from_store(&opened_store, args.max_paths)?;

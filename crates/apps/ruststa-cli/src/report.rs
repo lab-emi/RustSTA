@@ -6,7 +6,11 @@
 use std::collections::VecDeque;
 
 use rusteda_workspace::text::next_line;
-use rusteda_workspace::{Diagnostic, Envelope, Error, JsonObject, Workspace, exit};
+use rusteda_workspace::{
+    DiagCode, Diagnostic, Envelope, Error, JsonObject, Severity, Workspace, exit,
+};
+use ruststa::engine::limits::LimitKind;
+use ruststa::engine::limits::table::LimitsTable;
 use ruststa::engine::store::{
     QueriedPath, StaStore, StaStoreError, StaStoreView, UnconstrainedReasonTag, canon_f64,
 };
@@ -84,18 +88,38 @@ fn parse_filter(raw: Option<&str>) -> Result<Option<FilterPred>, Error> {
     )))
 }
 
+/// The filter of a limit section: `violating`, `slack<X`, a name substring or `clock=NAME`
+/// (`STA-REQ-0811`).
+fn limit_filter(
+    f: Option<&FilterPred>,
+) -> Result<Option<crate::report_limits::LimitFilter>, Error> {
+    use crate::report_limits::LimitFilter;
+    Ok(match f {
+        None => None,
+        Some(FilterPred::Violating) => Some(LimitFilter::Violating),
+        Some(FilterPred::SlackLt(t)) => Some(LimitFilter::SlackLt(*t)),
+        Some(FilterPred::NameContains(s)) => Some(LimitFilter::NameContains(s.clone())),
+        Some(FilterPred::ClockEq(c)) => Some(LimitFilter::ClockEq(c.clone())),
+        Some(_) => {
+            return Err(Error::usage(
+                "limit sections accept --filter violating, slack<X, pin~TEXT or clock=NAME",
+            ));
+        }
+    })
+}
+
 fn validate_sort_key(raw: Option<&str>) -> Result<Option<&str>, Error> {
     let Some(k) = raw else {
         return Ok(None);
     };
     match k {
         "slack" | "setup" | "hold" | "arrival" | "required" | "endpoint" | "pin" | "name"
-        | "net" | "cap" | "slew" | "fanout" | "period" | "rank" | "code" => Ok(Some(k)),
+        | "net" | "cap" | "slew" | "fanout" | "period" | "rank" | "code" | "value" => Ok(Some(k)),
         other => Err(Error::usage(format!("unknown --sort key '{other}'"))),
     }
 }
 
-fn section_envelope_obj(
+pub(crate) fn section_envelope_obj(
     columns: &[&str],
     total: usize,
     matched: usize,
@@ -161,10 +185,12 @@ fn build_summary_section(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_endpoints_section(
     store: &StaStore,
     v: &StaStoreView<'_>,
     corner_idx: usize,
+    kind: PathKind,
     filter: Option<&FilterPred>,
     sort_key: Option<&str>,
     reverse: bool,
@@ -174,17 +200,26 @@ fn build_endpoints_section(
         .query_endpoints(corner_idx, None, usize::MAX)
         .map_err(map_store_error)?;
     let total = eps.len();
+    // `--kind setup` or `--kind hold` keeps the endpoints with that slack and applies the slack
+    // filters and the `slack` sort to it alone (`STA-REQ-0812`).
+    let use_setup = kind != PathKind::Hold;
+    let use_hold = kind != PathKind::Setup;
+    eps.retain(|ep| match kind {
+        PathKind::Setup => ep.setup_slack.is_finite(),
+        PathKind::Hold => ep.hold_slack.is_finite(),
+        PathKind::Both => true,
+    });
     eps.retain(|ep| match filter {
         None => true,
         Some(FilterPred::SetupLt(th)) => ep.setup_slack.is_finite() && ep.setup_slack < *th,
         Some(FilterPred::HoldLt(th)) => ep.hold_slack.is_finite() && ep.hold_slack < *th,
         Some(FilterPred::SlackLt(th)) => {
-            (ep.setup_slack.is_finite() && ep.setup_slack < *th)
-                || (ep.hold_slack.is_finite() && ep.hold_slack < *th)
+            (use_setup && ep.setup_slack.is_finite() && ep.setup_slack < *th)
+                || (use_hold && ep.hold_slack.is_finite() && ep.hold_slack < *th)
         }
         Some(FilterPred::Violating) => {
-            (ep.setup_slack.is_finite() && ep.setup_slack < 0.0)
-                || (ep.hold_slack.is_finite() && ep.hold_slack < 0.0)
+            (use_setup && ep.setup_slack.is_finite() && ep.setup_slack < 0.0)
+                || (use_hold && ep.hold_slack.is_finite() && ep.hold_slack < 0.0)
         }
         Some(FilterPred::ClockEq(clk)) => ep.capture_clock == *clk || ep.path_group == *clk,
         Some(FilterPred::KindEq(k)) => {
@@ -198,6 +233,11 @@ fn build_endpoints_section(
     });
 
     if let Some(sk) = sort_key {
+        let sk = if sk == "slack" && kind == PathKind::Hold {
+            "hold"
+        } else {
+            sk
+        };
         eps.sort_by(|a, b| match sk {
             "hold" => a
                 .hold_slack
@@ -454,9 +494,12 @@ fn build_pins_section(
         obj.insert("arrival_early_ns", &arr_early)?;
         obj.insert("slew_late_ns", &max_opt(nr.slew[0][1], nr.slew[1][1]))?;
         obj.insert("slew_early_ns", &min_opt(nr.slew[0][0], nr.slew[1][0]))?;
+        let setup_req = crate::inspect::required_at_worst(nr.required, nr.slack, 1);
+        obj.insert("required_ns", &setup_req)?;
+        obj.insert("required_setup_ns", &setup_req)?;
         obj.insert(
-            "required_ns",
-            &min_opt(nr.required[0][0], nr.required[1][0]),
+            "required_hold_ns",
+            &crate::inspect::required_at_worst(nr.required, nr.slack, 0),
         )?;
         obj.insert("slack_ns", &setup_slack)?;
         obj.insert("hold_slack_ns", &hold_slack)?;
@@ -481,6 +524,8 @@ fn build_pins_section(
             "slew_late_ns",
             "slew_early_ns",
             "required_ns",
+            "required_setup_ns",
+            "required_hold_ns",
             "slack_ns",
             "hold_slack_ns",
         ],
@@ -602,6 +647,7 @@ pub fn exec_report(
         args.sections.clone()
     };
 
+    let mut limits_table: Option<LimitsTable> = None;
     let mut sections_obj = JsonObject::new();
     for sec in &sections_to_run {
         match sec {
@@ -614,6 +660,7 @@ pub fn exec_report(
                     &store,
                     &v,
                     corner_idx,
+                    args.kind,
                     filter.as_ref(),
                     sort_key,
                     args.reverse,
@@ -626,6 +673,7 @@ pub fn exec_report(
                     &store,
                     &v,
                     corner_idx,
+                    args.kind,
                     filter.as_ref(),
                     sort_key,
                     args.reverse,
@@ -661,6 +709,93 @@ pub fn exec_report(
             ReportSection::Notes => {
                 let s_obj = build_notes_section(&v, limit)?;
                 sections_obj.insert("notes", &s_obj)?;
+            }
+            ReportSection::HoldFix => {
+                let s_obj = crate::holdfix::hold_fix_section(
+                    &store,
+                    &revision,
+                    args.corner.as_ref().map(|_| corner_idx),
+                    args.target_margin,
+                    limit,
+                )?;
+                sections_obj.insert("hold_fix", &s_obj)?;
+            }
+            ReportSection::Limits
+            | ReportSection::PulseWidth
+            | ReportSection::MinPeriod
+            | ReportSection::Drv
+            | ReportSection::MaxTransition
+            | ReportSection::MaxCapacitance
+            | ReportSection::MaxFanout => {
+                let table = match &limits_table {
+                    Some(t) => t,
+                    None => {
+                        let t = LimitsTable::open_rev(&revision)?.ok_or_else(|| {
+                            let msg = format!(
+                                "revision {rev} has no limits table: analyze it again with \
+                                 ruststa run (STA-REQ-0806)"
+                            );
+                            diags.push(Diagnostic::new(
+                                Severity::Error,
+                                DiagCode::of("T0136"),
+                                msg.clone(),
+                            ));
+                            Error::input_rejected(msg)
+                        })?;
+                        limits_table.insert(t)
+                    }
+                };
+                let lcorner = match args.corner.as_deref() {
+                    Some(name) => Some(
+                        table
+                            .corners()?
+                            .iter()
+                            .position(|c| *c == name)
+                            .ok_or_else(|| {
+                                Error::input_rejected(format!(
+                                    "corner '{name}' not found in the limits table"
+                                ))
+                            })?,
+                    ),
+                    None => None,
+                };
+                let (name, kinds): (&str, &[LimitKind]) = match sec {
+                    ReportSection::PulseWidth => (
+                        "pulse_width",
+                        &[LimitKind::MinPulseWidthHigh, LimitKind::MinPulseWidthLow],
+                    ),
+                    ReportSection::MinPeriod => ("min_period", &[LimitKind::MinPeriod]),
+                    ReportSection::Drv => (
+                        "drv",
+                        &[
+                            LimitKind::MaxTransition,
+                            LimitKind::MaxCapacitance,
+                            LimitKind::MaxFanout,
+                        ],
+                    ),
+                    ReportSection::MaxTransition => ("max_transition", &[LimitKind::MaxTransition]),
+                    ReportSection::MaxCapacitance => {
+                        ("max_capacitance", &[LimitKind::MaxCapacitance])
+                    }
+                    ReportSection::MaxFanout => ("max_fanout", &[LimitKind::MaxFanout]),
+                    _ => ("limits", &[]),
+                };
+                let s_obj = if name == "limits" {
+                    crate::report_limits::limits_section(table, lcorner)?
+                } else {
+                    let lfilter = limit_filter(filter.as_ref())?;
+                    crate::report_limits::rows_section(
+                        table,
+                        kinds,
+                        lcorner,
+                        v.meta.num_port_bits,
+                        lfilter.as_ref(),
+                        sort_key,
+                        args.reverse,
+                        limit,
+                    )?
+                };
+                sections_obj.insert(name, &s_obj)?;
             }
         }
     }

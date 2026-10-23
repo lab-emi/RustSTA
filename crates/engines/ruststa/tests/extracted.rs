@@ -189,7 +189,7 @@ fn extracted_incremental_resize_matches_full() {
         vec![lib().clone()],
         sdc,
         AnalysisOptions {
-            parasitics: Some(input),
+            parasitics: vec![input],
             max_state_bytes: 1 << 24,
             ..Default::default()
         },
@@ -255,7 +255,7 @@ fn dual_pdk_extracted_incremental_matches_full() {
             vec![(corner, vec![library])],
             sdc,
             AnalysisOptions {
-                parasitics: Some(input),
+                parasitics: vec![input],
                 max_state_bytes: 1 << 28,
                 ..Default::default()
             },
@@ -283,7 +283,7 @@ fn extracted_cpu_cuda_agree() {
         data: spef::read(&source(), spef::Limits::default()).unwrap(),
     });
     let options = AnalysisOptions {
-        parasitics: Some(input),
+        parasitics: vec![input],
         max_state_bytes: 1 << 24,
         ..Default::default()
     };
@@ -336,7 +336,7 @@ fn propagated_clock_is_explicit_and_replaces_ideal_latency() {
         data: spef::read(&source(), spef::Limits::default()).unwrap(),
     });
     let options = AnalysisOptions {
-        parasitics: Some(input),
+        parasitics: vec![input],
         max_state_bytes: 1 << 24,
         ..Default::default()
     };
@@ -406,7 +406,7 @@ fn propagated_extracted_cpu_cuda_agree() {
         data: spef::read(&source(), spef::Limits::default()).unwrap(),
     });
     let options = AnalysisOptions {
-        parasitics: Some(input),
+        parasitics: vec![input],
         max_state_bytes: 1 << 24,
         ..Default::default()
     };

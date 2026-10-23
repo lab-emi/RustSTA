@@ -25,6 +25,7 @@ use crate::engine::graph::{CheckKind, DisableReason, TimingGraph};
 use crate::engine::input::NetlistView;
 use crate::engine::input::constr::CompiledConstraints;
 use crate::engine::input::netview::NodeKind;
+use crate::engine::limits::LimitKind;
 use crate::engine::prop::backward::{BackwardPass, ByNode};
 use crate::engine::prop::checks::{EndpointCheckKind, SlackRecord};
 use crate::engine::prop::clocks::ClockModel;
@@ -32,12 +33,13 @@ use crate::engine::prop::endpoints::EndpointStatus;
 use crate::engine::prop::lower::LoweredCorner;
 use crate::engine::prop::starts::build_start_rows;
 use crate::engine::store::{
-    ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport, CornerRec,
-    DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec, InstHashBuilder, NO_INDEX, NO_PRED,
-    NameHashBuilder, NodeRec, NoteRec, NoteSeverity, PATH_CHAIN_HEADER_WORDS, PathHeaderRec,
-    PathPointRec, PathRankRec, ScopeReport, StaMeta, StaStoreData, StoreMode, StorePrecision,
-    StringTableBuilder, SummaryRec, TagExtraRec, TagRec, UnconstrainedReasonTag, UnconstrainedRec,
-    canon_f32, canon_f64, hash_node_name, pack_chain_step, pack_f64_words,
+    ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport,
+    CornerLimitsReport, CornerRec, DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec,
+    InstHashBuilder, LimitKindReport, NO_INDEX, NO_PRED, NameHashBuilder, NodeRec, NoteRec,
+    NoteSeverity, PATH_CHAIN_HEADER_WORDS, PathHeaderRec, PathPointRec, PathRankRec, ScopeReport,
+    StaMeta, StaStoreData, StoreMode, StorePrecision, StringTableBuilder, SummaryRec, TagExtraRec,
+    TagRec, UnconstrainedReasonTag, UnconstrainedRec, canon_f32, canon_f64, hash_node_name,
+    pack_chain_step, pack_f64_words,
 };
 use crate::engine::types::{An, NodeId, Tr};
 
@@ -874,8 +876,19 @@ pub fn build_store_with_ctx(
                 setup_endpoints,
                 hold_violating,
                 hold_endpoints,
-                max_trans_violating: 0,
-                max_cap_violating: 0,
+                // Corner-wide design-rule counts on every row of the corner (`STA-REQ-0807`).
+                max_trans_violating: sat_u32(
+                    analysis.corners[c_idx]
+                        .limits
+                        .kind(LimitKind::MaxTransition)
+                        .violating,
+                ),
+                max_cap_violating: sat_u32(
+                    analysis.corners[c_idx]
+                        .limits
+                        .kind(LimitKind::MaxCapacitance)
+                        .violating,
+                ),
                 total_endpoints: n_endpoints as u32,
                 unconstrained_endpoints: unconstrained.len() as u32,
                 reserved0: 0,
@@ -949,6 +962,7 @@ pub fn build_store_with_ctx(
             disabled_arcs_by_reason: disabled_by_reason,
             unanalyzed_arcs_by_type: unanalyzed_by_type,
         },
+        limits: Some(analysis.corners.iter().map(corner_limits_report).collect()),
     };
     let scope_bytes = serde_json::to_vec(&scope_report).unwrap_or_else(|_| b"{}".to_vec());
 
@@ -1095,5 +1109,35 @@ fn cmp_slack_nan_last(a: f64, b: f64) -> std::cmp::Ordering {
         (true, false) => std::cmp::Ordering::Greater,
         (false, true) => std::cmp::Ordering::Less,
         (false, false) => a.total_cmp(&b),
+    }
+}
+
+/// `v` as `u32`, saturated.
+fn sat_u32(v: u64) -> u32 {
+    u32::try_from(v).unwrap_or(u32::MAX)
+}
+
+/// The counts of the pin limit checks of `ca` as the `SCOPE` of `sta.rbin` records them
+/// (`STA-REQ-0807`).
+#[must_use]
+pub fn corner_limits_report(ca: &CornerAnalysis) -> CornerLimitsReport {
+    CornerLimitsReport {
+        corner: ca.corner_name.clone(),
+        kinds: LimitKind::ALL
+            .iter()
+            .map(|&k| {
+                let s = ca.limits.kind(k);
+                (
+                    k.name().to_owned(),
+                    LimitKindReport {
+                        checked: s.checked,
+                        violating: s.violating,
+                        unlimited: s.unlimited,
+                        worst_slack_ns: s.worst_slack,
+                    },
+                )
+            })
+            .collect(),
+        unclocked_pulse_pins: ca.limits.unclocked_pulse_pins,
     }
 }

@@ -18,16 +18,18 @@ use rusteda_workspace::{
 
 use ruststa::engine::analysis::{AnalysisOptions, EngineAnalysis, Propagation, WireModelOption};
 use ruststa::engine::input::constr::{CompiledConstraints, CornerLibs};
+use ruststa::engine::limits::table::LimitsData;
+use ruststa::engine::limits::{LimitKind, MAX_LIMIT_ROWS_CEILING};
 use ruststa::engine::prop::lower::LoweredCorner;
 use ruststa::engine::prop::lower::{BackendKind, Precision};
 use ruststa::engine::prop::tags::DEFAULT_TAG_BUDGET;
 use ruststa::engine::store::{
-    PathPointKind, QueriedPath, StaStore, StaStoreData, StaStoreError, StoreMode, StorePrecision,
-    canon_f64,
+    CornerLimitsReport, PathPointKind, QueriedPath, StaStore, StaStoreData, StaStoreError,
+    StoreMode, StorePrecision, canon_f64,
 };
 use ruststa::engine::types::NodeId;
 
-use crate::args::{PrecisionArg, StoreArg};
+use crate::args::{PrecisionArg, StoreArg, WireModelArg};
 use crate::phases::PhaseLog;
 use ruststa::engine::store::from_analysis::{
     StoreInput, build_store_from_analysis_with_ctx, check_store_tables,
@@ -43,6 +45,82 @@ pub struct StaRunOptions {
     pub store_mode: StoreArg,
     /// Limit of the propagation state of one corner in GiB (`STA-REQ-0024`).
     pub max_state_gib: f64,
+    /// Rows kept per corner and kind by the limit checks (`STA-REQ-0810`).
+    pub max_limit_rows: usize,
+    /// The wire model every analyzed corner must use (`--require-wire-model`, `STA-REQ-0821`).
+    pub require_wire_model: Option<WireModelArg>,
+}
+
+/// Code of an analysis whose wire model is not the required one (`STA-REQ-0821`).
+pub const CODE_WIRE_MODEL: DiagCode = DiagCode::of("T0135");
+
+/// Rejects a revision without extracted parasitics before it is analyzed, when `require` asks
+/// for them (`STA-REQ-0821`).
+pub fn check_wire_model_inputs(
+    rev: &Revision,
+    require: Option<WireModelArg>,
+    diags: &mut Vec<Diagnostic>,
+) -> Result<(), Error> {
+    if require == Some(WireModelArg::SpefRc) && !rev.has_table("parasitics") {
+        let msg = "--require-wire-model spef_rc: the revision has no extracted parasitics \
+                   (import --spef FILE --spef-corner NAME with its netlist)";
+        diags.push(Diagnostic::new(Severity::Error, CODE_WIRE_MODEL, msg));
+        return Err(Error::input_rejected(msg));
+    }
+    Ok(())
+}
+
+/// Rejects an analysis whose corners do not all use the required wire model (`STA-REQ-0821`).
+pub fn check_wire_model(
+    analysis: &EngineAnalysis<'_>,
+    require: Option<WireModelArg>,
+    diags: &mut Vec<Diagnostic>,
+) -> Result<(), Error> {
+    let Some(want) = require else {
+        return Ok(());
+    };
+    for c in &analysis.corners {
+        let got = c.wire_model.scope().wire_model;
+        if got != want.as_str() {
+            let msg = format!(
+                "--require-wire-model {}: corner {} is analyzed with wire model {got}",
+                want.as_str(),
+                c.corner_name
+            );
+            diags.push(Diagnostic::new(
+                Severity::Error,
+                CODE_WIRE_MODEL,
+                msg.clone(),
+            ));
+            return Err(Error::input_rejected(msg));
+        }
+    }
+    Ok(())
+}
+
+/// Validates `--max-limit-rows` (`STA-REQ-0810`).
+pub fn validate_limit_rows(rows: usize) -> Result<(), Error> {
+    if rows > MAX_LIMIT_ROWS_CEILING {
+        return Err(Error::usage(format!(
+            "--max-limit-rows must be at most {MAX_LIMIT_ROWS_CEILING}"
+        )));
+    }
+    Ok(())
+}
+
+/// The tables and envelope headers of an analysis (`STA-REQ-0302`, `STA-REQ-0806`).
+#[derive(Debug)]
+pub struct AnalysisTables {
+    /// The timing table.
+    pub store: StaStoreData,
+    /// The pin limit table.
+    pub limits: LimitsData,
+    /// Envelope `scope`.
+    pub scope: JsonObject,
+    /// Envelope `completeness`.
+    pub completeness: JsonObject,
+    /// Envelope `metrics`.
+    pub metrics: JsonObject,
 }
 
 /// Resolved backend and its canonical scope string (`"cpu"` or `"cuda"`).
@@ -285,9 +363,10 @@ pub fn analysis_settings(
         backend: backend_kind,
         precision,
         wire_model: WireModelOption::Auto,
-        parasitics: None,
+        parasitics: Vec::new(),
         tag_budget: DEFAULT_TAG_BUDGET,
         max_state_bytes: (opts.max_state_gib * f64::from(1u32 << 30)) as u64,
+        max_limit_rows: opts.max_limit_rows,
     };
     Ok((
         analysis_opts,
@@ -346,8 +425,8 @@ pub fn analysis_error(err_diags: &[JobDiag], diags: &mut Vec<Diagnostic>) -> Err
     Error::input_rejected(first_msg)
 }
 
-/// The timing table of `analysis` and its envelope headers `(scope, completeness, metrics)`, the
-/// analysis diagnostics added to `diags` (`STA-REQ-0302`).
+/// The timing and limit tables of `analysis` and their envelope headers, the analysis
+/// diagnostics added to `diags` (`STA-REQ-0302`, `STA-REQ-0806`).
 #[allow(clippy::too_many_arguments)]
 pub fn table_of_analysis(
     analysis: &EngineAnalysis<'_>,
@@ -357,8 +436,9 @@ pub fn table_of_analysis(
     store_precision: StorePrecision,
     store_mode: StoreMode,
     max_paths: usize,
+    max_limit_rows: usize,
     diags: &mut Vec<Diagnostic>,
-) -> Result<(StaStoreData, JsonObject, JsonObject, JsonObject), Error> {
+) -> Result<AnalysisTables, Error> {
     for d in &analysis.diags {
         diags.push(convert_job_diag(d));
     }
@@ -386,6 +466,9 @@ pub fn table_of_analysis(
             Ctx::new(None, log.map(|l| l as &dyn Observer)),
         )
     });
+    let limits = PhaseLog::time(log, "limits_build", || {
+        LimitsData::from_analysis(analysis, max_limit_rows)
+    });
     // The headers are read from the in-memory table: no bytes are encoded here; `ruststa run`
     // encodes the table once, when it stages `sta.rbin`.
     let (store_data, scope_obj, comp_obj, metrics_obj) =
@@ -397,20 +480,26 @@ pub fn table_of_analysis(
                 .ok_or_else(|| Error::internal("an in-memory timing table lost its data"))?;
             Ok::<_, Error>((data, scope_obj, comp_obj, metrics_obj))
         })?;
-    Ok((store_data, scope_obj, comp_obj, metrics_obj))
+    Ok(AnalysisTables {
+        store: store_data,
+        limits,
+        scope: scope_obj,
+        completeness: comp_obj,
+        metrics: metrics_obj,
+    })
 }
 
-/// Runs multi-corner static timing analysis on `rev` and returns `(StaStoreData, scope,
-/// completeness, metrics)`.
+/// Runs multi-corner static timing analysis on `rev` and returns its tables and envelope
+/// headers.
 pub fn run_sta_on_revision(
     ws: &Workspace,
     rev: &Revision,
     opts: &StaRunOptions,
     diags: &mut Vec<Diagnostic>,
-) -> Result<(StaStoreData, JsonObject, JsonObject, JsonObject), Error> {
+) -> Result<AnalysisTables, Error> {
     let (mut analysis_opts, backend_scope_name, store_precision, store_mode) =
         analysis_settings(opts)?;
-    analysis_opts.parasitics = load_parasitics(rev)?;
+    check_wire_model_inputs(rev, opts.require_wire_model, diags)?;
     let log = PhaseLog::get();
     let netlist_rbin: Rbin = PhaseLog::time(log, "open_netlist", || {
         rusteda_workspace::netlist::open_rev(rev)
@@ -427,6 +516,9 @@ pub fn run_sta_on_revision(
         .iter()
         .map(|(name, libs)| CornerLibs::new(name.as_str(), libs.as_slice()))
         .collect();
+    let analyzed: Vec<String> = corner_libs_owned.iter().map(|(n, _)| n.clone()).collect();
+    analysis_opts.parasitics =
+        PhaseLog::time(log, "load_parasitics", || load_parasitics(rev, &analyzed))?;
 
     let compiled = PhaseLog::time(log, "compile_constraints", || {
         compile_constraints(&sdc_model, &frozen, &corner_refs, diags)
@@ -446,6 +538,7 @@ pub fn run_sta_on_revision(
         keep_lowered,
     )
     .map_err(|err_diags| analysis_error(&err_diags, diags))?;
+    check_wire_model(&analysis, opts.require_wire_model, diags)?;
     // The table reads the node-ordered propagation values of each corner; the level-ordered copy
     // is not read again, so it is released before the table is built (AGENTS rule 9: on OpenC910
     // about 3 GB).
@@ -460,6 +553,7 @@ pub fn run_sta_on_revision(
         store_precision,
         store_mode,
         opts.max_paths,
+        opts.max_limit_rows,
         diags,
     )
 }
@@ -722,8 +816,109 @@ pub fn envelope_headers_from_store(
     metrics.insert("hold_violating_endpoints", &violating_hold)?;
     metrics.insert("worst_setup_slack_ns", &worst_setup_slack)?;
     metrics.insert("worst_hold_slack_ns", &worst_hold_slack)?;
+    add_limit_headers(
+        scope_rep.limits.as_deref(),
+        corner_override,
+        &mut completeness,
+        &mut metrics,
+    )?;
 
     Ok((scope, completeness, metrics))
+}
+
+/// Adds the counts of the pin limit checks of `scope` to `completeness` and `metrics`: the
+/// worst corner of each count, or `corner_override` alone. A table without limit counts reports
+/// them as `null` with the status `unchecked` (`STA-REQ-0807`, AGENTS rule 4.2).
+pub fn add_limit_headers(
+    limits: Option<&[CornerLimitsReport]>,
+    corner_override: Option<&str>,
+    completeness: &mut JsonObject,
+    metrics: &mut JsonObject,
+) -> Result<(), Error> {
+    let corners: Option<Vec<_>> = limits.map(|all| {
+        all.iter()
+            .filter(|c| corner_override.is_none_or(|o| c.corner == o))
+            .collect()
+    });
+    let violating = |kinds: &[LimitKind]| -> Option<u64> {
+        corners.as_ref().map(|cs| {
+            cs.iter()
+                .map(|c| {
+                    kinds
+                        .iter()
+                        .filter_map(|k| c.kinds.get(k.name()))
+                        .map(|k| k.violating)
+                        .sum::<u64>()
+                })
+                .max()
+                .unwrap_or(0)
+        })
+    };
+    let worst = |kinds: &[LimitKind]| -> Option<f64> {
+        corners.as_ref().and_then(|cs| {
+            cs.iter()
+                .flat_map(|c| kinds.iter().filter_map(|k| c.kinds.get(k.name())))
+                .filter_map(|k| k.worst_slack_ns)
+                .reduce(f64::min)
+                .map(canon_f64)
+        })
+    };
+    let status = |counts: &[Option<u64>]| -> &'static str {
+        if counts.iter().any(Option::is_none) {
+            "unchecked"
+        } else if counts.iter().any(|c| c.is_some_and(|v| v > 0)) {
+            "violated"
+        } else {
+            "met"
+        }
+    };
+    let mpw = [LimitKind::MinPulseWidthHigh, LimitKind::MinPulseWidthLow];
+    let per = [LimitKind::MinPeriod];
+    let tran = [LimitKind::MaxTransition];
+    let cap = [LimitKind::MaxCapacitance];
+    let fan = [LimitKind::MaxFanout];
+    let (v_mpw, v_per) = (violating(&mpw), violating(&per));
+    let (v_tran, v_cap, v_fan) = (violating(&tran), violating(&cap), violating(&fan));
+    metrics.insert("min_pulse_width_violating", &v_mpw)?;
+    metrics.insert("worst_min_pulse_width_slack_ns", &worst(&mpw))?;
+    metrics.insert("min_period_violating", &v_per)?;
+    metrics.insert("worst_min_period_slack_ns", &worst(&per))?;
+    metrics.insert("pulse_width_status", &status(&[v_mpw, v_per]))?;
+    metrics.insert("max_transition_violating", &v_tran)?;
+    metrics.insert("worst_max_transition_slack_ns", &worst(&tran))?;
+    metrics.insert("max_capacitance_violating", &v_cap)?;
+    metrics.insert("worst_max_capacitance_slack_pf", &worst(&cap))?;
+    metrics.insert("max_fanout_violating", &v_fan)?;
+    metrics.insert("worst_max_fanout_slack", &worst(&fan))?;
+    metrics.insert("drv_status", &status(&[v_tran, v_cap, v_fan]))?;
+
+    let unclocked = corners
+        .as_ref()
+        .map(|cs| cs.iter().map(|c| c.unclocked_pulse_pins).max().unwrap_or(0));
+    completeness.insert("unchecked_pulse_width_pins", &unclocked)?;
+    match &corners {
+        Some(cs) => {
+            let mut unlimited = JsonObject::new();
+            for k in [
+                LimitKind::MaxTransition,
+                LimitKind::MaxCapacitance,
+                LimitKind::MaxFanout,
+            ] {
+                let n = cs
+                    .iter()
+                    .filter_map(|c| c.kinds.get(k.name()))
+                    .map(|r| r.unlimited)
+                    .max()
+                    .unwrap_or(0);
+                unlimited.insert(k.name(), &n)?;
+            }
+            completeness.insert("drv_unlimited", &unlimited)?;
+        }
+        None => {
+            completeness.insert("drv_unlimited", &Option::<u64>::None)?;
+        }
+    }
+    Ok(())
 }
 
 /// Converts a `JsonObject` into a `serde_json::Map<String, serde_json::Value>` (`JsonMap`) for
@@ -847,33 +1042,61 @@ pub fn resolve_node_name(
     None
 }
 
-/// Open immutable, budgeted SPEF source from the PARASIT v1 mmap table (STA-REQ-0700).
+/// The extracted parasitics of the corners `corners` of `rev`, from its `PARASIT` table: a
+/// version 1 table binds one corner, a version 2 table one source per corner (STA-REQ-0700,
+/// `STA-REQ-0820`, RCLI-REQ-0075). Only the requested corners are parsed; a requested corner
+/// without a source is left out, and the analysis then rejects it (`T0070`). No table: empty.
 pub fn load_parasitics(
     rev: &Revision,
-) -> Result<Option<std::sync::Arc<ruststa::engine::delay::spef::ParasiticInput>>, Error> {
+    corners: &[String],
+) -> Result<Vec<std::sync::Arc<ruststa::engine::delay::spef::ParasiticInput>>, Error> {
+    use rusteda_formats::spef::{CornerSetMetadata, Metadata};
     if !rev.has_table("parasitics") {
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    let rbin = rev.open_rbin("parasitics", "PARASIT", 1..=1)?;
+    let rbin = rev.open_rbin("parasitics", "PARASIT", 1..=2)?;
     rbin.verify_hash()?;
-    let metadata = rbin.section_bytes(2)?;
-    if metadata.len() > 4096 {
-        return Err(Error::input_rejected(
-            "T0072: parasitic metadata budget exceeded",
+    let bad_meta = |e: String| Error::input_rejected(format!("invalid PARASIT metadata: {e}"));
+    // `(corner, limits, section)` of every corner of the table.
+    let entries: Vec<(String, rusteda_formats::spef::Limits, u32)> = if rbin.format_version() == 1 {
+        let metadata = rbin.section_bytes(2)?;
+        if metadata.len() > 4096 {
+            return Err(Error::input_rejected(
+                "T0072: parasitic metadata budget exceeded",
+            ));
+        }
+        let meta: Metadata =
+            serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
+        vec![(meta.corner, meta.limits, 1)]
+    } else {
+        let metadata = rbin.section_bytes(1)?;
+        if metadata.len() > 64 * 4096 {
+            return Err(Error::input_rejected(
+                "T0072: parasitic metadata budget exceeded",
+            ));
+        }
+        let set: CornerSetMetadata =
+            serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
+        set.corners
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| (c.corner, c.limits, i as u32 + 2))
+            .collect()
+    };
+    let mut out = Vec::new();
+    for (corner, limits, section) in entries {
+        if !corners.is_empty() && !corners.contains(&corner) {
+            continue;
+        }
+        let source = std::str::from_utf8(rbin.section_bytes(section)?)
+            .map_err(|_| Error::input_rejected("SPEF table is not UTF-8"))?;
+        let data = rusteda_formats::spef::read(source, limits)
+            .map_err(|e| Error::input_rejected(e.to_string()))?;
+        out.push(std::sync::Arc::new(
+            ruststa::engine::delay::spef::ParasiticInput { corner, data },
         ));
     }
-    let meta: rusteda_formats::spef::Metadata = serde_json::from_slice(metadata)
-        .map_err(|e| Error::input_rejected(format!("invalid PARASIT metadata: {e}")))?;
-    let source = std::str::from_utf8(rbin.section_bytes(1)?)
-        .map_err(|_| Error::input_rejected("SPEF table is not UTF-8"))?;
-    let data = rusteda_formats::spef::read(source, meta.limits)
-        .map_err(|e| Error::input_rejected(e.to_string()))?;
-    Ok(Some(std::sync::Arc::new(
-        ruststa::engine::delay::spef::ParasiticInput {
-            corner: meta.corner,
-            data,
-        },
-    )))
+    Ok(out)
 }
 
 #[cfg(test)]

@@ -2,8 +2,9 @@
 
 **RCLI-REQ-0070**: `import --spef FILE --spef-corner NAME` requires a committed
   netlist (or one imported in the same transaction), a library for NAME, and the
-  usual exclusive lock and base revision. Store the immutable source in section 1
-  of a `PARASIT` v1 rbin and UTF-8 JSON `{corner, limits}` metadata in section 2.
+  usual exclusive lock and base revision. A `PARASIT` v1 rbin (written before
+  RCLI-REQ-0075) stores the immutable source in section 1 and UTF-8 JSON
+  `{corner, limits}` metadata in section 2; readers keep accepting it.
   Record source identity. The table depends on `netlist`; import invalidates
   `sta` and `sta_check` even when a previous timing table predates parasitics.
 **RCLI-REQ-0071**: The shared SPEF reader supports detailed D_NET, NAME_MAP,
@@ -24,8 +25,22 @@ CLI budgets: `--max-spef-mib`, `--max-rc-nets`, `--max-rc-nodes`,
 `--max-rc-elements`, `--max-rc-name-mib`. Missing SPEF never causes these budgets
 or extraction modes to be implicitly enabled. A timing consumer must bind the
 connections and check complete annotation; it must not replace missing RC with
-estimated/ideal wires. One extraction corner is supported per revision. A
-consumer asking for another corner must fail explicitly.
+estimated/ideal wires. A consumer asking for a corner without a source must
+fail explicitly.
+
+**RCLI-REQ-0075**: `--spef FILE --spef-corner NAME` is repeatable and pairs in
+  order; unequal counts, a corner given twice, more than 64 corners or a corner
+  without a library are rejected before anything is read. The `parasitics`
+  table is a `PARASIT` v2 rbin: section 1 is UTF-8 JSON `{corners: [{corner,
+  limits, source_path, source_hash}]}` in ascending corner order (at most
+  256 KiB), and section `i + 2` is the canonical decoded source of entry `i`.
+  The corners of the base revision's table (v1 or v2) whose netlist is the
+  netlist of the new revision are kept, an imported corner replaces its old
+  source, and the source identity of every corner is recorded. Metrics name
+  `spef_corners`, `spef_kept_corners` and per imported corner `spef_imported`
+  (nets, nodes, elements, compression, byte counts); a one-file import also
+  keeps the flat `spef_*` metrics. The import drops `sta`, `sta_check` and
+  `limits`.
 
 **RCLI-REQ-0073**: Accept plain UTF-8 and gzip SPEF, detected by magic bytes.
   Both encoded and decoded inputs obey `--max-spef-mib`; validate gzip CRC and

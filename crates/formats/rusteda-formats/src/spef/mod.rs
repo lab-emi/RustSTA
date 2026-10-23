@@ -248,5 +248,26 @@ pub struct Metadata {
     pub limits: Limits,
 }
 
+/// One corner of a PARASIT v2 container (RCLI-REQ-0075): its limits and the identity of the
+/// file it was imported from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CornerSource {
+    pub corner: String,
+    pub limits: Limits,
+    /// The source path as given at import.
+    pub source_path: String,
+    /// The hash of the source file, as the workspace writes source hashes.
+    pub source_hash: String,
+}
+
+/// Metadata of the PARASIT v2 container (section 1, RCLI-REQ-0075): the corners in ascending
+/// name order; the decoded source of entry `i` is section `i + 2`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CornerSetMetadata {
+    pub corners: Vec<CornerSource>,
+}
+
 #[cfg(test)]
 mod tests;

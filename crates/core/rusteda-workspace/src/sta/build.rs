@@ -402,8 +402,11 @@ impl StaTableBuilder {
             ("hold_wns_ns", json!(canon(hold_wns.unwrap_or(0.0)))),
             ("hold_tns_ns", json!(canon(hold_tns))),
             ("hold_violating_endpoints", json!(hold_viol)),
-            ("max_trans_violating", json!(0)),
-            ("max_cap_violating", json!(0)),
+            // The builder checks no design rule: its counts are unknown, not zero
+            // (WS-REQ-0137).
+            ("max_trans_violating", serde_json::Value::Null),
+            ("max_cap_violating", serde_json::Value::Null),
+            ("drv_status", json!("unchecked")),
             ("total_endpoints", json!(built.meta.num_endpoints)),
             ("unconstrained_endpoints", json!(0)),
             ("corners", json!(built.meta.num_corners)),

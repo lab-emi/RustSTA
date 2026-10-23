@@ -32,6 +32,9 @@ use crate::engine::incr::{NodeMapping, PriorAnalysis, into_owned_lowered, propag
 use crate::engine::input::constr::{CompiledConstraints, CornerLibs, ExceptionKind};
 use crate::engine::input::libview::TimingLib;
 use crate::engine::input::{NetTarget, NetlistView};
+use crate::engine::limits::{
+    CornerLimits, DEFAULT_MAX_LIMIT_ROWS, LimitInputs, check_corner_limits,
+};
 use crate::engine::prop::checks::evaluate_all_checks;
 use crate::engine::prop::clocks::ClockModel;
 use crate::engine::prop::clocks::ideal::IdealClockModel;
@@ -83,13 +86,17 @@ pub struct AnalysisOptions {
     pub precision: Precision,
     /// Wire-model selection policy.
     pub wire_model: WireModelOption,
-    /// Immutable extracted parasitics for one explicit corner (STA-REQ-0700).
-    pub parasitics: Option<Arc<ParasiticInput>>,
+    /// Immutable extracted parasitics, each bound to one named corner (STA-REQ-0700,
+    /// `STA-REQ-0820`). When it is not empty, every analyzed corner must have its own.
+    pub parasitics: Vec<Arc<ParasiticInput>>,
     /// Maximum number of propagation tags per corner (`DEFAULT_TAG_BUDGET` by default).
     pub tag_budget: usize,
     /// Maximum estimated bytes of the propagation state of one corner
     /// ([`DEFAULT_MAX_STATE_BYTES`] by default; `STA-REQ-0024`).
     pub max_state_bytes: u64,
+    /// Rows kept per corner and kind by the pin limit checks
+    /// ([`DEFAULT_MAX_LIMIT_ROWS`] by default; `STA-REQ-0810`).
+    pub max_limit_rows: usize,
 }
 
 /// Default limit of the propagation state of one corner: 16 GiB (`STA-REQ-0024`).
@@ -105,14 +112,36 @@ impl Default for AnalysisOptions {
             backend: BackendKind::Cpu,
             precision: Precision::F64,
             wire_model: WireModelOption::Auto,
-            parasitics: None,
+            parasitics: Vec::new(),
             tag_budget: DEFAULT_TAG_BUDGET,
             max_state_bytes: DEFAULT_MAX_STATE_BYTES,
+            max_limit_rows: DEFAULT_MAX_LIMIT_ROWS,
         }
     }
 }
 
 impl AnalysisOptions {
+    /// The extracted parasitics of `corner`: `None` without parasitics, an error `T0070` when the
+    /// parasitics are bound to other corners only (`STA-REQ-0820`).
+    pub fn parasitics_for(&self, corner: &str) -> Result<Option<&Arc<ParasiticInput>>, Diag> {
+        if self.parasitics.is_empty() {
+            return Ok(None);
+        }
+        if let Some(p) = self.parasitics.iter().find(|p| p.corner == corner) {
+            return Ok(Some(p));
+        }
+        let bound: Vec<&str> = self.parasitics.iter().map(|p| p.corner.as_str()).collect();
+        Err(Diag::error(
+            "T0070",
+            format!(
+                "SPEF corner {} does not annotate requested corner {corner}: every analyzed corner \
+                 needs its own extracted parasitics (import --spef FILE --spef-corner {corner}), \
+                 or select the annotated corners with --corner (STA-REQ-0820)",
+                bound.join(",")
+            ),
+        ))
+    }
+
     /// Returns default options with [`WireModelOption::Ideal`].
     #[must_use]
     pub fn ideal() -> Self {
@@ -200,6 +229,8 @@ pub struct CornerAnalysis {
     /// Count of unanalyzed library arcs across instantiated cells in this corner (`STA-REQ-0013`,
     /// `STA-REQ-0015`).
     pub unanalyzed_arcs: usize,
+    /// Pulse width, period and electrical design-rule checks of the corner (`STA-REQ-0806`).
+    pub limits: CornerLimits,
     /// Non-fatal diagnostics (warnings and notes) emitted while analyzing this corner.
     pub diags: Vec<Diag>,
 }
@@ -695,12 +726,13 @@ fn setup_corner<'l>(
     diags.extend(wl_diags);
 
     // 2. Compute per-net capacitive loads (`STA-REQ-0110`, `STA-REQ-0121`).
+    let corner_rc = options.parasitics_for(corner_name)?;
     let load_overrides = build_net_load_overrides(
         netview,
         constraints,
-        wire_model.is_ideal() || options.parasitics.is_some(),
+        wire_model.is_ideal() || corner_rc.is_some(),
     );
-    if let Some(input) = &options.parasitics {
+    if let Some(input) = corner_rc {
         if !constraints.driving_cells.is_empty() {
             return Err(Diag::error(
                 "T0077",
@@ -711,15 +743,6 @@ fn setup_corner<'l>(
             return Err(Diag::error(
                 "T0070",
                 "an explicit wire model cannot override extracted parasitics",
-            ));
-        }
-        if input.corner != corner_name {
-            return Err(Diag::error(
-                "T0070",
-                format!(
-                    "SPEF corner {} does not annotate requested corner {corner_name}",
-                    input.corner
-                ),
             ));
         }
         wire_model = ResolvedWireModel::Extracted(Spef::bind(
@@ -772,13 +795,8 @@ fn setup_corner<'l>(
                         .count() as u64
                     * 128,
             )
-            .saturating_add(
-                options
-                    .parasitics
-                    .as_ref()
-                    .map_or(0, |p| p.data.estimated_state_bytes()),
-            )
-            .saturating_add(if options.parasitics.is_some() {
+            .saturating_add(corner_rc.map_or(0, |p| p.data.estimated_state_bytes()))
+            .saturating_add(if corner_rc.is_some() {
                 graph.arcs().len() as u64 * 192
             } else {
                 0
@@ -986,6 +1004,22 @@ fn analyze_one_corner(
     diags.extend(unanalyzed_diags);
     net_loads.check_max_capacitance(netlist, &lib, &mut range_tracker);
     check_max_transitions(netview, &lib, &node_values, &mut range_tracker);
+    // Pulse widths, periods and design rules of the pins (`STA-REQ-0800` to `STA-REQ-0810`).
+    let limits = check_corner_limits(
+        &LimitInputs {
+            netview,
+            lib: &lib,
+            constraints,
+            clock_model: &clock_model,
+            tags: &tags,
+            node_values: &node_values,
+            net_loads: &net_loads,
+        },
+        options.max_limit_rows,
+        corner_id.index() == 0,
+        &mut range_tracker,
+        &mut diags,
+    );
     clock.finish();
 
     // 10. Discover clock-gating sites, evaluate all timing checks, and classify endpoints
@@ -1043,6 +1077,7 @@ fn analyze_one_corner(
         node_values,
         endpoints,
         unanalyzed_arcs,
+        limits,
         diags,
     })
 }

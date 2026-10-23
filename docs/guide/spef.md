@@ -18,8 +18,27 @@ ruststa check --workspace work --base-rev rev2 --method full --format json
 
 Use each returned revision for the next mutation. Plain `.spef` and gzip input
 are accepted. Gzip is detected by its bytes; CRC, truncation and decoded-size
-errors reject the import. `PARASIT v1` stores the canonical decoded source and
-its corner/budgets; source identity records the original input. `spef_compression`,
+errors reject the import. `PARASIT v2` stores the canonical decoded source of
+every corner with its budgets and source identity.
+
+Several corners take one extraction each. Pair `--spef` and `--spef-corner` in
+order; a later import adds or replaces corners and keeps the others while the
+netlist is unchanged. Each analyzed corner uses its own extraction, and a corner
+without one is an error (`T0070`):
+
+```sh
+rusteda import --workspace work --base-rev rev0 \
+  --lib tt.lib --corner tt --lib ss.lib --corner ss --lib ff.lib --corner ff \
+  --netlist routed.v --sdc timing.sdc \
+  --spef nom.spef --spef-corner tt --spef max.spef --spef-corner ss \
+  --spef min.spef --spef-corner ff --format json
+ruststa run --workspace work --base-rev rev1 --require-wire-model spef_rc \
+  --max-state-gib 1 --format json
+```
+
+`--require-wire-model spef_rc` rejects a revision that lost its parasitics, for
+example after a netlist-only import, instead of timing it with ideal wires
+(`T0135`). `spef_compression`,
 `spef_source_bytes` and `spef_decoded_bytes` describe the transport.
 
 ## Supported data

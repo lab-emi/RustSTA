@@ -390,14 +390,17 @@ fn counter_flow_and_envelope_key_order() {
             "unconstrained_inputs",
             "disabled_arcs",
             "unanalyzed_arcs",
+            "unchecked_pulse_width_pins",
+            "drv_unlimited",
         ]
     );
 
     let raw_met_start = raw_stdout.find("  \"metrics\": {").unwrap();
     let raw_met_end = raw_stdout[raw_met_start..].find("\n  },").unwrap() + raw_met_start;
+    let metric_keys = nested_object_keys(&raw_stdout[raw_met_start..raw_met_end], "    ");
     assert_eq!(
-        nested_object_keys(&raw_stdout[raw_met_start..raw_met_end], "    "),
-        vec![
+        metric_keys[..8],
+        [
             "wns_ns",
             "tns_ns",
             "violating_endpoints",
@@ -408,6 +411,8 @@ fn counter_flow_and_envelope_key_order() {
             "worst_hold_slack_ns",
         ]
     );
+    // The twelve pin limit metrics follow (STA-REQ-0807; their order: `tests/signoff_cli.rs`).
+    assert_eq!(metric_keys.len(), 20);
 
     let top_paths = env["top_paths"].as_array().expect("top_paths array");
     assert!(!top_paths.is_empty());

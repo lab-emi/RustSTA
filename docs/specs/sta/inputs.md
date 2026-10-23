@@ -48,9 +48,12 @@ monotone (STA-REQ-0153). Edge arcs (`rising_edge`, `falling_edge`) launch both o
 - asynchronous preset/clear arcs: `clear` and `preset` are retained in the library view and are not
   propagated as combinational data arcs (asynchronous controls are checked by `recovery_*` and
   `removal_*`, STA-REQ-0224);
-- unanalyzed arc kinds (`non_seq_setup_*`, `non_seq_hold_*`, `min_pulse_width`, `minimum_period`,
-  `skew_*`) are counted per instantiated cell in `completeness.unanalyzed_arcs` and reported as one
-  aggregated T warning per kind rather than per-library-cell notes.
+- pulse checks: `min_pulse_width` and `minimum_period` groups are the pulse checks of their pin
+  (STA-REQ-0800, STA-REQ-0801), not unanalyzed arcs;
+- unanalyzed arc kinds (`non_seq_setup_*`, `non_seq_hold_*`, `skew_*`, `nochange_*`,
+  `max_clock_tree_path`, `min_clock_tree_path`) are counted per instantiated cell in
+  `completeness.unanalyzed_arcs` and reported as one aggregated T warning per kind rather than
+  per-library-cell notes.
 
 **STA-REQ-0014** Lookup table axes and index overrides
 ([`tristate_bus`](../../../verification/analytic/sta/tristate_bus/DERIVATION.md)) [@liberty2017].

@@ -568,9 +568,18 @@ fn compile_all_five_synthetic_sdc_fixtures() {
         assert_eq!(c.current_design.as_deref(), Some("synth_top"));
         assert_eq!(c.drc_constraints.len(), 6);
         assert_eq!(c.synth_constraints.len(), 7);
-        let d0021_count = c.diags.iter().filter(|d| d.code == "D0021").count();
+        // STA-REQ-0805: the limit checks analyze set_max_transition, set_max_capacitance,
+        // set_max_fanout and set_fanout_load; set_min_capacitance and set_port_fanout_number stay
+        // recorded with `D0021`.
+        let d0021: Vec<_> = c.diags.iter().filter(|d| d.code == "D0021").collect();
         let d0020_count = c.diags.iter().filter(|d| d.code == "D0020").count();
-        assert_eq!(d0021_count, 6);
+        assert_eq!(d0021.len(), 2, "{d0021:?}");
+        assert!(
+            d0021
+                .iter()
+                .all(|d| d.message.contains("set_min_capacitance")
+                    || d.message.contains("set_port_fanout_number"))
+        );
         assert_eq!(d0020_count, 7);
     }
 }

@@ -16,6 +16,7 @@ recovery, removal, latch and clock-gating slacks of every timing endpoint, and t
 | Propagation lowering and backends | [lowering.md](lowering.md) |
 | Detailed SPEF parasitics and first-moment RC timing | [parasitics.md](parasitics.md) |
 | Explicit propagated primary clocks | [propagated-clock.md](propagated-clock.md) |
+| Pulse width, period and design-rule checks, parasitics per corner, hold-fix report | [limits.md](limits.md) |
 | Verification | [verification.md](verification.md) |
 | Superseded Phase 1 requirements (legacy engine, removed by Z1) | [legacy.md](legacy.md) |
 

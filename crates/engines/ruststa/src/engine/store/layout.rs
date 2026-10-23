@@ -858,7 +858,7 @@ pub struct NoteRec {
 const _: () = assert!(size_of::<NoteRec>() == 16);
 
 /// Scope and completeness metadata stored as canonical JSON in section 24 (`SCOPE`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ScopeReport {
     pub top: String,
     pub corners: Vec<String>,
@@ -870,6 +870,35 @@ pub struct ScopeReport {
     pub store_mode: StoreMode,
     pub exceptions_applied: Vec<String>,
     pub completeness: CompletenessReport,
+    /// The counts of the pin limit checks of each corner, in corner order; absent in a table
+    /// whose analysis did not check limits (`STA-REQ-0807`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<Vec<CornerLimitsReport>>,
+}
+
+/// The counts of the pin limit checks of one corner inside [`ScopeReport`] (`STA-REQ-0807`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CornerLimitsReport {
+    /// The corner.
+    pub corner: String,
+    /// Counts by check kind name (`max_transition`, `max_capacitance`, `max_fanout`,
+    /// `min_pulse_width_high`, `min_pulse_width_low`, `min_period`).
+    pub kinds: BTreeMap<String, LimitKindReport>,
+    /// Instance pins with pulse checks reached by no clock.
+    pub unclocked_pulse_pins: u64,
+}
+
+/// The counts of one check kind in one corner (`STA-REQ-0807`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LimitKindReport {
+    /// Checked rows.
+    pub checked: u64,
+    /// Rows with a negative slack.
+    pub violating: u64,
+    /// Values without a limit (design rules).
+    pub unlimited: u64,
+    /// The worst slack, absent without a checked row.
+    pub worst_slack_ns: Option<f64>,
 }
 
 /// Completeness breakdown inside [`ScopeReport`].

@@ -40,6 +40,29 @@ fn worst_early(grid: [[f64; 2]; 2]) -> Option<f64> {
     }
 }
 
+/// The required time of bound `an` (1: late, the setup required time; 0: early, the hold
+/// required time) at the transition of the worst slack of that bound, which is the required
+/// time of the worst path to the pin (`STA-REQ-0812`). Without a slack, the transition with a
+/// required time is used: rise first.
+pub(crate) fn required_at_worst(
+    required: [[f64; 2]; 2],
+    slack: [[f64; 2]; 2],
+    an: usize,
+) -> Option<f64> {
+    let mut best: Option<(f64, f64)> = None;
+    for tr in 0..2 {
+        let (s, r) = (slack[tr][an], required[tr][an]);
+        if !r.is_finite() {
+            continue;
+        }
+        let key = if s.is_finite() { s } else { f64::INFINITY };
+        if best.is_none_or(|(b, _)| key < b) {
+            best = Some((key, r));
+        }
+    }
+    best.map(|(_, r)| canon_f64(r))
+}
+
 fn format_inspected_node(n: &InspectedNode, num_port_bits: u32) -> Result<JsonObject, Error> {
     let mut worst_late_arr: Option<f64> = None;
     let mut worst_early_arr: Option<f64> = None;
@@ -52,8 +75,8 @@ fn format_inspected_node(n: &InspectedNode, num_port_bits: u32) -> Result<JsonOb
         }
     }
 
-    let setup_req = worst_early(n.required);
-    let hold_req = worst_late(n.required);
+    let setup_req = required_at_worst(n.required, n.slack, 1);
+    let hold_req = required_at_worst(n.required, n.slack, 0);
     let setup_slack = n.endpoint_setup_slack.and_then(finite_opt).or_else(|| {
         worst_early([
             [n.slack[0][1], n.slack[0][1]],
@@ -78,6 +101,7 @@ fn format_inspected_node(n: &InspectedNode, num_port_bits: u32) -> Result<JsonOb
     obj.insert("slew_late_ns", &worst_late(n.slew))?;
     obj.insert("slew_early_ns", &worst_early(n.slew))?;
     obj.insert("required_ns", &setup_req)?;
+    obj.insert("required_setup_ns", &setup_req)?;
     obj.insert("required_hold_ns", &hold_req)?;
     obj.insert("slack_ns", &setup_slack)?;
     obj.insert("hold_slack_ns", &hold_slack)?;
@@ -99,12 +123,25 @@ fn format_inspected_instance(
         p_obj.insert("arrival_early_ns", &worst_early(p.arrival))?;
         p_obj.insert("slew_late_ns", &worst_late(p.slew))?;
         p_obj.insert("slew_early_ns", &worst_early(p.slew))?;
-        p_obj.insert("required_ns", &worst_early(p.required))?;
+        let setup_req = required_at_worst(p.required, p.slack, 1);
+        p_obj.insert("required_ns", &setup_req)?;
+        p_obj.insert("required_setup_ns", &setup_req)?;
+        p_obj.insert(
+            "required_hold_ns",
+            &required_at_worst(p.required, p.slack, 0),
+        )?;
         p_obj.insert(
             "slack_ns",
             &worst_early([
                 [p.slack[0][1], p.slack[0][1]],
                 [p.slack[1][1], p.slack[1][1]],
+            ]),
+        )?;
+        p_obj.insert(
+            "hold_slack_ns",
+            &worst_early([
+                [p.slack[0][0], p.slack[0][0]],
+                [p.slack[1][0], p.slack[1][0]],
             ]),
         )?;
         pins_json.push(p_obj);

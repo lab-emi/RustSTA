@@ -24,8 +24,8 @@ pub(crate) struct ImportCommand {
     pub netlist: Option<PathBuf>,
     pub sdc_files: Vec<PathBuf>,
     pub sdc_env: Vec<String>,
-    pub spef: Option<PathBuf>,
-    pub spef_corner: Option<String>,
+    /// `(--spef, --spef-corner)` pairs in command-line order (RCLI-REQ-0075).
+    pub spefs: Vec<(PathBuf, String)>,
     pub spef_limits: rusteda_formats::spef::Limits,
 }
 
@@ -41,7 +41,7 @@ pub(crate) fn run_import(
         && cmd.rtl.is_none()
         && cmd.netlist.is_none()
         && cmd.sdc_files.is_empty()
-        && cmd.spef.is_none()
+        && cmd.spefs.is_empty()
     {
         let err = Error::usage(
             "import requires at least one of --lib, --rtl, --netlist, --sdc, or --spef",
@@ -85,13 +85,10 @@ pub(crate) fn run_import(
                 diags,
             )?;
         }
-        if let Some(path) = &cmd.spef {
-            crate::import_spef::import_spef(
+        if !cmd.spefs.is_empty() {
+            crate::import_spef::import_spefs(
                 &mut txn,
-                path,
-                cmd.spef_corner
-                    .as_deref()
-                    .ok_or_else(|| Error::usage("--spef requires --spef-corner"))?,
+                &cmd.spefs,
                 cmd.spef_limits,
                 &mut metrics,
                 diags,

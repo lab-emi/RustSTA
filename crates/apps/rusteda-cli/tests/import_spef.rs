@@ -182,9 +182,11 @@ fn compressed_sources_are_bounded_and_fail_atomically() {
     let ws = Workspace::open(&ws_path).unwrap();
     let a = ws.revision(ws.resolve_query("rev2").unwrap()).unwrap();
     let b = ws.revision(ws.resolve_query("rev3").unwrap()).unwrap();
-    let x = a.open_rbin("parasitics", "PARASIT", 1..=1).unwrap();
-    let y = b.open_rbin("parasitics", "PARASIT", 1..=1).unwrap();
-    assert_eq!(x.section_bytes(1).unwrap(), y.section_bytes(1).unwrap());
+    // PARASIT v2 (RCLI-REQ-0075): section 1 names the corners and their sources, section 2 holds
+    // the decoded source of the only corner, the same for the plain and the gzip file.
+    let x = a.open_rbin("parasitics", "PARASIT", 2..=2).unwrap();
+    let y = b.open_rbin("parasitics", "PARASIT", 2..=2).unwrap();
+    assert_eq!(x.section_bytes(2).unwrap(), y.section_bytes(2).unwrap());
     drop((x, y, a, b));
     let mut corrupt = gzip(source.as_bytes());
     let end = corrupt.len() - 8;
@@ -237,4 +239,156 @@ fn compressed_sources_are_bounded_and_fail_atomically() {
     }
     assert_eq!(run(&["show", "-w", w])["rev"], "rev3");
     fs::remove_dir_all(dir).unwrap();
+}
+
+// RCLI-REQ-0075: one import binds several SPEF files to named corners in a PARASIT v2 table; a
+// later import replaces its corners and keeps the others; flags pair in order; a netlist change
+// drops the table.
+#[test]
+fn several_corners_are_bound_kept_and_replaced() {
+    use rusteda_formats::spef::CornerSetMetadata;
+    let dir = std::env::temp_dir().join(format!("spef-corners-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let ws_path = dir.join("ws");
+    let w = ws_path.to_str().unwrap();
+    let lib = dir.join("cells.lib");
+    let net = dir.join("top.v");
+    fs::write(&lib, "library (l) { time_unit : \"1ns\"; capacitive_load_unit(1,pf); cell(BUF){pin(A){direction:input;}pin(Y){direction:output;function:\"A\";}}}").unwrap();
+    fs::write(
+        &net,
+        "module top(input a,output y);BUF u(.A(a),.Y(y));endmodule\n",
+    )
+    .unwrap();
+    let spef = |name: &str, res: u32| {
+        let p = dir.join(format!("{name}.spef"));
+        fs::write(&p, format!("*SPEF \"ieee 1481-1999\"\n*DESIGN top\n*DIVIDER /\n*DELIMITER :\n*BUS_DELIMITER []\n*T_UNIT 1 NS\n*C_UNIT 1 PF\n*R_UNIT 1 OHM\n*D_NET a 0\n*CONN\n*P a I\n*I u:A I\n*RES\n1 a u:A {res}\n*END\n")).unwrap();
+        p.to_str().unwrap().to_string()
+    };
+    let (fast, slow, fast2) = (spef("fast", 1), spef("slow", 3), spef("fast2", 2));
+    assert_eq!(run(&["init", "-w", w])["new_rev"], "rev0");
+    let l = lib.to_str().unwrap();
+    let r = run(&[
+        "import",
+        "-w",
+        w,
+        "--base-rev",
+        "rev0",
+        "--lib",
+        l,
+        "--corner",
+        "fast",
+        "--lib",
+        l,
+        "--corner",
+        "slow",
+        "--netlist",
+        net.to_str().unwrap(),
+    ]);
+    assert_eq!(r["new_rev"], "rev1", "{r}");
+    let corners = |rev: &str| -> (Vec<String>, Vec<Vec<u8>>) {
+        let ws = Workspace::open(&ws_path).unwrap();
+        let r = ws.revision(ws.resolve_query(rev).unwrap()).unwrap();
+        let t = r.open_rbin("parasitics", "PARASIT", 2..=2).unwrap();
+        let set: CornerSetMetadata = serde_json::from_slice(t.section_bytes(1).unwrap()).unwrap();
+        let names = set.corners.iter().map(|c| c.corner.clone()).collect();
+        let texts = (0..set.corners.len())
+            .map(|i| t.section_bytes(i as u32 + 2).unwrap().to_vec())
+            .collect();
+        (names, texts)
+    };
+    let both = run(&[
+        "import",
+        "-w",
+        w,
+        "--base-rev",
+        "rev1",
+        "--spef",
+        &slow,
+        "--spef-corner",
+        "slow",
+        "--spef",
+        &fast,
+        "--spef-corner",
+        "fast",
+    ]);
+    assert_eq!(both["ok"], true, "{both}");
+    assert_eq!(
+        both["metrics"]["spef_corners"],
+        serde_json::json!(["fast", "slow"])
+    );
+    let (names, texts) = corners("rev2");
+    assert_eq!(names, ["fast", "slow"]);
+    assert!(String::from_utf8_lossy(&texts[0]).contains("u:A 1"));
+    assert!(String::from_utf8_lossy(&texts[1]).contains("u:A 3"));
+    // The netlist and one source per corner.
+    assert_eq!(both["sources"].as_array().unwrap().len(), 3, "{both}");
+
+    let again = run(&[
+        "import",
+        "-w",
+        w,
+        "--base-rev",
+        "rev2",
+        "--spef",
+        &fast2,
+        "--spef-corner",
+        "fast",
+    ]);
+    assert_eq!(again["ok"], true, "{again}");
+    assert_eq!(
+        again["metrics"]["spef_kept_corners"],
+        serde_json::json!(["slow"])
+    );
+    let (names3, texts3) = corners("rev3");
+    assert_eq!(names3, ["fast", "slow"]);
+    assert!(String::from_utf8_lossy(&texts3[0]).contains("u:A 2"));
+    assert_eq!(texts3[1], texts[1], "the kept corner keeps its source");
+
+    for bad in [
+        vec![
+            "--spef",
+            fast.as_str(),
+            "--spef",
+            slow.as_str(),
+            "--spef-corner",
+            "fast",
+        ],
+        vec![
+            "--spef",
+            fast.as_str(),
+            "--spef-corner",
+            "fast",
+            "--spef",
+            slow.as_str(),
+            "--spef-corner",
+            "fast",
+        ],
+        vec!["--spef", fast.as_str(), "--spef-corner", "typ"],
+    ] {
+        let mut args = vec!["import", "-w", w, "--base-rev", "rev3"];
+        args.extend(bad.iter().copied());
+        let r = run(&args);
+        assert_eq!(r["ok"], false, "{args:?}: {r}");
+    }
+    assert_eq!(run(&["show", "-w", w])["rev"], "rev3");
+
+    // A changed netlist drops the parasitics of every corner.
+    fs::write(
+        &net,
+        "module top(input a,output y);wire n;BUF u(.A(a),.Y(n));BUF v(.A(n),.Y(y));endmodule\n",
+    )
+    .unwrap();
+    let eco = run(&[
+        "import",
+        "-w",
+        w,
+        "--base-rev",
+        "rev3",
+        "--netlist",
+        net.to_str().unwrap(),
+    ]);
+    assert_eq!(eco["ok"], true, "{eco}");
+    assert!(eco["tables"].get("parasitics").is_none(), "{eco}");
+    fs::remove_dir_all(&dir).unwrap();
 }

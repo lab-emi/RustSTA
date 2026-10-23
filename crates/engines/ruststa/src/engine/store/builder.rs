@@ -988,6 +988,7 @@ pub fn build_sta_store(
             disabled_arcs_by_reason: disabled_by_reason,
             unanalyzed_arcs_by_type: BTreeMap::new(),
         },
+        limits: None,
     };
     let scope_bytes = serde_json::to_vec(&scope_report).unwrap_or_else(|_| b"{}".to_vec());
 

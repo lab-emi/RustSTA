@@ -13,7 +13,16 @@ verification results. Use the [protocol](../specs/cli/protocol.md) as the exact 
 Timing results identify their operating corner, clock and wire models,
 parasitics, backend and precision. Endpoint completeness identifies constrained
 and unconstrained coverage. An unchecked DRC is `drc_status: "unchecked"`.
-It must not be reported as a zero-violation check.
+It must not be reported as a zero-violation check. The electrical design rules
+(`max_transition`, `max_capacitance`, `max_fanout`) and the pulse checks have
+their own status, `drv_status` and `pulse_width_status`, with counts; a table
+that did not check them reports `unchecked` with `null` counts.
+
+```bash
+ruststa report --workspace ./ws --rev rev2 --section limits --format json
+ruststa report --workspace ./ws --rev rev2 --section drv --filter violating --format json
+ruststa report --workspace ./ws --rev rev2 --section hold_fix --target-margin 0.05 --format json
+```
 
 ```bash
 ruststa report --workspace ./ws --rev rev2 --section summary --format json
