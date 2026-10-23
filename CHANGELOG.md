@@ -5,6 +5,52 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-23
+
+### Added
+- **Pin limit checks (`STA-REQ-0800` to `STA-REQ-0812`):** minimum pulse width (high and low) and
+  minimum period of every clock pin on the propagated or ideal clock waveform, with the latest
+  opening and earliest closing arrival, required widths from the `min_pulse_width` tables at the
+  opening transition time and the worst of conditional (`when`) groups; electrical design rules
+  `max_transition`, `max_capacitance` and `max_fanout` from library pin limits and defaults and
+  from `set_max_transition`, `set_max_capacitance`, `set_max_fanout` (design, port and clock-domain
+  slots) and `set_fanout_load`. Rows are kept in a bounded heap (`--max-limit-rows`), counts cover
+  every check.
+- **`limits` table:** `limits.rbin` (`LIMITS` v1) committed by `run` and `update` with `sta.rbin`;
+  `update --verify-full` and session verification compare it bit for bit.
+- **Report sections** `limits`, `pulse_width`, `min_period`, `drv`, `max_transition`,
+  `max_capacitance`, `max_fanout`, and the hold-fix report `hold_fix` with `--target-margin`:
+  every hold violator per corner with the needed delay, its driving net and the stages of its
+  worst hold path with nets and pin slack windows, plus a merged list over the corners
+  (`STA-REQ-0830` to `STA-REQ-0832`).
+- **Metrics and status:** `min_pulse_width_violating`, `min_period_violating`,
+  `max_transition_violating`, `max_capacitance_violating`, `max_fanout_violating`, their worst
+  slacks, `pulse_width_status`, `drv_status`, and the completeness counts
+  `unchecked_pulse_width_pins` and `drv_unlimited`, in `run`, `update`, queries and `whatif`.
+- **Extracted parasitics per corner (`STA-REQ-0820`, RCLI-REQ-0075):** `rusteda import` takes
+  repeatable `--spef FILE --spef-corner NAME` pairs into a `PARASIT` v2 table; later imports add or
+  replace corners; every analyzed corner uses its own extraction and a corner without one fails
+  with `T0070`.
+- **`--require-wire-model spef_rc|ideal|wireload_lumped`** on `run`, `update` and `whatif`
+  (`STA-REQ-0821`, `T0135`).
+
+### Changed
+- `min_pulse_width` and `minimum_period` groups are no longer counted as unanalyzed arcs.
+- The analyzed design-rule commands no longer carry `D0021`; the import-time `D0021` wording is
+  neutral about which analysis checks them.
+- The `sta` revision summary reports measured design-rule counts with `drv_status`; `rusteda show`
+  reports a summary without `drv_status` as `unchecked` with `null` counts (RCLI-REQ-0021), and
+  the shared table builder writes them so (WS-REQ-0137). The `sta` status gains `drv` and
+  `pulse_width`; `timing` also covers pulse width and period violations.
+
+### Fixed
+- `inspect`, its instance pins and the `pins` section reported the hold-side required time as
+  `required_ns` and the setup required time as `required_hold_ns`; they now give
+  `required_setup_ns` (and `required_ns`) and `required_hold_ns` at the worst slack's transition.
+- `report --kind setup|hold` now applies to the `endpoints` and `checks` sections.
+
+## [0.3.0] and earlier development previews
+
 ### Added
 - **RustEDA workspace and generic CLI (`rusteda-workspace`, `rusteda-cli`):**
   - Immutable, content-addressed disk workspace (`manifest.json`, `workspace.lock`, `history.jsonl`,
