@@ -1,0 +1,31 @@
+{
+  "case": "unclocked_ends",
+  "requirement": "STA-REQ-0264",
+  "circuit": "pd",
+  "expected": {
+    "max_ur": {
+      "ur": 0.74,
+      "urh": null
+    },
+    "min_ur": {
+      "ur": null,
+      "urh": -0.478
+    },
+    "max_ru": {
+      "ru": 0.281,
+      "ruh": null
+    },
+    "min_ru": {
+      "ru": null,
+      "ruh": 0.147
+    },
+    "max_uu": {
+      "uu": 0.8,
+      "uuh": null
+    },
+    "min_uu": {
+      "uu": null,
+      "uuh": -0.32
+    }
+  }
+}

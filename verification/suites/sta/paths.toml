@@ -1,0 +1,30 @@
+# Required times, per-pin slack, paths and handles verification suites (docs/specs/sta/checks.md).
+
+[[suite]]
+name = "sta-required-paths"
+requirement = [
+    "STA-REQ-0215",
+    "STA-REQ-0221",
+    "STA-REQ-0222",
+    "STA-REQ-0224",
+    "STA-REQ-0227",
+    "STA-REQ-0228",
+    "STA-REQ-0501",
+]
+test = "crates/engines/ruststa/tests/required_paths.rs"
+cases = "verification/analytic/sta"
+description = "Backward required-time propagation, per-pin setup/hold slack, latch transparency and relaunch, recovery/removal checks, duplicate-free k-worst paths, and setup-first PathHandle ranking"
+
+[[suite]]
+name = "sta-engine-properties"
+requirement = [
+    "STA-REQ-0215",
+    "STA-REQ-0227",
+    "STA-REQ-0228",
+    "STA-REQ-0502",
+    "STA-REQ-0503",
+    "STA-REQ-0504",
+]
+test = "crates/engines/ruststa/tests/properties.rs"
+cases = "verification/analytic/sta"
+description = "Exhaustive DAG path enumeration, metamorphic period/input-delay/permutation/thread-count invariants, and planted-defect detection on the timing engine"

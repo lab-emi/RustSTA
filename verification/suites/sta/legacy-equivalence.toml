@@ -1,0 +1,7 @@
+# Legacy known-answer equivalence verification suite (retired by Z1).
+
+[[suite]]
+name = "sta-known-answer"
+requirement = ["STA-REQ-0501"]
+test = "crates/apps/ruststa-cli/tests/sta_known_answer.rs"
+cases = "verification/analytic/sta"

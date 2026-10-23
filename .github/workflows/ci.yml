@@ -1,0 +1,73 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Line tables instead of full debug information and no incremental caches keep the build
+# directory of the test job small, well within the disk of a hosted runner.
+env:
+  CARGO_BUILD_JOBS: 2
+  RUST_TEST_THREADS: 2
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - name: Check repository within CPU resource budgets
+        run: |
+          free -h
+          ulimit -v 16777216
+          timeout 120s cargo fmt --all --check
+          timeout 900s cargo clippy --workspace --all-targets --all-features -- -D warnings
+          timeout 60s cargo xtask layout
+          timeout 60s cargo xtask coverage
+          test -z "$(git status --porcelain -- docs/verification/requirements.md)"
+          timeout 60s cargo xtask shared check
+          timeout 60s cargo xtask fixtures check
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - name: Test within CPU resource budgets
+        run: |
+          free -h
+          ulimit -v 16777216
+          /usr/bin/time -v timeout 900s cargo test --workspace
+          /usr/bin/time -v timeout 900s cargo xtask verify all
+  pdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: actions/cache@v4
+        with:
+          path: target/pdk
+          key: pdk-${{ hashFiles('verification/pdks.toml') }}
+      - name: Verify pinned PDK inputs within CPU resource budgets
+        run: |
+          free -h
+          ulimit -v 16777216
+          timeout 180s cargo xtask pdk fetch
+          /usr/bin/time -v timeout 900s cargo xtask verify pdk --profile pr --require
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+  reuse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@v5

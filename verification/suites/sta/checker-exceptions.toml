@@ -1,0 +1,36 @@
+# Independent workspace checker exception verification suite (docs/specs/sta/exceptions.md,
+# docs/specs/sta/verification.md).
+# Run with `cargo test -p ruststa-check --test exceptions`.
+
+[[suite]]
+name = "sta-checker-exceptions"
+requirement = [
+    "STA-REQ-0250",
+    "STA-REQ-0251",
+    "STA-REQ-0252",
+    "STA-REQ-0253",
+    "STA-REQ-0254",
+    "STA-REQ-0255",
+    "STA-REQ-0256",
+    "STA-REQ-0257",
+    "STA-REQ-0258",
+    "STA-REQ-0259",
+    "STA-REQ-0260",
+    "STA-REQ-0261",
+    "STA-REQ-0262",
+    "STA-REQ-0263",
+    "STA-REQ-0264",
+    "STA-REQ-0265",
+    "STA-REQ-0266",
+    "STA-REQ-0267",
+    "STA-REQ-0268",
+    "STA-REQ-0269",
+    "STA-REQ-0270",
+    "STA-REQ-0500",
+    "STA-REQ-0501",
+    "STA-REQ-0502",
+    "STA-REQ-0504",
+]
+test = "crates/verify/ruststa-check/tests/exceptions.rs"
+cases = "verification/analytic/sta-exceptions"
+description = "independent workspace checker timing exceptions: set_false_path, set_multicycle_path, set_max_delay, set_min_delay, set_clock_groups, specificity, tie-breaking, latch exceptions, unclocked ends, ignore_clock_latency, diagnostics, and planted exception defects"

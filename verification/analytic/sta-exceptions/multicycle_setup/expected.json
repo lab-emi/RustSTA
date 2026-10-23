@@ -1,0 +1,39 @@
+{
+  "case": "multicycle_setup",
+  "requirement": "STA-REQ-0260",
+  "circuit": "twoclk",
+  "expected": {
+    "twoclk41_ab_s3": {
+      "ab": 2.271,
+      "ba": 0.271
+    },
+    "twoclk41_ab_s3_start": {
+      "ab": 8.271,
+      "ba": 0.271
+    },
+    "twoclk41_ba_s3": {
+      "ab": 0.271,
+      "ba": 8.271
+    },
+    "twoclk41_ba_s3_start": {
+      "ab": 0.271,
+      "ba": 2.271
+    },
+    "twoclk32_ab_s3": {
+      "ab": 4.271,
+      "ba": 0.271
+    },
+    "twoclk32_ab_s3_start": {
+      "ab": 6.271,
+      "ba": 0.271
+    },
+    "twoclk32_ba_s3": {
+      "ab": 0.271,
+      "ba": 6.271
+    },
+    "twoclk32_ba_s3_start": {
+      "ab": 0.271,
+      "ba": 4.271
+    }
+  }
+}

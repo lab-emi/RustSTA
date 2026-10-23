@@ -1,0 +1,25 @@
+{
+  "case": "min_delay",
+  "requirement": "STA-REQ-0263",
+  "circuit": "pd",
+  "expected": {
+    "base": {
+      "rr": 1.221,
+      "rrh": 0.489,
+      "ro": 1.131,
+      "roh": 0.727
+    },
+    "min_rr": {
+      "rr": 1.221,
+      "rrh": -0.011,
+      "ro": 1.131,
+      "roh": 0.727
+    },
+    "min_ro": {
+      "rr": 1.221,
+      "rrh": 0.489,
+      "ro": 1.131,
+      "roh": 0.327
+    }
+  }
+}

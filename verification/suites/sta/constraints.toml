@@ -1,0 +1,18 @@
+# STA constraint compiler verification suites (docs/specs/sta/inputs.md).
+# Run with `cargo test -p ruststa --test constraints_compile --test legacy_constraints`.
+
+[[suite]]
+name = "sta-constraints-compile"
+requirement = [
+    "STA-REQ-0010", "STA-REQ-0020", "STA-REQ-0021", "STA-REQ-0150",
+    "STA-REQ-0212", "STA-REQ-0230", "STA-REQ-0231", "STA-REQ-0250",
+    "STA-REQ-0268", "STA-REQ-0270",
+]
+test = "crates/engines/ruststa/src/engine/input/constr/compile.rs"
+description = "compilation of SDC 2.1 Phase 2a commands, object queries, filters, assign net equivalence, inferred clock-gating enables, unit scaling, CONSTR v1 round trip and diagnostics (crates/engines/ruststa/tests/constraints_compile.rs)"
+
+[[suite]]
+name = "sta-legacy-constraints"
+requirement = ["STA-REQ-0010", "STA-REQ-0020", "STA-REQ-0021"]
+test = "crates/engines/ruststa/src/engine/input/constr/mod.rs"
+description = "parity of CompiledConstraints with legacy Constraints::from_sdc across synthetic STA fixtures and all 32 corpus netlists, plus virtual clocks and per-edge constraints (crates/engines/ruststa/tests/legacy_constraints.rs)"

@@ -1,0 +1,150 @@
+site_name: RustSTA
+site_description: Static timing analysis in Rust. Trace critical paths, query immutable results, and automate timing checks from your terminal or agent.
+site_url: https://lab-emi.github.io/RustSTA/
+repo_url: https://github.com/lab-emi/RustSTA
+repo_name: lab-emi/RustSTA
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; RustSTA contributors · Apache-2.0
+docs_dir: .
+site_dir: ../.work/docs-site
+exclude_docs: |
+  /mkdocs.yml
+  /requirements.in
+  /requirements.txt
+  /_tools/
+  /brand/requirements.txt
+strict: true
+hooks:
+  - _tools/site_hooks.py
+theme:
+  name: material
+  language: en
+  logo: assets/ruststa-logo.svg
+  favicon: assets/favicon.svg
+  font: false
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+plugins:
+  - search:
+      lang: en
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+extra_css:
+  - stylesheets/rusteda.css
+extra_javascript:
+  - javascripts/banner.js
+validation:
+  nav:
+    omitted_files: info
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+nav:
+  - Home: index.md
+  - Get started:
+      - Install from source: guide/installation.md
+      - Your first timing run: guide/quickstart.md
+  - Workflows:
+      - Analyze a design: guide/timing.md
+      - Automate with an agent: guide/agents.md
+      - Check timing results: guide/checking.md
+      - CPU and CUDA backends: guide/backends.md
+      - Performance and memory: guide/performance.md
+      - Troubleshooting: guide/troubleshooting.md
+  - Reference:
+      - Commands and exit codes: reference/cli.md
+      - Reports and artifacts: reference/reports.md
+      - Supported timing scope: reference/scope.md
+      - Detailed specifications:
+          - Static timing analysis: specs/sta/README.md
+          - Inputs and corners: specs/sta/inputs.md
+          - Delay and wire load: specs/sta/delay.md
+          - Constant propagation: specs/sta/constants.md
+          - Clocks and checks: specs/sta/checks.md
+          - Timing exceptions: specs/sta/exceptions.md
+          - Legacy timing conventions: specs/sta/legacy.md
+          - Compute lowering: specs/sta/lowering.md
+          - Binary timing store: specs/sta/store.md
+          - Incremental timing: specs/sta/incremental.md
+          - Timing CLI: specs/sta/cli.md
+          - CLI protocol: specs/cli/README.md
+          - JSON and handles: specs/cli/protocol.md
+          - Tables and filtering: specs/cli/tables.md
+          - Workspace: specs/workspace/README.md
+          - Netlist storage: specs/workspace/netlist.md
+          - Library storage: specs/workspace/rlib.md
+          - Shared timing reader: specs/workspace/sta.md
+          - RustEDA CLI: specs/rusteda-cli/README.md
+          - Core structures: specs/core/README.md
+          - Netlist model: specs/core/netlist.md
+          - Compute backends: specs/compute/README.md
+          - Timing propagation: specs/compute/timing.md
+          - Compute decisions: specs/compute/decisions.md
+          - Verilog: specs/verilog/verilog.md
+          - Structural Verilog: specs/verilog/netlist.md
+          - Liberty: specs/liberty/liberty.md
+          - SDC: specs/sdc/sdc.md
+  - Evidence:
+      - Verification scope: verification/index.md
+      - Dual-PDK verification: verification/pdk.md
+      - Timing verification specification: specs/sta/verification.md
+      - Requirements and evidence: verification/requirements.md
+  - Project:
+      - Architecture: architecture/index.md
+      - Contribute: contributing.md
+      - RustEDA visual identity: brand/README.md
+      - Maintain this site: about/maintaining-docs.md
+      - Roadmap: roadmap.md
+      - Engineering decisions:
+          - Native GPU runtimes: adr/0001-gpu-runtimes-and-native-cuda.md
+          - Frontends: adr/0002-front-ends.md
+          - Timing conventions: adr/0004-timing-conventions.md
+          - SDC layer: adr/0005-sdc-layer.md
+          - Timing result store: adr/0007-sta-store.md
+          - CLI and workspace: adr/0008-cli-on-workspace.md
+      - Extended user manuals:
+          - Timing manual: user/sta/README.md
+          - CLI manual: user/cli/README.md

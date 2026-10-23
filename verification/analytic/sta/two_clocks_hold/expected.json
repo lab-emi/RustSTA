@@ -1,0 +1,26 @@
+{
+  "off": {
+    "D_h": -0.5,
+    "D_s": 0.5,
+    "legacy D_h": -1.5,
+    "legacy r2/D hold": 2.009,
+    "r2/D hold": 1.009,
+    "r2/D setup": -0.229
+  },
+  "p23": {
+    "D_h": 0.0,
+    "D_s": 1.0,
+    "legacy D_h": -2.0,
+    "legacy r2/D hold": 2.509,
+    "r2/D hold": 0.509,
+    "r2/D setup": 0.271
+  },
+  "p32": {
+    "D_h": 0.0,
+    "D_s": 1.0,
+    "legacy D_h": -1.0,
+    "legacy r2/D hold": 1.509,
+    "r2/D hold": 0.509,
+    "r2/D setup": 0.271
+  }
+}

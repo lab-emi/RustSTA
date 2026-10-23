@@ -1,0 +1,83 @@
+module zero_repl(
+  input wire clk,
+  input wire set,
+  input wire [7:0] a,
+  output wire [7:0] q,
+  output wire [11:0] y
+);
+  wire \mask_q[0] ;
+  wire \mask_q[1] ;
+  wire \mask_q[2] ;
+  wire \mask_q[3] ;
+  wire \mask_q[4] ;
+  wire \mask_q[5] ;
+  wire \mask_q[6] ;
+  wire \mask_q[7] ;
+  wire n0;
+  wire n1;
+  wire n2;
+  wire n3;
+  wire n4;
+  wire n5;
+  wire n6;
+  wire n7;
+  wire n8;
+  wire n9;
+  wire n10;
+  wire n11;
+  wire n12;
+  wire n13;
+  wire n14;
+  wire n15;
+  wire n16;
+  wire n17;
+  wire n18;
+  wire n19;
+  wtf_nor2_4 g0 (.A(a[0]), .B(n17), .Y(n0));
+  wtf_nor2b_4 g1 (.A(\mask_q[0] ), .B_N(a[0]), .Y(n1));
+  wtf_nor3_4 g2 (.A(set), .B(n0), .C(n1), .Y(n2));
+  wtf_xor2_4 g3 (.A(a[1]), .B(\mask_q[1] ), .X(n3));
+  wtf_mux2i_4 g4 (.A0(n3), .A1(\mask_q[0] ), .S(set), .Y(n4));
+  wtf_xor2_4 g5 (.A(a[2]), .B(\mask_q[2] ), .X(n5));
+  wtf_mux2i_4 g6 (.A0(n5), .A1(\mask_q[1] ), .S(set), .Y(n6));
+  wtf_xor2_4 g7 (.A(a[3]), .B(\mask_q[3] ), .X(n7));
+  wtf_mux2i_4 g8 (.A0(n7), .A1(\mask_q[2] ), .S(set), .Y(n8));
+  wtf_xor2_4 g9 (.A(a[4]), .B(\mask_q[4] ), .X(n9));
+  wtf_mux2i_4 g10 (.A0(n9), .A1(\mask_q[3] ), .S(set), .Y(n10));
+  wtf_xor2_4 g11 (.A(a[5]), .B(\mask_q[5] ), .X(n11));
+  wtf_mux2i_4 g12 (.A0(n11), .A1(\mask_q[4] ), .S(set), .Y(n12));
+  wtf_xor2_4 g13 (.A(a[6]), .B(\mask_q[6] ), .X(n13));
+  wtf_mux2i_4 g14 (.A0(n13), .A1(\mask_q[5] ), .S(set), .Y(n14));
+  wtf_xor2_4 g15 (.A(a[7]), .B(\mask_q[7] ), .X(n15));
+  wtf_mux2i_4 g16 (.A0(n15), .A1(\mask_q[6] ), .S(set), .Y(n16));
+  wtf_dff_1 r0 (.D(n2), .CLK(clk), .Q(n17), .Q_N(\mask_q[0] ));
+  wtf_dff_1 r1 (.D(n4), .CLK(clk), .Q_N(\mask_q[1] ));
+  wtf_dff_1 r2 (.D(n6), .CLK(clk), .Q_N(\mask_q[2] ));
+  wtf_dff_1 r3 (.D(n8), .CLK(clk), .Q_N(\mask_q[3] ));
+  wtf_dff_1 r4 (.D(n10), .CLK(clk), .Q_N(\mask_q[4] ));
+  wtf_dff_1 r5 (.D(n12), .CLK(clk), .Q_N(\mask_q[5] ));
+  wtf_dff_1 r6 (.D(n14), .CLK(clk), .Q_N(\mask_q[6] ));
+  wtf_dff_1 r7 (.D(n16), .CLK(clk), .Q_N(\mask_q[7] ));
+  wtf_tielo t0 (.L_LO(n18));
+  wtf_tiehi t1 (.L_HI(n19));
+  assign q[0] = \mask_q[0] ;
+  assign q[1] = \mask_q[1] ;
+  assign q[2] = \mask_q[2] ;
+  assign q[3] = \mask_q[3] ;
+  assign q[4] = \mask_q[4] ;
+  assign q[5] = \mask_q[5] ;
+  assign q[6] = \mask_q[6] ;
+  assign q[7] = \mask_q[7] ;
+  assign y[0] = n18;
+  assign y[1] = n19;
+  assign y[2] = n18;
+  assign y[3] = n19;
+  assign y[4] = a[0];
+  assign y[5] = a[1];
+  assign y[6] = a[2];
+  assign y[7] = a[3];
+  assign y[8] = a[4];
+  assign y[9] = a[5];
+  assign y[10] = a[6];
+  assign y[11] = a[7];
+endmodule

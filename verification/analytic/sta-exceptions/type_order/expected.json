@@ -1,0 +1,31 @@
+{
+  "case": "type_order",
+  "requirement": "STA-REQ-0256",
+  "circuit": "reconv",
+  "expected": {
+    "p_fp_over_maxd": {
+      "s1": null,
+      "h1": null,
+      "s2": null,
+      "h2": null
+    },
+    "p_maxd_over_mcp": {
+      "s1": 0.337,
+      "h1": -1.0948,
+      "s2": 0.771,
+      "h2": 0.509
+    },
+    "p_mind_over_mcp": {
+      "s1": 0.837,
+      "h1": 0.1052,
+      "s2": 1.271,
+      "h2": -0.291
+    },
+    "p_fps_mcp": {
+      "s1": null,
+      "h1": -1.0948,
+      "s2": 1.271,
+      "h2": 0.509
+    }
+  }
+}

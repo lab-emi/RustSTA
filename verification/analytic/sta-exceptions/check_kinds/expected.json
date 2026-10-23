@@ -1,0 +1,35 @@
+{
+  "case": "check_kinds",
+  "requirement": "STA-REQ-0268",
+  "circuit": "gate, pd",
+  "expected": {
+    "gate_base": {
+      "sg": 1.371,
+      "hg": -0.441,
+      "s02": 1.271,
+      "h02": 0.509
+    },
+    "gate_fp_to_gB": {
+      "sg": null,
+      "hg": null,
+      "s02": 1.271,
+      "h02": 0.509
+    },
+    "gate_mcp2_to_gB": {
+      "sg": 3.371,
+      "hg": -2.441,
+      "s02": 1.271,
+      "h02": 0.509
+    },
+    "gate_maxd_to_gB": {
+      "sg": -0.129,
+      "hg": -0.441,
+      "s02": 1.271,
+      "h02": 0.509
+    },
+    "pd_mcp2_out1": {
+      "ro": 3.131,
+      "roh": -1.273
+    }
+  }
+}

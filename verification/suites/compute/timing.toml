@@ -1,0 +1,27 @@
+# Compute timing task verification suites (docs/specs/compute/timing.md).
+# Run the CPU suites with `cargo test -p rusteda-compute` and the GPU suites with
+# `cargo test -p rusteda-compute --features cuda -- --include-ignored`.
+
+[[suite]]
+name = "compute-timing-known"
+requirement = ["COMPUTE-REQ-0012", "COMPUTE-REQ-0014", "COMPUTE-REQ-0015", "COMPUTE-REQ-0016", "COMPUTE-REQ-0017", "COMPUTE-REQ-0018"]
+test = "crates/core/rusteda-compute/src/timing/tests/known.rs"
+description = "hand-derived values of small problems with linear tables and dyadic inputs"
+
+[[suite]]
+name = "compute-timing-cpu"
+requirement = ["COMPUTE-REQ-0010", "COMPUTE-REQ-0011", "COMPUTE-REQ-0014", "COMPUTE-REQ-0016", "COMPUTE-REQ-0017", "COMPUTE-REQ-0018", "COMPUTE-REQ-0019", "COMPUTE-REQ-0020", "COMPUTE-REQ-0021", "COMPUTE-REQ-0022", "COMPUTE-REQ-0023", "COMPUTE-REQ-0024", "COMPUTE-REQ-0026", "COMPUTE-REQ-0027"]
+test = "crates/core/rusteda-compute/src/timing/tests/cpu.rs"
+description = "CPU backend against literal evaluator, thread counts 1/3/8/32, cones, patches, readback, cancellation and statistics"
+
+[[suite]]
+name = "compute-timing-checks"
+requirement = ["COMPUTE-REQ-0011", "COMPUTE-REQ-0012", "COMPUTE-REQ-0013", "COMPUTE-REQ-0014", "COMPUTE-REQ-0015", "COMPUTE-REQ-0020"]
+test = "crates/core/rusteda-compute/src/timing/tests/checks.rs"
+description = "validation of every corruption of a timing problem"
+
+[[suite]]
+name = "compute-timing-gpu"
+requirement = ["COMPUTE-REQ-0019", "COMPUTE-REQ-0021", "COMPUTE-REQ-0022", "COMPUTE-REQ-0023", "COMPUTE-REQ-0024", "COMPUTE-REQ-0028", "COMPUTE-REQ-0029"]
+test = "crates/core/rusteda-compute/src/timing/tests/gpu.rs"
+description = "CUDA f64 bitwise identity with CPU on >= 100 random problems, f32 within decision-1 envelope, cones, readback and prewarm"

@@ -1,0 +1,7 @@
+# Legacy delay verification suite (retired by Z1).
+
+[[suite]]
+name = "sta-legacy-delay"
+requirement = ["STA-REQ-0110"]
+test = "crates/engines/ruststa/src/model.rs"
+description = "legacy NLDM table interpolation and pin capacitance lookup"

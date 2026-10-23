@@ -1,0 +1,30 @@
+# Timing exceptions and clock groups verification suite (docs/specs/sta/exceptions.md).
+# Run with `cargo test -p ruststa --test exceptions`.
+
+[[suite]]
+name = "sta-exceptions"
+requirement = [
+    "STA-REQ-0250",
+    "STA-REQ-0251",
+    "STA-REQ-0252",
+    "STA-REQ-0253",
+    "STA-REQ-0255",
+    "STA-REQ-0256",
+    "STA-REQ-0257",
+    "STA-REQ-0258",
+    "STA-REQ-0259",
+    "STA-REQ-0260",
+    "STA-REQ-0261",
+    "STA-REQ-0262",
+    "STA-REQ-0263",
+    "STA-REQ-0264",
+    "STA-REQ-0265",
+    "STA-REQ-0266",
+    "STA-REQ-0267",
+    "STA-REQ-0268",
+    "STA-REQ-0269",
+    "STA-REQ-0270",
+]
+test = "crates/engines/ruststa/tests/exceptions.rs"
+cases = "verification/analytic/sta-exceptions"
+description = "Phase 2a timing exceptions (-from/-to with rise_/fall_ qualifiers, -setup/-hold, precedence and specificity, multicycle setup/hold shifts, max/min delay with unclocked ends and -ignore_clock_latency, clock groups, latch borrowing under exceptions, clock-gating checks, node state budget T0060, and D0102/D0110/D0111/D0112/D0113/D0114 diagnostics and scope counts)"

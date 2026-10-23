@@ -1,0 +1,14 @@
+{
+  "base": {
+    "RN rise": 1.063,
+    "f1/D hold": 0.15,
+    "f1/D setup": 0.7,
+    "f1/RN recovery": -0.183,
+    "f1/RN removal": 1.003,
+    "q hold": 0.65,
+    "q setup": 0.3,
+    "r0/D hold": 0.15,
+    "r0/D setup": 0.7,
+    "setup WNS": -0.183
+  }
+}

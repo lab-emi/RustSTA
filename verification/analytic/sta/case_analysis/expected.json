@@ -1,0 +1,17 @@
+{
+  "case1": {
+    "f/D hold": 0.6615,
+    "f/D setup": 1.1843
+  },
+  "case1dis": {
+    "f/D": "no arrival"
+  },
+  "live": {
+    "f/D hold": 0.352,
+    "f/D setup": 1.1843
+  },
+  "logic0": {
+    "f/D hold": 0.509,
+    "f/D setup": 1.271
+  }
+}

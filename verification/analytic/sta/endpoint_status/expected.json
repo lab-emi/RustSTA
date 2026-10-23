@@ -1,0 +1,16 @@
+{
+  "base": {
+    "r1/D hold": 0.15,
+    "r1/D setup": 1.7,
+    "r2/D hold": 0.533,
+    "r2/D setup": 1.251,
+    "r6/D hold": 0.533,
+    "r6/D setup": 1.251,
+    "r6/RN recovery": 1.68,
+    "r6/RN removal": 0.14,
+    "worst hold": 0.14,
+    "worst setup": 1.251,
+    "y hold": 0.65,
+    "y setup": 1.3
+  }
+}

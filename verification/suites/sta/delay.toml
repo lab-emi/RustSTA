@@ -1,0 +1,25 @@
+# Library view and NLDM delay calculation verification suite (docs/specs/sta/inputs.md,
+# docs/specs/sta/delay.md).
+
+[[suite]]
+name = "sta-delay"
+requirement = [
+    "STA-REQ-0010",
+    "STA-REQ-0012",
+    "STA-REQ-0013",
+    "STA-REQ-0014",
+    "STA-REQ-0015",
+    "STA-REQ-0016",
+    "STA-REQ-0108",
+    "STA-REQ-0109",
+    "STA-REQ-0110",
+    "STA-REQ-0111",
+    "STA-REQ-0112",
+    "STA-REQ-0113",
+    "STA-REQ-0114",
+    "STA-REQ-0120",
+    "STA-REQ-0121",
+]
+test = "crates/engines/ruststa/tests/delay_calc.rs"
+cases = "verification/analytic/sta"
+description = "Liberty corner library view, thresholds, 1D/2D/3D NLDM interpolation, slew clamping, driver output-pin capacitance, three-state enable/disable arcs, and per-pin slew propagation"

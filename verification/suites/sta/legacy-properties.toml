@@ -1,0 +1,7 @@
+# Legacy property verification suite (retired by Z1).
+
+[[suite]]
+name = "sta-properties"
+requirement = ["STA-REQ-0502", "STA-REQ-0503", "STA-REQ-0504"]
+test = "crates/apps/ruststa-cli/tests/sta_properties.rs"
+description = "exhaustive path enumeration, metamorphic properties and planted defects on random circuits"

@@ -1,0 +1,12 @@
+{
+  "base": {
+    "C n2": 0.024,
+    "n2 fall": 0.5758,
+    "n2 rise": 0.643,
+    "n2 slew fall": 0.0764,
+    "n2 slew rise": 0.084,
+    "r2/D hold": 0.66108,
+    "r2/D setup": 1.1494,
+    "without driver cap setup": 1.154
+  }
+}

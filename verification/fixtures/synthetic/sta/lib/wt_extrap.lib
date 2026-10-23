@@ -1,0 +1,513 @@
+library (wt_extrap) {
+  delay_model : table_lookup;
+  time_unit : "1ns";
+  voltage_unit : "1V";
+  current_unit : "1mA";
+  pulling_resistance_unit : "1kohm";
+  leakage_power_unit : "1nW";
+  capacitive_load_unit (1, pf);
+  lu_table_template (lut_2x2) {
+    variable_1 : input_net_transition;
+    variable_2 : total_output_net_capacitance;
+    index_1 ("0.1000, 0.2000");
+    index_2 ("0.0100, 0.0200");
+  }
+  lu_table_template (chk_2x2) {
+    variable_1 : constrained_pin_transition;
+    variable_2 : related_pin_transition;
+    index_1 ("0.1000, 0.2000");
+    index_2 ("0.1000, 0.2000");
+  }
+  cell (wt_inv_1) {
+    area : 1.0;
+    pin (A) { direction : input; capacitance : 0.0100; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "!A";
+      timing () {
+        related_pin : "A";
+        timing_sense : negative_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_buf_1) {
+    area : 1.5;
+    pin (A) { direction : input; capacitance : 0.0100; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "A";
+      timing () {
+        related_pin : "A";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_buf_2) {
+    area : 2.5;
+    pin (A) { direction : input; capacitance : 0.0150; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "A";
+      timing () {
+        related_pin : "A";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0300, 0.0700", "0.1300, 0.1700"); }
+        cell_fall (lut_2x2) { values ("0.0300, 0.0700", "0.1300, 0.1700"); }
+        rise_transition (lut_2x2) { values ("0.0250, 0.0550", "0.2250, 0.2550"); }
+        fall_transition (lut_2x2) { values ("0.0250, 0.0550", "0.2250, 0.2550"); }
+      }
+    }
+  }
+  cell (wt_and2_1) {
+    area : 2.0;
+    pin (A) { direction : input; capacitance : 0.0100; }
+    pin (B) { direction : input; capacitance : 0.0100; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "A & B";
+      timing () {
+        related_pin : "A";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "B";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_or2_1) {
+    area : 2.0;
+    pin (A) { direction : input; capacitance : 0.0100; }
+    pin (B) { direction : input; capacitance : 0.0100; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "A | B";
+      timing () {
+        related_pin : "A";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "B";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_nand2_1) {
+    area : 1.5;
+    pin (A) { direction : input; capacitance : 0.0100; }
+    pin (B) { direction : input; capacitance : 0.0100; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "!(A & B)";
+      timing () {
+        related_pin : "A";
+        timing_sense : negative_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "B";
+        timing_sense : negative_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_nor2_1) {
+    area : 1.5;
+    pin (A) { direction : input; capacitance : 0.0100; }
+    pin (B) { direction : input; capacitance : 0.0100; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "!(A | B)";
+      timing () {
+        related_pin : "A";
+        timing_sense : negative_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "B";
+        timing_sense : negative_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_xor2_1) {
+    area : 3.0;
+    pin (A) { direction : input; capacitance : 0.0100; }
+    pin (B) { direction : input; capacitance : 0.0100; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "A ^ B";
+      timing () {
+        related_pin : "A";
+        timing_sense : non_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "B";
+        timing_sense : non_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_mux2_1) {
+    area : 3.5;
+    pin (A) { direction : input; capacitance : 0.0100; }
+    pin (B) { direction : input; capacitance : 0.0100; }
+    pin (S) { direction : input; capacitance : 0.0100; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "(A & !S) | (B & S)";
+      timing () {
+        related_pin : "A";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "B";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "S";
+        timing_sense : non_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_dff_p) {
+    area : 5.0;
+    ff (IQ, IQN) { clocked_on : "CLK"; next_state : "D"; }
+    pin (CLK) { direction : input; clock : true; capacitance : 0.0100; }
+    pin (D) {
+      direction : input;
+      capacitance : 0.0100;
+      timing () {
+        related_pin : "CLK";
+        timing_type : setup_rising;
+        rise_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+        fall_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+      }
+      timing () {
+        related_pin : "CLK";
+        timing_type : hold_rising;
+        rise_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+        fall_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+      }
+    }
+    pin (Q) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "IQ";
+      timing () {
+        related_pin : "CLK";
+        timing_sense : non_unate;
+        timing_type : rising_edge;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_dffr_n) {
+    area : 5.5;
+    ff (IQ, IQN) { clocked_on : "!CLK"; next_state : "D"; clear : "!RST_N"; }
+    pin (CLK) { direction : input; clock : true; capacitance : 0.0100; }
+    pin (D) {
+      direction : input;
+      capacitance : 0.0100;
+      timing () {
+        related_pin : "CLK";
+        timing_type : setup_falling;
+        rise_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+        fall_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+      }
+      timing () {
+        related_pin : "CLK";
+        timing_type : hold_falling;
+        rise_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+        fall_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+      }
+    }
+    pin (RST_N) {
+      direction : input;
+      capacitance : 0.0100;
+      timing () {
+        related_pin : "CLK";
+        timing_type : recovery_falling;
+        rise_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+      }
+      timing () {
+        related_pin : "CLK";
+        timing_type : removal_falling;
+        rise_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+      }
+    }
+    pin (Q) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "IQ";
+      timing () {
+        related_pin : "CLK";
+        timing_sense : non_unate;
+        timing_type : falling_edge;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "RST_N";
+        timing_sense : positive_unate;
+        timing_type : clear;
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_dlatch_p) {
+    area : 4.0;
+    latch (IQ, IQN) { enable : "G"; data_in : "D"; }
+    pin (G) { direction : input; capacitance : 0.0100; }
+    pin (D) {
+      direction : input;
+      capacitance : 0.0100;
+      timing () {
+        related_pin : "G";
+        timing_type : setup_falling;
+        rise_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+        fall_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+      }
+      timing () {
+        related_pin : "G";
+        timing_type : hold_falling;
+        rise_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+        fall_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+      }
+    }
+    pin (Q) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "IQ";
+      timing () {
+        related_pin : "D";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "G";
+        timing_sense : non_unate;
+        timing_type : rising_edge;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_dlatch_n) {
+    area : 4.0;
+    latch (IQ, IQN) { enable : "!GN"; data_in : "D"; }
+    pin (GN) { direction : input; capacitance : 0.0100; }
+    pin (D) {
+      direction : input;
+      capacitance : 0.0100;
+      timing () {
+        related_pin : "GN";
+        timing_type : setup_rising;
+        rise_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+        fall_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+      }
+      timing () {
+        related_pin : "GN";
+        timing_type : hold_rising;
+        rise_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+        fall_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+      }
+    }
+    pin (Q) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "IQ";
+      timing () {
+        related_pin : "D";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "GN";
+        timing_sense : non_unate;
+        timing_type : falling_edge;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_icg_p) {
+    area : 4.5;
+    clock_gating_integrated_cell : "latch_posedge";
+    pin (CLK) { direction : input; clock : true; capacitance : 0.0100; }
+    pin (EN) {
+      direction : input;
+      capacitance : 0.0100;
+      timing () {
+        related_pin : "CLK";
+        timing_type : setup_rising;
+        rise_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+        fall_constraint (chk_2x2) { values ("0.0400, 0.0400", "0.0400, 0.0400"); }
+      }
+      timing () {
+        related_pin : "CLK";
+        timing_type : hold_rising;
+        rise_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+        fall_constraint (chk_2x2) { values ("0.0200, 0.0200", "0.0200, 0.0200"); }
+      }
+    }
+    pin (GCLK) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "CLK & EN";
+      timing () {
+        related_pin : "CLK";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_tbuf_1) {
+    area : 2.5;
+    pin (A) { direction : input; capacitance : 0.0100; }
+    pin (OE) { direction : input; capacitance : 0.0100; }
+    pin (Y) {
+      direction : output;
+      capacitance : 0.0000;
+      function : "A";
+      three_state : "!OE";
+      timing () {
+        related_pin : "A";
+        timing_sense : positive_unate;
+        timing_type : combinational;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "OE";
+        timing_sense : positive_unate;
+        timing_type : three_state_enable;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+      timing () {
+        related_pin : "OE";
+        timing_sense : negative_unate;
+        timing_type : three_state_disable;
+        cell_rise (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        cell_fall (lut_2x2) { values ("0.0500, 0.1300", "0.1500, 0.2300"); }
+        rise_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+        fall_transition (lut_2x2) { values ("0.0400, 0.1000", "0.2400, 0.3000"); }
+      }
+    }
+  }
+  cell (wt_tiehi) {
+    area : 0.5;
+    pin (Y) { direction : output; capacitance : 0.0000; function : "1"; }
+  }
+  cell (wt_tielo) {
+    area : 0.5;
+    pin (Y) { direction : output; capacitance : 0.0000; function : "0"; }
+  }
+}

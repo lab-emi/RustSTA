@@ -1,0 +1,30 @@
+{
+  "base": {
+    "d start early": 0.8,
+    "d start late": 1.0,
+    "f drive delay fall": 0.012,
+    "f drive delay rise": 0.01,
+    "f slew fall": 0.061,
+    "f slew rise": 0.07,
+    "p hold": 0.75,
+    "p setup": 0.8,
+    "q hold": 0.55,
+    "q setup": 1.0,
+    "r1/D hold": 0.442,
+    "r1/D setup": 0.99,
+    "r2/D hold": 0.342,
+    "r2/D setup": 1.29,
+    "r3/D hold": 0.4601,
+    "r3/D setup": 0.973
+  },
+  "rf": {
+    "p hold": 0.75,
+    "p setup": 1.2,
+    "q hold": 1.85,
+    "q setup": 0.1,
+    "r1/D hold": 1.542,
+    "r1/D setup": 0.29,
+    "r2/D hold": 0.642,
+    "r2/D setup": 1.19
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "base": {
+    "A0 fall": 0.559,
+    "A0 rise": 0.629,
+    "A1 fall": 0.7157,
+    "A1 rise": 0.7115,
+    "f/D hold": 0.509,
+    "f/D setup": 1.271,
+    "with A1 enabled f/D setup": 1.1843
+  }
+}

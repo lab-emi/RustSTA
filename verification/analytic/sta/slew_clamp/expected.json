@@ -1,0 +1,13 @@
+{
+  "base": {
+    "XTR delay": -0.02,
+    "XTR raw transition": -0.055,
+    "XTR transition": 0.0,
+    "clamped-delay setup": 1.39,
+    "n2 fall": 0.472,
+    "n2 rise": 0.49,
+    "r1/D hold": 0.422,
+    "r1/D setup": 1.41,
+    "unclamped-slew setup": 1.4155
+  }
+}

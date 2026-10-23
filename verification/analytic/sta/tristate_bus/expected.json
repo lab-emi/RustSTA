@@ -1,0 +1,57 @@
+{
+  "base": {
+    "C_bus": 0.04,
+    "arc z1 disable 0->Z rise": [
+      0.4625,
+      0.0
+    ],
+    "arc z1 disable 1->Z fall": [
+      0.4425,
+      0.0
+    ],
+    "arc z1 enable Z->0 fall": [
+      0.6,
+      0.09
+    ],
+    "arc z1 enable Z->1 rise": [
+      0.62,
+      0.1
+    ],
+    "arc z1,z2 A->Z fall": [
+      0.605,
+      0.094
+    ],
+    "arc z1,z2 A->Z rise": [
+      0.67,
+      0.1
+    ],
+    "arc z2 disable 0->Z rise": [
+      0.6226,
+      0.0
+    ],
+    "arc z2 disable 1->Z fall": [
+      0.6026,
+      0.0
+    ],
+    "arc z2 enable Z->0 fall": [
+      0.6825,
+      0.09
+    ],
+    "arc z2 enable Z->1 rise": [
+      0.7025,
+      0.1
+    ],
+    "r3/D hold": 0.5075,
+    "r3/D setup": 1.0787,
+    "y arr fall early": 0.4425,
+    "y arr fall late": 0.6825,
+    "y arr rise early": 0.4625,
+    "y arr rise late": 0.7025,
+    "y hold": 0.7425,
+    "y setup": 0.9975,
+    "y slew fall early": 0.0,
+    "y slew fall late": 0.094,
+    "y slew rise early": 0.0,
+    "y slew rise late": 0.1
+  }
+}

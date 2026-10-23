@@ -1,0 +1,18 @@
+{
+  "fast": {
+    "Q fall": 0.359,
+    "Q rise": 0.41,
+    "r2/D early": 0.559,
+    "r2/D hold": 0.509,
+    "r2/D late": 0.629,
+    "r2/D setup": 1.271
+  },
+  "slow": {
+    "Q fall": 0.718,
+    "Q rise": 0.82,
+    "r2/D early": 1.134,
+    "r2/D hold": 1.034,
+    "r2/D late": 1.276,
+    "r2/D setup": 0.524
+  }
+}

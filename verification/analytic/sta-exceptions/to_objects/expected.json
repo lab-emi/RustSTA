@@ -1,0 +1,43 @@
+{
+  "case": "to_objects",
+  "requirement": "STA-REQ-0253",
+  "circuit": "reconv, edges",
+  "expected": {
+    "fp_rise_to": {
+      "s1": 0.9448,
+      "h1": 0.9052,
+      "s2": 1.341,
+      "h2": 0.509
+    },
+    "fp_fall_to": {
+      "s1": 0.837,
+      "h1": 1.013,
+      "s2": 1.271,
+      "h2": 0.579
+    },
+    "fp_rise_flag": {
+      "s1": 0.9448,
+      "h1": 0.9052,
+      "s2": 1.271,
+      "h2": 0.509
+    },
+    "edges_rise_to_clk": {
+      "s13": 0.071,
+      "h13": 1.709,
+      "s24": null,
+      "h24": null
+    },
+    "edges_fall_to_clk": {
+      "s13": null,
+      "h13": null,
+      "s24": 0.471,
+      "h24": 1.309
+    },
+    "edges_mcp2_fall_to_clk": {
+      "s13": 2.071,
+      "h13": -0.291,
+      "s24": 0.471,
+      "h24": 1.309
+    }
+  }
+}

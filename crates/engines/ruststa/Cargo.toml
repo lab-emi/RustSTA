@@ -1,0 +1,36 @@
+[package]
+name = "ruststa"
+description = "RustSTA: static timing analysis of gate-level netlists"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+rusteda-core.workspace = true
+rusteda-formats.workspace = true
+rusteda-workspace.workspace = true
+# The timing task of the engine (`src/engine/`) on every backend; with the feature `cuda` also the
+# CUDA runtime of the legacy GPU backend.
+rusteda-compute.workspace = true
+bytemuck.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rayon.workspace = true
+rustc-hash.workspace = true
+xxhash-rust.workspace = true
+
+[features]
+# GPU propagation backend (STA-REQ-0400) on the CUDA runtime: CUDA C kernels compiled by NVRTC
+# (STA-REQ-0407).
+cuda = ["rusteda-compute/cuda"]
+
+[dev-dependencies]
+ruststa-fixtures.workspace = true
+
+[lints]
+workspace = true

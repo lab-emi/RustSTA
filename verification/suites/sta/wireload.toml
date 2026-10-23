@@ -1,0 +1,8 @@
+# Lumped wire-load estimation verification suite (STA-REQ-0122 to STA-REQ-0125).
+
+[[suite]]
+name = "sta-wireload"
+requirement = ["STA-REQ-0122", "STA-REQ-0123", "STA-REQ-0124", "STA-REQ-0125"]
+test = "crates/engines/ruststa/tests/wireload.rs"
+cases = "verification/analytic/sta/wireload_lumped/expected.json"
+description = "lumped wire-load estimation, slope extrapolation, port-net exclusion, mode handling, and selection order"

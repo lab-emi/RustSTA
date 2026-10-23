@@ -1,0 +1,40 @@
+{
+  "base": {
+    "a fall": 0.559,
+    "a rise": 0.629,
+    "l1 D_open": -0.5,
+    "l1 R_close": 0.36,
+    "l1 R_open": -0.54,
+    "l1/D hold": 2.009,
+    "l1/D setup": -0.269,
+    "l2 D_open": 0.0,
+    "l2 R_close": 0.86,
+    "l2 R_open": -0.04,
+    "l2/D hold": 1.509,
+    "l2/D setup": 0.0,
+    "l3 D_open": 1.0,
+    "l3 R_close": 1.86,
+    "l3 R_open": 0.96,
+    "l3/D hold": 0.509,
+    "l3/D setup": 0.331
+  },
+  "mtb": {
+    "a fall": 0.559,
+    "a rise": 0.629,
+    "l1 D_open": -0.5,
+    "l1 R_close": 0.36,
+    "l1 R_open": -0.54,
+    "l1/D hold": 2.009,
+    "l1/D setup": -0.269,
+    "l2 D_open": 0.0,
+    "l2 R_close": 0.26,
+    "l2 R_open": -0.04,
+    "l2/D hold": 1.509,
+    "l2/D setup": -0.369,
+    "l3 D_open": 1.0,
+    "l3 R_close": 1.86,
+    "l3 R_open": 0.96,
+    "l3/D hold": 0.509,
+    "l3/D setup": 0.331
+  }
+}

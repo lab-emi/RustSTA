@@ -1,0 +1,7 @@
+# Legacy checker verification suite (retired by Z1).
+
+[[suite]]
+name = "sta-legacy-checker"
+requirement = ["STA-REQ-0500"]
+test = "crates/verify/ruststa-check/src/lib.rs"
+description = "legacy demand-driven double-precision slack checker"

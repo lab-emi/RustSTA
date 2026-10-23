@@ -1,0 +1,39 @@
+{
+  "case": "ignore_clock_latency",
+  "requirement": "STA-REQ-0265",
+  "circuit": "pd",
+  "expected": {
+    "maxi_rr": {
+      "rr": 0.271,
+      "rrh": 0.489
+    },
+    "mini_rr": {
+      "rr": 1.221,
+      "rrh": 0.009
+    },
+    "maxi_ro": {
+      "ro": 0.181,
+      "roh": 0.727
+    },
+    "mini_ro": {
+      "ro": 1.131,
+      "roh": 0.247
+    },
+    "maxi_ur": {
+      "ur": 0.69,
+      "urh": null
+    },
+    "mini_ur": {
+      "ur": null,
+      "urh": -0.358
+    },
+    "maxi_ru": {
+      "ru": 0.381,
+      "ruh": null
+    },
+    "mini_ru": {
+      "ru": null,
+      "ruh": 0.047
+    }
+  }
+}

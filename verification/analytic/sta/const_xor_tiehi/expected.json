@@ -1,0 +1,10 @@
+{
+  "base": {
+    "Y fall": 0.73,
+    "Y rise": 0.704,
+    "f/D hold": 0.654,
+    "f/D setup": 1.17,
+    "non-unate f/D hold": 0.627,
+    "non-unate f/D setup": 1.1425
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "case": "from_objects",
+  "requirement": "STA-REQ-0252",
+  "circuit": "reconv, edges",
+  "expected": {
+    "edges_base": {
+      "s13": 0.071,
+      "h13": 1.709,
+      "s24": 0.471,
+      "h24": 1.309
+    },
+    "rise_from_clk": {
+      "s13": null,
+      "h13": null,
+      "s24": 0.471,
+      "h24": 1.309
+    },
+    "fall_from_clk": {
+      "s13": 0.071,
+      "h13": 1.709,
+      "s24": null,
+      "h24": null
+    },
+    "rise_from_ckn": {
+      "s13": 0.071,
+      "h13": 1.709,
+      "s24": 0.471,
+      "h24": 1.309
+    },
+    "fall_from_ckn": {
+      "s13": 0.071,
+      "h13": 1.709,
+      "s24": null,
+      "h24": null
+    }
+  }
+}

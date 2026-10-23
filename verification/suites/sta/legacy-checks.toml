@@ -1,0 +1,7 @@
+# Legacy checks verification suite (retired by Z1).
+
+[[suite]]
+name = "sta-legacy-checks"
+requirement = ["STA-REQ-0220"]
+test = "crates/engines/ruststa/src/checks.rs"
+description = "legacy setup, hold, recovery, removal and clock-gating checks"

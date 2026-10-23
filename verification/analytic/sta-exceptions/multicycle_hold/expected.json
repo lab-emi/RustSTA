@@ -1,0 +1,49 @@
+{
+  "case": "multicycle_hold",
+  "requirement": "STA-REQ-0261",
+  "circuit": "twoclk, reconv",
+  "expected": {
+    "twoclk41_ab_h2": {
+      "ab": 0.271,
+      "abh": 8.509,
+      "ba": 0.271,
+      "bah": 0.509
+    },
+    "twoclk41_ab_h2_end": {
+      "ab": 0.271,
+      "abh": 2.509,
+      "ba": 0.271,
+      "bah": 0.509
+    },
+    "twoclk41_ab_s3_h2": {
+      "ab": 2.271,
+      "abh": 6.509,
+      "ba": 0.271,
+      "bah": 0.509
+    },
+    "twoclk41_ab_s3start_h2end": {
+      "ab": 8.271,
+      "abh": -5.491,
+      "ba": 0.271,
+      "bah": 0.509
+    },
+    "reconv_mcp2_h1": {
+      "s1": 2.837,
+      "h1": 0.9052,
+      "s2": 1.271,
+      "h2": 0.509
+    },
+    "reconv_n_maxd_mcp": {
+      "s1": 0.337,
+      "h1": -1.0948,
+      "s2": 1.271,
+      "h2": 0.509
+    },
+    "reconv_n_clk_setup_pin_hold": {
+      "s1": 2.837,
+      "h1": 0.9052,
+      "s2": 3.271,
+      "h2": -1.491
+    }
+  }
+}

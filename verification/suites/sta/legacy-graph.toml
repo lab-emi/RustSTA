@@ -1,0 +1,7 @@
+# Legacy graph verification suite (retired by Z1).
+
+[[suite]]
+name = "sta-legacy-graph"
+requirement = ["STA-REQ-0100", "STA-REQ-0102"]
+test = "crates/engines/ruststa/src/graph.rs"
+description = "legacy timing graph construction and cycle breaking"

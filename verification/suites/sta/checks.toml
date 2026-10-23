@@ -1,0 +1,65 @@
+# Clocks, timing checks, slack, endpoints, and multi-corner verification suites
+# (docs/specs/sta/checks.md, docs/specs/sta/inputs.md).
+# Run with `cargo test -p ruststa --test checks --test known_answer --test legacy_equivalence`.
+
+[[suite]]
+name = "sta-checks"
+requirement = [
+    "STA-REQ-0015",
+    "STA-REQ-0200",
+    "STA-REQ-0201",
+    "STA-REQ-0211",
+    "STA-REQ-0212",
+    "STA-REQ-0214",
+    "STA-REQ-0216",
+    "STA-REQ-0217",
+    "STA-REQ-0218",
+    "STA-REQ-0219",
+    "STA-REQ-0220",
+    "STA-REQ-0221",
+    "STA-REQ-0222",
+    "STA-REQ-0223",
+    "STA-REQ-0224",
+    "STA-REQ-0225",
+    "STA-REQ-0226",
+]
+test = "crates/engines/ruststa/tests/checks.rs"
+cases = "verification/analytic/sta"
+description = "ideal clock network senses, launch tags, input/output delay latency flags, driving cell, one-sided I/O delays, LCM setup/hold relations, latch borrowing and D->Q relaunch, three-state bus merging, recovery/removal checks, AND/OR clock gating, endpoint status taxonomy, and multi-corner orchestration"
+
+[[suite]]
+name = "sta-engine-known-answer"
+requirement = [
+    "STA-REQ-0015",
+    "STA-REQ-0211",
+    "STA-REQ-0212",
+    "STA-REQ-0214",
+    "STA-REQ-0216",
+    "STA-REQ-0217",
+    "STA-REQ-0218",
+    "STA-REQ-0219",
+    "STA-REQ-0220",
+    "STA-REQ-0221",
+    "STA-REQ-0222",
+    "STA-REQ-0223",
+    "STA-REQ-0224",
+    "STA-REQ-0225",
+    "STA-REQ-0226",
+    "STA-REQ-0501",
+]
+test = "crates/engines/ruststa/tests/known_answer.rs"
+cases = "verification/analytic/sta"
+description = "end-to-end analytic known-answer verification of AnalysisScope against verification/analytic/sta/*/expected.json"
+
+[[suite]]
+name = "sta-engine-legacy-equiv"
+requirement = [
+    "STA-REQ-0200",
+    "STA-REQ-0201",
+    "STA-REQ-0211",
+    "STA-REQ-0212",
+    "STA-REQ-0214",
+    "STA-REQ-0216",
+]
+test = "crates/engines/ruststa/tests/legacy_equivalence.rs"
+description = "equivalence of AnalysisScope setup/hold slacks, WNS, and TNS against the legacy engine on single-clock and same-period circuits"

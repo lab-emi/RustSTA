@@ -1,0 +1,17 @@
+# Constants, case analysis and disabled arcs verification suite (docs/specs/sta/constants.md).
+
+[[suite]]
+name = "sta-constants"
+requirement = [
+    "STA-REQ-0150",
+    "STA-REQ-0151",
+    "STA-REQ-0152",
+    "STA-REQ-0153",
+    "STA-REQ-0154",
+    "STA-REQ-0155",
+    "STA-REQ-0156",
+    "STA-REQ-0157",
+]
+test = "crates/engines/ruststa/tests/constants.rs"
+cases = "verification/analytic/sta"
+description = "Three-valued Kleene constant propagation, case analysis, cofactor arc disabling, unate sense refinement, sequential constant pins, conditional when arcs, set_disable_timing, and disabled arc completeness accounting"

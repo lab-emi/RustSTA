@@ -1,0 +1,15 @@
+[[suite]]
+name = "incremental_timing_session_and_revision_update"
+requirement = [
+    "STA-REQ-0450",
+    "STA-REQ-0451",
+    "STA-REQ-0452",
+    "STA-REQ-0453",
+    "STA-REQ-0454",
+    "STA-REQ-0455",
+    "STA-REQ-0456",
+    "STA-REQ-0457",
+    "STA-REQ-0458",
+]
+test = "crates/engines/ruststa/tests/incremental.rs"
+description = "Incremental timing session (in-place edits, cone propagation, 1000-mutation randomized bitwise verification, ddmin shrinking) and cross-revision update_revision verification."

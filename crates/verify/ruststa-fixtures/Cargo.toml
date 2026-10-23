@@ -1,0 +1,21 @@
+[package]
+name = "ruststa-fixtures"
+description = "Synthetic cell libraries, netlist/SDC generators and fixture corpus for RustSTA tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "ruststa-fixtures"
+path = "src/bin/ruststa-fixtures.rs"
+
+[dependencies]
+rusteda-core.workspace = true
+rusteda-formats.workspace = true
+
+[lints]
+workspace = true

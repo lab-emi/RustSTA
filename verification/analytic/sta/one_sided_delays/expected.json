@@ -1,0 +1,8 @@
+{
+  "base": {
+    "p setup": 1.2,
+    "q hold": 0.447,
+    "r1/D setup": 1.19,
+    "r2/D hold": 0.242
+  }
+}

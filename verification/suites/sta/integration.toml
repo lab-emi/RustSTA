@@ -1,0 +1,29 @@
+# Engine timing invariants and independent checker agreement verification suites
+# (docs/specs/sta/verification.md).
+# Run with `cargo test -p ruststa --test invariants` and
+# `cargo test -p ruststa-cli --test checker_agreement`.
+
+[[suite]]
+name = "sta-invariants"
+requirement = [
+    "STA-REQ-0501",
+    "STA-REQ-0502",
+    "STA-REQ-0503",
+    "STA-REQ-0504",
+    "STA-REQ-0505",
+]
+test = "crates/engines/ruststa/tests/invariants.rs"
+cases = "verification/analytic/sta"
+description = "Per-pin early/late arrival and slew ordering, backward required-time and slack identity, endpoint WNS/TNS/WHS/THS exact aggregation, exhaustive path enumeration parity, metamorphic period/delay/permutation/thread/store byte identity, and PDK verification runner"
+
+[[suite]]
+name = "sta-checker-agreement"
+requirement = [
+    "STA-REQ-0500",
+    "STA-REQ-0501",
+    "STA-REQ-0503",
+    "STA-REQ-0504",
+]
+test = "crates/verify/ruststa-check/src/rev/mod.rs"
+cases = "verification/analytic/sta"
+description = "Independent checker per-pin and endpoint agreement with the timing engine across the 32 corpus netlists, wt_* Liberty variants, generated topologies, Phase 2a timing exceptions, and planted-defect detection (crates/apps/ruststa-cli/tests/checker_agreement.rs)"

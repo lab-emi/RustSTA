@@ -1,0 +1,25 @@
+{
+  "case": "max_delay",
+  "requirement": "STA-REQ-0262",
+  "circuit": "pd, edges",
+  "expected": {
+    "pd_base": {
+      "rr": 1.221,
+      "rrh": 0.489,
+      "ro": 1.131,
+      "roh": 0.727
+    },
+    "pd_max_rr": {
+      "rr": 0.221,
+      "rrh": 0.489,
+      "ro": 1.131,
+      "roh": 0.727
+    },
+    "pd_max_ro": {
+      "rr": 1.221,
+      "rrh": 0.489,
+      "ro": 0.031,
+      "roh": 0.727
+    }
+  }
+}

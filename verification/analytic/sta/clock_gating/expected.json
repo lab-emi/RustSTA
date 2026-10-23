@@ -1,0 +1,16 @@
+{
+  "base": {
+    "c1/B hold": -0.429,
+    "c1/B setup": 1.361,
+    "c2/B hold": 0.571,
+    "c2/B setup": 0.361,
+    "c3/B hold": 0.571,
+    "c3/B setup": 0.361,
+    "c4/B hold": -0.429,
+    "c4/B setup": 1.361,
+    "enable early": 0.571,
+    "enable late": 0.639,
+    "r2/D hold": 0.05,
+    "r2/D setup": 1.8
+  }
+}

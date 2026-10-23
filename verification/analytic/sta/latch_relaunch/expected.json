@@ -1,0 +1,21 @@
+{
+  "base": {
+    "l1 Q fall early": 0.359,
+    "l1 Q fall late": 1.0961,
+    "l1 Q rise early": 0.41,
+    "l1 Q rise late": 1.127,
+    "l2 Q fall early": 0.359,
+    "l2 Q fall late": 0.7951,
+    "l2 Q rise early": 0.41,
+    "l2 Q rise late": 0.896,
+    "l3 R_open": 0.96,
+    "r2/D hold": 0.445,
+    "r2/D setup": 0.6245,
+    "r4/D hold": 0.509,
+    "r4/D setup": 0.745,
+    "r4/D setup if D-to-Q slew counted": 0.741,
+    "r6/D hold": 0.445,
+    "r6/D hold if D-to-Q passed at opening": 0.3221,
+    "r6/D setup": 1.3415
+  }
+}

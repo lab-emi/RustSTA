@@ -1,0 +1,103 @@
+# RustSTA constants, case analysis and disabled arcs
+
+Constant propagation and arc disabling run on the timing graph before arrival and slew propagation
+[@bhasker2009static, ch. 3 and 7; @sdc2016; @liberty2017]. Every requirement has a hand derivation
+on the linear synthetic library in
+[`verification/analytic/sta`](../../../verification/analytic/sta/README.md).
+
+## Constant sources and Kleene propagation
+
+**STA-REQ-0150** Constant sources
+([`const_tielo_and2`](../../../verification/analytic/sta/const_tielo_and2/DERIVATION.md))
+[@sdc2016; @bhasker2009static, ch. 7]. Every node of the timing graph carries a logic state in the
+three-valued domain `{0, 1, X}` (initialized to `X`). Constant values `0` or `1` are seeded from:
+1. netlist constant nets (`1'b0` / `1'b1` on `PIN_NET` and `ASSIGNS`, STA-REQ-0001);
+2. library tie cells whose output pin `function` is the constant boolean expression `"0"` or `"1"`;
+3. `set_case_analysis 0|1|zero|one` and `set_logic_zero` / `set_logic_one` on top-level ports or
+   cell pins (`set_case_analysis rising|falling` leaves the logic state at `X`).
+
+**STA-REQ-0151** Forward three-valued evaluation
+([`const_tielo_and2`](../../../verification/analytic/sta/const_tielo_and2/DERIVATION.md))
+[@liberty2017; @bhasker2009static, ch. 3]. Constants propagate in topological order across nets (a
+single constant driver sets the net and all its load pins to that constant) and across combinational
+cell output `function` expressions using Kleene three-valued logic (`!0 = 1`, `!1 = 0`, `!X = X`;
+`0 & X = 0`, `1 & X = X`; `1 | X = 1`, `0 | X = X`; `0 ^ b = b`, `1 ^ b = !b`, `X ^ _ = X`).
+Sequential cell outputs (`ff`, `latch`) do not propagate constants from their synchronous data (`D`)
+or clock/enable inputs, except when an asynchronous `clear` or `preset` expression evaluates to `1`
+under the constant inputs.
+
+## Arc disabling and sense refinement
+
+**STA-REQ-0152** Disabling combinational arcs controlled by constants
+([`const_tielo_and2`](../../../verification/analytic/sta/const_tielo_and2/DERIVATION.md))
+[@liberty2017; @bhasker2009static, ch. 3]. For a combinational arc from input pin `p` to output pin
+`y` with boolean output expression `f`:
+- if `p` itself is at constant `0` or `1`, or `y` evaluates to constant `0` or `1` under Kleene
+  evaluation, the arc `p -> y` is disabled;
+- more generally, after substituting all constant input pins of the cell into `f`, if the cofactors
+  of the residual function with respect to `p` are identically equal (`f|_{p=0} == f|_{p=1}` for
+  every assignment to the remaining `X` inputs), the output is independent of `p` and the arc
+  `p -> y` is disabled.
+The disable reason is `case_analysis` if any constant input of the cell was seeded or derived from
+`set_case_analysis` / `set_logic_*`, and `constant` otherwise. Disabled arcs propagate neither
+arrivals nor pin transitions (STA-REQ-0108).
+
+**STA-REQ-0153** Unate sense refinement under constant inputs
+([`const_xor_tiehi`](../../../verification/analytic/sta/const_xor_tiehi/DERIVATION.md))
+[@liberty2017; @bhasker2009static, ch. 3]. When a combinational arc `p -> y` with declared
+`timing_sense : non_unate` remains enabled after substituting the cell's constant inputs into the
+output expression `f`, its effective timing sense is refined from the residual function `r`:
+- if `r|_{p=0} <= r|_{p=1}` for all assignments to the remaining `X` inputs (a rise on `p` can only
+  cause a rise on `y`, and a fall on `p` only a fall on `y`), the effective sense is
+  `positive_unate`;
+- if `r|_{p=0} >= r|_{p=1}` for all assignments to the remaining `X` inputs (a rise on `p` can only
+  cause a fall on `y`, and a fall on `p` only a rise on `y`), the effective sense is
+  `negative_unate`;
+- otherwise the effective sense remains `non_unate`.
+For example, `XOR2` (`Y = A ^ B`) with `B = 1` refines `A -> Y` to `negative_unate`, and with
+`B = 0` refines `A -> Y` to `positive_unate`.
+
+**STA-REQ-0154** Sequential pins held constant
+([`const_flop_d`](../../../verification/analytic/sta/const_flop_d/DERIVATION.md))
+[@bhasker2009static, ch. 7; @sdc2016]. When a sequential data pin (`D`) or asynchronous control pin
+(`RN`, `SN`) is at constant `0` or `1`, it carries no signal transition, so no setup, hold,
+recovery or removal check is timed at that pin (its endpoint status is `no_data_arrival`,
+STA-REQ-0226). The cell's `CK -> Q` edge arc still launches both output transitions if `CK` is in a
+clock network, because the stored state is not treated as constant across clock cycles unless `clear`
+or `preset` is held active. When a sequential clock pin (`CK`, `CKN`) or latch enable pin (`G`) is
+at constant `0` or `1`, the clock network does not propagate through it, its edge arcs do not
+launch, and checks referencing that clock pin have status `unclocked`.
+
+**STA-REQ-0155** Multiplexer select constants and conditional (`when`) arcs
+([`const_mux_select`](../../../verification/analytic/sta/const_mux_select/DERIVATION.md))
+[@liberty2017; @bhasker2009static, ch. 3]. On a multiplexer (`Y = (A0 & !S) | (A1 & S)`), holding
+`S = 0` disables `A1 -> Y` and `S -> Y` and leaves `A0 -> Y` enabled (`positive_unate`); holding
+`S = 1` disables `A0 -> Y` and `S -> Y` and leaves `A1 -> Y` enabled. When a Liberty timing group
+carries a `when` boolean condition and substituting the cell's constant inputs makes `when`
+evaluate to `0`, that timing arc or check is disabled with reason `false_when`.
+
+**STA-REQ-0156** Explicit arc disabling (`set_disable_timing`)
+([`case_analysis`](../../../verification/analytic/sta/case_analysis/DERIVATION.md)) [@sdc2016].
+`set_disable_timing [-from <pin>] [-to <pin>] <objects>` disables every matching timing arc on the
+named cells or pins with reason `user_disabled`: all arcs of a cell when neither `-from` nor `-to`
+is given, the arcs matching the named input and/or output pin names when `-from` and/or `-to` are
+given on a cell, or the arcs incident to a pin object.
+
+**STA-REQ-0157** Completeness accounting for disabled arcs and endpoints
+([`case_analysis`](../../../verification/analytic/sta/case_analysis/DERIVATION.md))
+[@bhasker2009static, ch. 7; @sdc2016]. Every disabled arc is recorded in `completeness.disabled_arcs`
+with its reason (`cycle_break`, `constant`, `case_analysis`, `false_when`, `user_disabled`). An
+endpoint whose check arcs are disabled has status `disabled`; an endpoint whose data pin receives no
+arrival because all upstream data arcs were disabled by constants, case analysis or
+`set_disable_timing` has status `no_data_arrival` (or `disabled`), and is counted in
+`completeness.unconstrained_by_reason` (STA-REQ-0226).
+
+**STA-REQ-0158** Constants in every analysis. The full analysis of `ruststa run` and
+`ruststa update`, and every graph of a timing session, apply `set_disable_timing`, the netlist
+constants, the tie cells and case analysis (STA-REQ-0150 to STA-REQ-0157) to the timing graph
+before arrival times propagate; there is no analysis path that skips them. The fixed point of
+STA-REQ-0151 is computed with a worklist, so its work is linear in the pins of the netlist. Sense
+refinement and cofactor disabling (STA-REQ-0152, STA-REQ-0153) apply to cells with at least one
+constant input; without one, the library's arcs and senses stand. `set_case_analysis rising` or
+`falling` leaves the pin at `X` and both transitions are timed: each such pin gets warning `T0040`
+in the analysis, so the constraint is never dropped silently.

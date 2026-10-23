@@ -1,0 +1,38 @@
+# SDC format verification suites (docs/specs/sdc/sdc.md).
+# Run with `cargo test -p rusteda-formats`.
+
+[[suite]]
+name = "sdc-subset"
+requirement = [
+    "SDC-REQ-0001", "SDC-REQ-0002", "SDC-REQ-0010", "SDC-REQ-0011",
+    "SDC-REQ-0012", "SDC-REQ-0013", "SDC-REQ-0014", "SDC-REQ-0015",
+    "SDC-REQ-0016", "SDC-REQ-0017", "SDC-REQ-0018", "SDC-REQ-0040",
+]
+test = "crates/formats/rusteda-formats/tests/sdc_subset.rs"
+description = "bounded deterministic Tcl subset, expressions, conditionals, list/string helpers, relative source and resource budgets"
+
+[[suite]]
+name = "sdc-commands"
+requirement = [
+    "SDC-REQ-0020", "SDC-REQ-0021", "SDC-REQ-0022", "SDC-REQ-0023",
+    "SDC-REQ-0024", "SDC-REQ-0025", "SDC-REQ-0026", "SDC-REQ-0030",
+    "SDC-REQ-0031", "SDC-REQ-0032", "SDC-REQ-0033", "SDC-REQ-0034",
+    "SDC-REQ-0041",
+]
+test = "crates/formats/rusteda-formats/tests/sdc_commands.rs"
+description = "declarative command schema for the 26 Phase 2a timing commands, 4 DRC commands, 7 synthesis commands, object queries and Phase 2b diagnostics"
+
+[[suite]]
+name = "sdc-roundtrip"
+requirement = [
+    "SDC-REQ-0001", "SDC-REQ-0021", "SDC-REQ-0050", "SDC-REQ-0051",
+    "SDC-REQ-0052", "SDC-REQ-0053",
+]
+test = "crates/formats/rusteda-formats/tests/sdc_roundtrip.rs"
+description = "canonical writer idempotence, CONSTR v1 binary section round trip and corruption checks, and metamorphic equivalences"
+
+[[suite]]
+name = "sdc-fuzz"
+requirement = ["SDC-REQ-0001", "SDC-REQ-0040"]
+test = "crates/formats/rusteda-formats/tests/sdc_fuzz.rs"
+description = "100,000 deterministically mutated SDC inputs verifying panic-free parsing and evaluation"

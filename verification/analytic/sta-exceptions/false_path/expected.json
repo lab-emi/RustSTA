@@ -1,0 +1,31 @@
+{
+  "case": "false_path",
+  "requirement": "STA-REQ-0259",
+  "circuit": "reconv",
+  "expected": {
+    "base": {
+      "s1": 0.837,
+      "h1": 0.9052,
+      "s2": 1.271,
+      "h2": 0.509
+    },
+    "fp_from_pin": {
+      "s1": null,
+      "h1": null,
+      "s2": 1.271,
+      "h2": 0.509
+    },
+    "fp_from_to": {
+      "s1": null,
+      "h1": null,
+      "s2": 1.271,
+      "h2": 0.509
+    },
+    "fp_to_pin": {
+      "s1": null,
+      "h1": null,
+      "s2": null,
+      "h2": null
+    }
+  }
+}

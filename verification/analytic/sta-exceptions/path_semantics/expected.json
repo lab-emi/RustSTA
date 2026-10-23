@@ -1,0 +1,23 @@
+{
+  "case": "path_semantics",
+  "requirement": "STA-REQ-0269",
+  "circuit": "reconv",
+  "expected": {
+    "base": {
+      "ep_setup": 0.837,
+      "ep_hold": 0.509
+    },
+    "mcp2_h1": {
+      "ep_setup": 1.271,
+      "ep_hold": 0.509
+    },
+    "fp_from_pin": {
+      "ep_setup": 1.271,
+      "ep_hold": 0.509
+    },
+    "s_pin_vs_clk": {
+      "ep_setup": 2.837,
+      "ep_hold": -3.491
+    }
+  }
+}

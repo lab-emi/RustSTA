@@ -1,0 +1,18 @@
+# Binary timing result store (`sta.rbin` / `STA v1`) and mapped queries verification suite (docs/specs/sta/store.md).
+# Run the standard suite with `cargo test -p ruststa --test store` and the 500k/1M scale benchmark
+# with `cargo test --release -p ruststa --test store -- --ignored scale`.
+
+[[suite]]
+name = "sta-store"
+requirement = [
+    "STA-REQ-0302",
+    "STA-REQ-0305",
+    "STA-REQ-0312",
+    "STA-REQ-0313",
+    "STA-REQ-0314",
+    "STA-REQ-0315",
+    "STA-REQ-0401",
+    "STA-REQ-0405",
+]
+test = "crates/engines/ruststa/tests/store.rs"
+description = "STA v1 (sta.rbin) 24-section binary timing store, -0.0 canonicalization, --threads 1 vs --threads 32 bitwise determinism on all 32 corpus netlists, 100-path reconstruction from PATH_CHAIN + NODE_REC with cache-line prefetch, StoreMode::Full vs StoreMode::Summary, CORRUPT_TABLE / SCHEMA_TOO_NEW validation, structure-only open vs verify_hash(), workspace Txn staging, and 500k/1M-cell mapped query scale benchmarks"

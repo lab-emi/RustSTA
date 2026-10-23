@@ -1,0 +1,17 @@
+{
+  "base": {
+    "Q fall": 0.368,
+    "Q rise": 0.42,
+    "Q slew fall": 0.09,
+    "Q slew rise": 0.1,
+    "Y fall": 0.569,
+    "Y rise": 0.64,
+    "Y slew fall early": 0.061,
+    "Y slew fall late": 0.076,
+    "Y slew rise early": 0.07,
+    "Y slew rise late": 0.088,
+    "legacy r2/D setup": 1.043,
+    "r2/D hold": 0.7171,
+    "r2/D setup": 1.0412
+  }
+}

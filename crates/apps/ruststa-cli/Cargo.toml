@@ -1,0 +1,56 @@
+[package]
+name = "ruststa-cli"
+description = "The ruststa command-line program"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "ruststa_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ruststa"
+path = "src/main.rs"
+# The library target of the engine package `ruststa` documents under the same name.
+doc = false
+
+[[bench]]
+name = "backends"
+harness = false
+
+[[bench]]
+name = "run_e2e"
+harness = false
+
+[features]
+default = []
+# GPU propagation backend on the CUDA runtime (STA-REQ-0400, STA-REQ-0407); a build with
+# `--features cuda` includes the GPU backend alongside the CPU backend.
+cuda = ["ruststa/cuda"]
+
+[dependencies]
+rusteda-core.workspace = true
+rusteda-workspace.workspace = true
+rusteda-compute.workspace = true
+rusteda-formats.workspace = true
+ruststa.workspace = true
+ruststa-check.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+crossterm.workspace = true
+bytemuck.workspace = true
+rustc-hash.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+ruststa-fixtures.workspace = true
+
+[lints]
+workspace = true

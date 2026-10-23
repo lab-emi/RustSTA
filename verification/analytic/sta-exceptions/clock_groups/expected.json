@@ -1,0 +1,67 @@
+{
+  "case": "clock_groups",
+  "requirement": "STA-REQ-0266",
+  "circuit": "groups",
+  "expected": {
+    "base": {
+      "ab": 0.271,
+      "abh": 0.509,
+      "bc": 0.261,
+      "bch": 0.521,
+      "ba": 0.261,
+      "bah": 0.521,
+      "ac": 1.271,
+      "ach": 0.509
+    },
+    "async": {
+      "ab": null,
+      "abh": null,
+      "bc": 0.261,
+      "bch": 0.521,
+      "ba": null,
+      "bah": null,
+      "ac": null,
+      "ach": null
+    },
+    "one_group": {
+      "ab": null,
+      "abh": null,
+      "bc": 0.261,
+      "bch": 0.521,
+      "ba": null,
+      "bah": null,
+      "ac": null,
+      "ach": null
+    },
+    "logical": {
+      "ab": null,
+      "abh": null,
+      "bc": 0.261,
+      "bch": 0.521,
+      "ba": null,
+      "bah": null,
+      "ac": 1.271,
+      "ach": 0.509
+    },
+    "over_maxd": {
+      "ab": null,
+      "abh": null,
+      "bc": 0.261,
+      "bch": 0.521,
+      "ba": null,
+      "bah": null,
+      "ac": 1.271,
+      "ach": 0.509
+    },
+    "allow_paths": {
+      "ab": 0.271,
+      "abh": 0.509,
+      "bc": 0.261,
+      "bch": 0.521,
+      "ba": 0.261,
+      "bah": 0.521,
+      "ac": 1.271,
+      "ach": 0.509
+    }
+  }
+}

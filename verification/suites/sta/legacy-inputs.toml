@@ -1,0 +1,7 @@
+# Legacy input verification suite (retired by Z1).
+
+[[suite]]
+name = "sta-inputs"
+requirement = ["STA-REQ-0011", "STA-REQ-0111"]
+test = "crates/apps/ruststa-cli/tests/sta_inputs.rs"
+description = "timing types and net arcs on a library with constant tables"

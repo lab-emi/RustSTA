@@ -1,0 +1,7 @@
+# Legacy propagation verification suite (retired by Z1).
+
+[[suite]]
+name = "sta-legacy-propagation"
+requirement = ["STA-REQ-0120"]
+test = "crates/engines/ruststa/src/prop.rs"
+description = "legacy forward arrival and transition propagation"

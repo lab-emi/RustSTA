@@ -1,0 +1,39 @@
+# Workspace CLI verification suite (docs/specs/cli/README.md, docs/specs/sta/cli.md, ADR 0008).
+
+[[suite]]
+name = "sta-cli"
+requirement = [
+    "CLI-REQ-0001",
+    "CLI-REQ-0002",
+    "CLI-REQ-0003",
+    "CLI-REQ-0004",
+    "CLI-REQ-0005",
+    "CLI-REQ-0006",
+    "CLI-REQ-0007",
+    "CLI-REQ-0008",
+    "CLI-REQ-0009",
+    "CLI-REQ-0010",
+    "CLI-REQ-0011",
+    "CLI-REQ-0012",
+    "CLI-REQ-0016",
+    "CLI-REQ-0100",
+    "CLI-REQ-0101",
+    "CLI-REQ-0102",
+    "CLI-REQ-0103",
+    "CLI-REQ-0150",
+    "STA-REQ-0300",
+    "STA-REQ-0301",
+    "STA-REQ-0302",
+    "STA-REQ-0303",
+    "STA-REQ-0304",
+    "STA-REQ-0305",
+    "STA-REQ-0306",
+    "STA-REQ-0310",
+    "STA-REQ-0311",
+    "STA-REQ-0312",
+    "STA-REQ-0313",
+    "STA-REQ-0314",
+    "STA-REQ-0315",
+]
+test = "crates/apps/ruststa-cli/tests/cli_contract.rs"
+description = "Workspace-native ruststa CLI (run, update, check, path, inspect, report, completions), rusteda.v1 JSON envelope key order, exit codes 0/1/2/3/4/5, concurrent revision conflict (exit 4), --threads 1 vs 32 bitwise determinism, next_actions execution, handle grammar, closed stdin, and leading-equals POSIX quoting"

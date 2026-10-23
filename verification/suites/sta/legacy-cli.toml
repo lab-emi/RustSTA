@@ -1,0 +1,7 @@
+# Legacy CLI verification suite (retired by Z1).
+
+[[suite]]
+name = "sta-legacy-cli"
+requirement = ["CLI-REQ-0001"]
+test = "crates/apps/ruststa-cli/tests/cli_contract.rs"
+description = "command-line streams, exit statuses, recorded runs and show tables"

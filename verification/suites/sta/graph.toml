@@ -1,0 +1,16 @@
+# Timing graph and netlist view verification suites (docs/specs/sta/graph.md).
+# Run the integration suites with `cargo test -p ruststa --test legacy_graph --test graph_netlist`
+# and the 500k-cell scale benchmark with
+# `cargo test -p ruststa --test graph_netlist -- --ignored scale`.
+
+[[suite]]
+name = "sta-graph-legacy-equiv"
+requirement = ["STA-REQ-0001", "STA-REQ-0002", "STA-REQ-0003", "STA-REQ-0100", "STA-REQ-0101", "STA-REQ-0102"]
+test = "crates/engines/ruststa/tests/legacy_graph.rs"
+description = "equivalence of NetlistView and TimingGraph (via both legacy_import and RS-VLOG) against legacy Graph on all 32 corpus netlists and combinational loops"
+
+[[suite]]
+name = "sta-graph-netlist"
+requirement = ["STA-REQ-0001", "STA-REQ-0002", "STA-REQ-0003", "STA-REQ-0011", "STA-REQ-0100", "STA-REQ-0101", "STA-REQ-0102", "STA-REQ-0213", "STA-REQ-0401"]
+test = "crates/engines/ruststa/tests/graph_netlist.rs"
+description = "statement-order invariance, multiple-driver and constant-drive diagnostics, three-state buses, inout ports and pins, cross-corner pin validation, aggregated unconnected-input warnings, latch data arcs, and the 500k-cell scale benchmark"

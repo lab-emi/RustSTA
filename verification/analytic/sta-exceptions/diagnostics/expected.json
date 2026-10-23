@@ -1,0 +1,13 @@
+{
+  "case": "diagnostics",
+  "requirement": "STA-REQ-0270",
+  "circuit": "reconv, latch, groups",
+  "expected": {
+    "D0102": "fp_from_q / fp_to_internal on reconv",
+    "D0110": "fp_from_q / bare exception on reconv",
+    "D0111": "o_later_wins on reconv",
+    "D0112": "fp_r1_r2 on latch",
+    "D0113": "mcp2_both on reconv",
+    "D0114": "allow_paths on groups"
+  }
+}
