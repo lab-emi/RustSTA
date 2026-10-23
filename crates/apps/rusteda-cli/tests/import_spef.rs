@@ -392,3 +392,75 @@ fn several_corners_are_bound_kept_and_replaced() {
     assert!(eco["tables"].get("parasitics").is_none(), "{eco}");
     fs::remove_dir_all(&dir).unwrap();
 }
+
+// RCLI-REQ-0075: the decoded sources that one import holds at once total at most eight per-file
+// byte budgets: eight corners of almost one MiB each fit a 1 MiB budget, a ninth is rejected with
+// T0072 and nothing is committed.
+#[test]
+fn the_sources_of_a_table_are_bounded_together() {
+    let dir = std::env::temp_dir().join(format!("spef-budget-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let ws_path = dir.join("ws");
+    let w = ws_path.to_str().unwrap();
+    let lib = dir.join("cells.lib");
+    let net = dir.join("top.v");
+    fs::write(&lib, "library (l) { time_unit : \"1ns\"; capacitive_load_unit(1,pf); cell(BUF){pin(A){direction:input;}pin(Y){direction:output;function:\"A\";}}}").unwrap();
+    fs::write(
+        &net,
+        "module top(input a,output y);BUF u(.A(a),.Y(y));endmodule\n",
+    )
+    .unwrap();
+    // A valid SPEF padded with comment lines to just under 1 MiB.
+    let mut text = String::from(
+        "*SPEF \"ieee 1481-1999\"\n*DESIGN top\n*DIVIDER /\n*DELIMITER :\n*BUS_DELIMITER []\n*T_UNIT 1 NS\n*C_UNIT 1 PF\n*R_UNIT 1 OHM\n*D_NET a 0\n*CONN\n*P a I\n*I u:A I\n*RES\n1 a u:A 2\n*END\n",
+    );
+    let pad = format!("// {}\n", "x".repeat(1020));
+    while text.len() + pad.len() < (1 << 20) - 4096 {
+        text.push_str(&pad);
+    }
+    let spef = dir.join("padded.spef");
+    fs::write(&spef, &text).unwrap();
+    let s = spef.to_str().unwrap();
+    let names: Vec<String> = (0..9).map(|i| format!("c{i}")).collect();
+    let l = lib.to_str().unwrap();
+    let mut args = vec!["import", "-w", w, "--base-rev", "rev0"];
+    for n in &names {
+        args.extend(["--lib", l, "--corner", n.as_str()]);
+    }
+    args.extend(["--netlist", net.to_str().unwrap()]);
+    assert_eq!(run(&["init", "-w", w])["new_rev"], "rev0");
+    assert_eq!(run(&args)["new_rev"], "rev1");
+    let import = |count: usize| {
+        let mut args = vec![
+            "import",
+            "-w",
+            w,
+            "--base-rev",
+            "rev1",
+            "--max-spef-mib",
+            "1",
+        ];
+        for n in &names[..count] {
+            args.extend(["--spef", s, "--spef-corner", n.as_str()]);
+        }
+        run(&args)
+    };
+    let nine = import(9);
+    assert_eq!(nine["ok"], false, "{nine}");
+    assert!(
+        nine["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("T0072"),
+        "{nine}"
+    );
+    assert_eq!(run(&["show", "-w", w])["rev"], "rev1", "nothing committed");
+    let eight = import(8);
+    assert_eq!(eight["ok"], true, "{eight}");
+    assert_eq!(
+        eight["metrics"]["spef_corners"].as_array().unwrap().len(),
+        8
+    );
+    fs::remove_dir_all(&dir).unwrap();
+}

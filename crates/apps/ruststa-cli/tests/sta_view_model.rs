@@ -124,7 +124,9 @@ impl Observer for CancelAt<'_> {
     }
 }
 
-// JOB-REQ-0006: a timing run cancelled at any point returns `Cancelled`.
+// JOB-REQ-0006: a timing run cancelled at any point before its last phase ends returns
+// `Cancelled`. The notes that a finished run reports after its last phase follow the last
+// checkpoint, so they are not cancellation points.
 #[test]
 fn cancel_at_every_point() {
     let lib = common::lib(Variant::Full);
@@ -132,7 +134,13 @@ fn cancel_at_every_point() {
     let libs = std::slice::from_ref(&lib);
     let rec = Recorder::default();
     run_with(&o, libs, Ctx::new(None, Some(&rec))).expect("analysis");
-    let n = rec.0.into_inner().expect("lock").len();
+    let events = rec.0.into_inner().expect("lock");
+    // The 1-based position of the event that ends the last phase.
+    let n = events
+        .iter()
+        .rposition(|e| matches!(e, Event::PhaseFinished { .. }))
+        .expect("a finished phase")
+        + 1;
     assert!(n > 5, "{n} events");
     for k in 1..n {
         let token = CancelToken::new();

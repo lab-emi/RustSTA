@@ -6,7 +6,7 @@
 arcs are:
 - net arcs from each driver of a net to each of its loads;
 - cell arcs from `related_pin` to the pin that owns the timing group, for combinational types,
-  three-state enable/disable types (`three_state_enable*`, `three_state_disable*`, STA-REQ-0013),
+  three-state enable/disable types (`three_state_enable*`, `three_state_disable*`, STA-REQ-0017),
   and edge types (`rising_edge`, `falling_edge`); arcs of type `clear` and `preset` are not
   propagated (asynchronous controls are covered by recovery and removal checks, STA-REQ-0224).
 Check arcs (`setup_*`, `hold_*`, `recovery_*`, `removal_*`) are not propagation arcs.

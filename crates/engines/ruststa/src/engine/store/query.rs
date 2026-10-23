@@ -546,8 +546,10 @@ impl StaStore {
         })
     }
 
-    /// Queries the worst path(s) ending at `pin_or_port` (`--to <pin>`), optionally filtered by
-    /// `corner_idx` and `check_kind` (`STA-REQ-0305`, `STA-REQ-0314`).
+    /// Queries the worst path(s) ending at `pin_or_port` (`--to <pin>`): for each check family
+    /// that `check_kind` selects (setup and recovery, or hold and removal), the worst path of the
+    /// endpoint over all corners, or in corner `corner_idx` when given. A family without a path
+    /// in that corner gives none (`STA-REQ-0305`, `STA-REQ-0314`, `STA-REQ-0814`).
     pub fn query_path_to(
         &self,
         pin_or_port: &str,
@@ -576,24 +578,38 @@ impl StaStore {
         let mut ranks = Vec::new();
         for ep_idx in ep_range {
             let ep = &v.endpoints[ep_idx];
-            if check_kind.is_none_or(CheckKind::is_setup) && ep.worst_setup_rank != NO_INDEX {
-                ranks.push(ep.worst_setup_rank as usize);
-            }
-            if check_kind.is_none_or(CheckKind::is_hold) && ep.worst_hold_rank != NO_INDEX {
-                ranks.push(ep.worst_hold_rank as usize);
+            for (hold, worst) in [(false, ep.worst_setup_rank), (true, ep.worst_hold_rank)] {
+                let wanted = check_kind.is_none_or(|k| {
+                    if hold {
+                        CheckKind::is_hold(k)
+                    } else {
+                        CheckKind::is_setup(k)
+                    }
+                });
+                if !wanted || worst == NO_INDEX || worst as usize >= v.path_rank.len() {
+                    continue;
+                }
+                let worst = worst as usize;
+                match corner_idx {
+                    None => ranks.push(worst),
+                    // The paths of a family are ranked by slack, the setup family first, so the
+                    // first path of the endpoint in corner `c` from its worst rank on is its
+                    // worst path in that corner (`STA-REQ-0814`).
+                    Some(c) => ranks.extend(
+                        (worst..v.path_rank.len())
+                            .take_while(|&r| v.path_rank[r].is_hold() == hold)
+                            .find(|&r| {
+                                let pr = &v.path_rank[r];
+                                pr.endpoint_index() == ep_idx && pr.corner_index() == c
+                            }),
+                    ),
+                }
             }
         }
 
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(ranks.len());
         for r in ranks {
-            if r < v.path_rank.len() {
-                if let Some(c) = corner_idx
-                    && v.path_rank[r].corner_index() != c
-                {
-                    continue;
-                }
-                out.push(self.query_path_handle(r)?);
-            }
+            out.push(self.query_path_handle(r)?);
         }
         Ok(out)
     }

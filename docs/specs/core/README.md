@@ -12,7 +12,7 @@ The reader that builds the library model from Liberty text is specified in
 |---|---|
 | [Engine runs](#engine-runs) | JOB-REQ-0001 to 0006 |
 | [Messages](#messages) | JOB-REQ-0007 |
-| [Liberty library model](#liberty-library-model) | LIBERTY-REQ-0010 to 0019, 0022 to 0026, 0030 to 0034 and 0040 to 0048 |
+| [Liberty library model](#liberty-library-model) | LIBERTY-REQ-0010 to 0019, 0022 to 0026, 0030 to 0034 and 0040 to 0049 |
 | [Symbols, arenas, names and netlist](netlist.md) | CORE-REQ-0100 to 0103, 0110 to 0113, 0120 to 0128, 0130 to 0138 |
 
 ## Engine runs
@@ -261,4 +261,16 @@ stores `operating_conditions` (`OperatingConditions` with `name`, `process`, `te
 `voltage` and `tree_type` as `TreeType`: `best_case_tree`, `balanced_tree`, `worst_case_tree` or
 `Other`), `default_operating_conditions`, and the library nominal attributes `nom_process`,
 `nom_temperature` and `nom_voltage` [@liberty2017].
+
+**LIBERTY-REQ-0049** Pin pulse attributes: the pin attributes `min_pulse_width_high`,
+`min_pulse_width_low` and `min_period` are consumed (in addition to the constructs of
+LIBERTY-REQ-0054) as unconditional pulse checks of their pin, in library time units. A pin with
+`min_pulse_width_high` or `min_pulse_width_low` gets a timing arc of type `min_pulse_width` whose
+scalar `rise_constraint` is `min_pulse_width_high` and whose scalar `fall_constraint` is
+`min_pulse_width_low` (absent when the attribute is absent); a pin with `min_period` gets a timing
+arc of type `minimum_period` with `min_period` as its scalar `rise_constraint` and
+`fall_constraint`. Both arcs relate the pin to itself, have no `when` and line 0
+(LIBERTY-REQ-0046), and follow the arcs of the pin's `timing` groups (LIBERTY-REQ-0019). A
+negative or non-finite value is a pin limit problem (`L0204`, LIBERTY-REQ-0057) and adds no arc
+[@liberty2017].
 

@@ -76,6 +76,15 @@ pub(super) fn check_pulses(
                 continue;
             }
             out.conditional_pulse_groups += checks.iter().filter(|c| c.conditional).count() as u64;
+            if clocks.iter().any(|&(clock, _)| {
+                inputs
+                    .constraints
+                    .clocks
+                    .get(clock.index())
+                    .is_some_and(|ck| !ck.propagated)
+            }) {
+                out.ideal_clock_pulse_pins += 1;
+            }
             for &(clock, bits) in clocks {
                 let Some(ck) = inputs.constraints.clocks.get(clock.index()) else {
                     continue;

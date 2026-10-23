@@ -17,10 +17,10 @@ use rusteda_workspace::{Error, Hash64, Result, Txn};
 use serde_json::{Value, json};
 
 use crate::engine::store::layout::{
-    ClockRec, CornerRec, DisabledArcRec, EndpointRec, EpSlackRec, FORMAT_VERSION, KIND, NodeRec,
-    NoteRec, PathHeaderRec, PathPointRec, PathRankRec, ScopeReport, StaMeta, StoreMode, SummaryRec,
-    TABLE_NAME, TABLE_PATH, TagExtraRec, TagRec, UnconstrainedRec, canon_f32, canon_f64,
-    canon_grid, section,
+    ClockRec, CornerLimitsReport, CornerRec, DisabledArcRec, EndpointRec, EpSlackRec,
+    FORMAT_VERSION, KIND, NodeRec, NoteRec, PathHeaderRec, PathPointRec, PathRankRec, ScopeReport,
+    StaMeta, StoreMode, SummaryRec, TABLE_NAME, TABLE_PATH, TagExtraRec, TagRec, UnconstrainedRec,
+    canon_f32, canon_f64, canon_grid, section,
 };
 
 /// Complete in-memory payload for the 24 sections of an `STA v2` (`sta.rbin`) table.
@@ -182,11 +182,13 @@ impl StaStoreData {
     ///
     /// Aggregates worst-over-corners `setup_wns_ns`, `setup_tns_ns`, `setup_violating_endpoints`,
     /// `hold_wns_ns`, `hold_tns_ns`, `hold_violating_endpoints`, the design-rule counts
-    /// `max_trans_violating`, `max_cap_violating` and `max_fanout_violating` with `drv_status`,
-    /// the pulse counts `min_pulse_width_violating` and `min_period_violating` with
-    /// `pulse_width_status`, `total_endpoints`, `unconstrained_endpoints`, and `corners`. A table
-    /// whose `SCOPE` has no limit counts reports the design-rule and pulse counts as `null` and
-    /// their status as `unchecked`, never as zero (AGENTS rule 4.2).
+    /// `max_trans_violating`, `max_cap_violating` and `max_fanout_violating` with their
+    /// statuses and `drv_status`, the pulse counts `min_pulse_width_violating` and
+    /// `min_period_violating` with `pulse_width_status`, `total_endpoints`,
+    /// `unconstrained_endpoints`, and `corners`. The counts and statuses follow
+    /// [`limit_statuses`](crate::engine::limits::status::limit_statuses): a table whose `SCOPE`
+    /// has no limit counts reports the counts as `null` and the statuses as `unchecked`, and a
+    /// count without a checked row is `null`, never zero (AGENTS rule 4.2, `STA-REQ-0813`).
     #[must_use]
     pub fn revision_summary_and_status(&self) -> (JsonMap, JsonMap) {
         let meta = &self.meta[0];
@@ -236,41 +238,21 @@ impl StaStoreData {
             Value::Null
         };
 
-        // The limit counts of the analysis, the worst corner of each (`STA-REQ-0807`).
+        // The limit counts and statuses of the analysis, the worst corner of each
+        // (`STA-REQ-0807`, `STA-REQ-0813`).
         let limits = serde_json::from_slice::<ScopeReport>(&self.scope)
             .ok()
             .and_then(|s| s.limits);
-        let worst = |kinds: &[&str]| -> Option<u64> {
-            limits.as_ref().map(|corners| {
-                corners
-                    .iter()
-                    .map(|c| {
-                        kinds
-                            .iter()
-                            .filter_map(|k| c.kinds.get(*k))
-                            .map(|k| k.violating)
-                            .sum::<u64>()
-                    })
-                    .max()
-                    .unwrap_or(0)
-            })
-        };
-        let max_trans_viol = worst(&["max_transition"]);
-        let max_cap_viol = worst(&["max_capacitance"]);
-        let max_fanout_viol = worst(&["max_fanout"]);
-        let mpw_viol = worst(&["min_pulse_width_high", "min_pulse_width_low"]);
-        let period_viol = worst(&["min_period"]);
-        let status_of = |counts: &[Option<u64>]| -> &'static str {
-            if counts.iter().any(Option::is_none) {
-                "unchecked"
-            } else if counts.iter().any(|c| c.is_some_and(|v| v > 0)) {
-                "violated"
-            } else {
-                "met"
-            }
-        };
-        let drv_status = status_of(&[max_trans_viol, max_cap_viol, max_fanout_viol]);
-        let pulse_status = status_of(&[mpw_viol, period_viol]);
+        let limit_refs: Option<Vec<&CornerLimitsReport>> =
+            limits.as_ref().map(|cs| cs.iter().collect());
+        let ls = crate::engine::limits::status::limit_statuses(limit_refs.as_deref());
+        let [
+            (max_trans_viol, tran_status),
+            (max_cap_viol, cap_status),
+            (max_fanout_viol, fanout_status),
+        ] = ls.drv;
+        let drv_status = ls.drv_status.name();
+        let pulse_status = ls.pulse_width.name();
 
         let mut summary = JsonMap::new();
         summary.insert("setup_wns_ns".into(), setup_wns_val);
@@ -282,9 +264,18 @@ impl StaStoreData {
         summary.insert("max_trans_violating".into(), json!(max_trans_viol));
         summary.insert("max_cap_violating".into(), json!(max_cap_viol));
         summary.insert("max_fanout_violating".into(), json!(max_fanout_viol));
+        summary.insert("max_transition_status".into(), json!(tran_status.name()));
+        summary.insert("max_capacitance_status".into(), json!(cap_status.name()));
+        summary.insert("max_fanout_status".into(), json!(fanout_status.name()));
         summary.insert("drv_status".into(), json!(drv_status));
-        summary.insert("min_pulse_width_violating".into(), json!(mpw_viol));
-        summary.insert("min_period_violating".into(), json!(period_viol));
+        summary.insert(
+            "min_pulse_width_violating".into(),
+            json!(ls.min_pulse_width_violating),
+        );
+        summary.insert(
+            "min_period_violating".into(),
+            json!(ls.min_period_violating),
+        );
         summary.insert("pulse_width_status".into(), json!(pulse_status));
         summary.insert("total_endpoints".into(), json!(meta.num_endpoints));
         summary.insert(

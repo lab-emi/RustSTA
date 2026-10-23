@@ -11,7 +11,7 @@ joins the nets. Constants `1'b0`/`1'b1` are nets without transitions ([constants
 
 **STA-REQ-0002** Every net has at most one non-three-state driver: a top-level input or inout port,
 a cell output pin, or a constant. Multiple drivers on a net are a T error unless all cell drivers
-on the net are three-state outputs (`three_state`, STA-REQ-0013). A net without a driver is
+on the net are three-state outputs (`three_state`, STA-REQ-0017). A net without a driver is
 reported and its loads receive no arrival (`no_data_arrival`).
 
 **STA-REQ-0003** A cell instance must use a cell of the libraries, and each connected pin's
@@ -33,9 +33,10 @@ it is derived from the output function (unate in the related pin if the function
 it), else `non_unate`. Constant inputs refine a `non_unate` sense when the residual function becomes
 monotone (STA-REQ-0153). Edge arcs (`rising_edge`, `falling_edge`) launch both output transitions.
 
-**STA-REQ-0013** Supported `timing_type` values and arc classification
+**STA-REQ-0017** Supported `timing_type` values and arc classification, since version 0.4
 ([`tristate_bus`](../../../verification/analytic/sta/tristate_bus/DERIVATION.md)) [@liberty2017;
-@bhasker2009static, ch. 3]:
+@bhasker2009static, ch. 3]. It replaces STA-REQ-0013 (kept in [legacy.md](legacy.md)), which
+counted `min_pulse_width` and `minimum_period` as unanalyzed arcs:
 - combinational data arcs: `combinational` (also when `timing_type` is absent),
   `combinational_rise`, `combinational_fall`;
 - sequential launch arcs: `rising_edge`, `falling_edge`;

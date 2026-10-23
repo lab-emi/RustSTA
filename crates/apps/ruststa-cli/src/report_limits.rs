@@ -77,6 +77,7 @@ pub(crate) fn limits_section(
         o.insert("unlimited", &s.unlimited)?;
         o.insert("stored", &s.stored)?;
         o.insert("truncated", &s.truncated())?;
+        o.insert("unevaluated", &s.unevaluated)?;
         rows.push(o);
     }
     crate::report::section_envelope_obj(
@@ -90,6 +91,7 @@ pub(crate) fn limits_section(
             "unlimited",
             "stored",
             "truncated",
+            "unevaluated",
         ],
         total,
         total,
@@ -97,7 +99,10 @@ pub(crate) fn limits_section(
     )
 }
 
-/// A row section over `kinds` (`pulse_width`, `min_period`, `drv` and one design rule).
+/// A row section over `kinds` (`pulse_width`, `min_period`, `drv` and one design rule). Its
+/// `total` is the number of checked rows of the selected corners and kinds; `stored` of them are
+/// kept in the table and `truncated` are left out by the row budget, so that `matched` and
+/// `shown` count kept rows only (`STA-REQ-0811`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rows_section(
     table: &LimitsTable,
@@ -111,18 +116,24 @@ pub(crate) fn rows_section(
 ) -> Result<JsonObject, Error> {
     let n_corners = table.corners()?.len();
     let mut rows: Vec<LimitRowView<'_>> = Vec::new();
-    let mut total = 0usize;
     for c in 0..n_corners {
         if corner.is_some_and(|w| w != c) {
             continue;
         }
         for &kind in kinds {
             let kept = table.rows(c, kind)?;
-            total += kept.len();
             rows.extend(
                 kept.into_iter()
                     .filter(|r| filter.is_none_or(|f| f.keep(r))),
             );
+        }
+    }
+    let (mut checked, mut stored, mut unevaluated) = (0u64, 0u64, 0u64);
+    for k in table.kinds(corner)? {
+        if kinds.contains(&k.kind) {
+            checked += k.summary.checked;
+            stored += k.summary.stored;
+            unevaluated += k.summary.unevaluated;
         }
     }
     match sort_key {
@@ -185,8 +196,14 @@ pub(crate) fn rows_section(
             "unit",
             "source",
         ],
-        total,
+        usize::try_from(checked).unwrap_or(usize::MAX),
         matched,
         out,
     )
+    .and_then(|mut obj| {
+        obj.insert("stored", &stored)?;
+        obj.insert("truncated", &(checked - stored))?;
+        obj.insert("unevaluated", &unevaluated)?;
+        Ok(obj)
+    })
 }

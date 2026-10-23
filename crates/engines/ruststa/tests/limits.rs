@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
 //! Pin limit checks: minimum pulse width, minimum period and the electrical design rules
-//! (`STA-REQ-0800` to `STA-REQ-0810`), and per-corner extracted parasitics (`STA-REQ-0820`).
+//! (`STA-REQ-0800` to `STA-REQ-0810`, `STA-REQ-0815`, with the pin pulse attributes of
+//! LIBERTY-REQ-0049), and per-corner extracted parasitics (`STA-REQ-0820`).
 //!
 //! The library has constant tables (one table with a related-pin-transition axis) and ideal
 //! clocks, so that every expected value follows by hand from the specification
@@ -245,6 +246,96 @@ fn unclocked_pulse_pins_are_reported_unchecked() {
     assert_eq!(l.unclocked_pulse_pins, 2);
     assert_eq!(l.kind(LimitKind::MinPulseWidthHigh).checked, 0);
     assert!(a.diags.iter().any(|d| d.code == "T0133"));
+}
+
+/// Two flip-flops whose clock pins state the pin pulse attributes (LIBERTY-REQ-0049): `DFA/CK`
+/// only the attributes, `DFB/CK` the attributes and `min_pulse_width` groups.
+const ATTR_LIB: &str = r#"library (attr) {
+  time_unit : "1ns"; capacitive_load_unit (1, pf);
+  lu_table_template (mpw_t) { variable_1 : related_pin_transition; index_1 ("0.1, 0.5"); }
+  cell (DFA) {
+    ff (IQ, IQN) { next_state : "D"; clocked_on : "CK"; }
+    pin (CK) { direction : input; clock : true; capacitance : 0.001;
+      min_pulse_width_high : 0.6; min_pulse_width_low : 0.45; min_period : 2.0; }
+    pin (D) { direction : input; capacitance : 0.001; }
+    pin (Q) { direction : output; function : "IQ";
+      timing () { related_pin : "CK"; timing_type : rising_edge;
+        cell_rise (scalar) { values ("0.15"); } cell_fall (scalar) { values ("0.15"); }
+        rise_transition (scalar) { values ("0.1"); } fall_transition (scalar) { values ("0.1"); } } }
+  }
+  cell (DFB) {
+    ff (IQ, IQN) { next_state : "D"; clocked_on : "CK"; }
+    pin (CK) { direction : input; clock : true; capacitance : 0.001;
+      min_pulse_width_high : 0.5; min_pulse_width_low : 0.3;
+      timing () { related_pin : "CK"; timing_type : min_pulse_width; when : "D";
+        rise_constraint (mpw_t) { index_1 ("0.1, 0.5"); values ("0.3, 0.7"); }
+        fall_constraint (scalar) { values ("0.55"); } } }
+    pin (D) { direction : input; capacitance : 0.001; }
+    pin (Q) { direction : output; function : "IQ";
+      timing () { related_pin : "CK"; timing_type : rising_edge;
+        cell_rise (scalar) { values ("0.15"); } cell_fall (scalar) { values ("0.15"); }
+        rise_transition (scalar) { values ("0.1"); } fall_transition (scalar) { values ("0.1"); } } }
+  }
+}
+"#;
+
+// LIBERTY-REQ-0049, STA-REQ-0801, STA-REQ-0815: pin pulse attributes are checked, alone or with
+// the groups (the largest constraint applies), and an ideal clock's latency by transition moves
+// the edges of the pulse. Ideal clock c: period 10, rise 0, fall 4, latency rise 0.2, fall 0.25,
+// transition 0.2.
+// High pulse (positive sense): (4 + 0.25) - (0 + 0.2) = 4.05; low: (10 + 0.2) - (4 + 0.25) = 5.95.
+// a/CK (DFA, attributes only): high required 0.6, slack 3.45; low required 0.45, slack 5.5;
+// period required 2.0, slack 8.0.
+// b/CK (DFB): high required max(0.5, table 0.3 + (0.2 - 0.1) / 0.4 * 0.4 = 0.4) = 0.5, slack 3.55;
+// low required max(0.3, 0.55) = 0.55, slack 5.4; no period check.
+#[test]
+fn pin_pulse_attributes_are_checked_on_an_ideal_clock() {
+    let lib = read_text(ATTR_LIB, "attr.lib").expect("attribute library");
+    let frozen = freeze(
+        "module top (input clk, input d, output q1, output q2);\n\
+         DFA a (.CK(clk), .D(d), .Q(q1));\nDFB b (.CK(clk), .D(d), .Q(q2));\nendmodule\n",
+        &lib,
+    );
+    let sdc = "create_clock -name c -period 10 -waveform {0 4} [get_ports clk]\n\
+        set_clock_latency -rise 0.2 [get_clocks c]\nset_clock_latency -fall 0.25 [get_clocks c]\n\
+        set_clock_transition 0.2 [get_clocks c]\n\
+        set_input_delay -clock c 1 [get_ports d]\nset_output_delay -clock c 1 [get_ports {q1 q2}]\n";
+    let a = analyze(
+        &frozen,
+        std::slice::from_ref(&lib),
+        sdc,
+        &AnalysisOptions::ideal(),
+    );
+    let l = &a.corners[0].limits;
+    for (pin, kind, value, limit, slack) in [
+        ("a/CK", LimitKind::MinPulseWidthHigh, 4.05, 0.6, 3.45),
+        ("a/CK", LimitKind::MinPulseWidthLow, 5.95, 0.45, 5.5),
+        ("a/CK", LimitKind::MinPeriod, 10.0, 2.0, 8.0),
+        ("b/CK", LimitKind::MinPulseWidthHigh, 4.05, 0.5, 3.55),
+        ("b/CK", LimitKind::MinPulseWidthLow, 5.95, 0.55, 5.4),
+    ] {
+        let r = row(l, kind, pin, &a);
+        close(r.value, value, &format!("{pin} {} value", kind.name()));
+        close(r.limit, limit, &format!("{pin} {} limit", kind.name()));
+        close(r.slack, slack, &format!("{pin} {} slack", kind.name()));
+    }
+    assert_eq!(l.kind(LimitKind::MinPeriod).checked, 1);
+    // Only the group of b/CK has a condition; both pins are on an ideal clock (T0139).
+    assert_eq!(l.conditional_pulse_groups, 1);
+    assert_eq!(l.ideal_clock_pulse_pins, 2);
+    assert!(a.diags.iter().any(|d| d.code == "T0139"));
+    assert_eq!(a.corners[0].unanalyzed_arcs, 0);
+
+    // A propagated clock is not noted.
+    let prop = format!("{sdc}set_propagated_clock [get_clocks c]\n");
+    let p = analyze(
+        &frozen,
+        std::slice::from_ref(&lib),
+        &prop,
+        &AnalysisOptions::ideal(),
+    );
+    assert_eq!(p.corners[0].limits.ideal_clock_pulse_pins, 0);
+    assert!(!p.diags.iter().any(|d| d.code == "T0139"));
 }
 
 const DRV_NETLIST: &str = "module top (input a, output y, output o2, output o3, output o4);\n\

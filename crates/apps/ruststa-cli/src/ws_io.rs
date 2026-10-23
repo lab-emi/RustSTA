@@ -18,6 +18,7 @@ use rusteda_workspace::{
 
 use ruststa::engine::analysis::{AnalysisOptions, EngineAnalysis, Propagation, WireModelOption};
 use ruststa::engine::input::constr::{CompiledConstraints, CornerLibs};
+use ruststa::engine::limits::status::{DRV_KINDS, limit_statuses};
 use ruststa::engine::limits::table::LimitsData;
 use ruststa::engine::limits::{LimitKind, MAX_LIMIT_ROWS_CEILING};
 use ruststa::engine::prop::lower::LoweredCorner;
@@ -827,33 +828,21 @@ pub fn envelope_headers_from_store(
 }
 
 /// Adds the counts of the pin limit checks of `scope` to `completeness` and `metrics`: the
-/// worst corner of each count, or `corner_override` alone. A table without limit counts reports
-/// them as `null` with the status `unchecked` (`STA-REQ-0807`, AGENTS rule 4.2).
+/// worst corner of each count, or `corner_override` alone. The counts and statuses follow
+/// [`limit_statuses`]: a table without limit counts reports them as `null` with the status
+/// `unchecked`, and a count without a checked row is `null` (`STA-REQ-0807`, `STA-REQ-0813`,
+/// AGENTS rule 4.2).
 pub fn add_limit_headers(
     limits: Option<&[CornerLimitsReport]>,
     corner_override: Option<&str>,
     completeness: &mut JsonObject,
     metrics: &mut JsonObject,
 ) -> Result<(), Error> {
-    let corners: Option<Vec<_>> = limits.map(|all| {
+    let corners: Option<Vec<&CornerLimitsReport>> = limits.map(|all| {
         all.iter()
             .filter(|c| corner_override.is_none_or(|o| c.corner == o))
             .collect()
     });
-    let violating = |kinds: &[LimitKind]| -> Option<u64> {
-        corners.as_ref().map(|cs| {
-            cs.iter()
-                .map(|c| {
-                    kinds
-                        .iter()
-                        .filter_map(|k| c.kinds.get(k.name()))
-                        .map(|k| k.violating)
-                        .sum::<u64>()
-                })
-                .max()
-                .unwrap_or(0)
-        })
-    };
     let worst = |kinds: &[LimitKind]| -> Option<f64> {
         corners.as_ref().and_then(|cs| {
             cs.iter()
@@ -863,47 +852,54 @@ pub fn add_limit_headers(
                 .map(canon_f64)
         })
     };
-    let status = |counts: &[Option<u64>]| -> &'static str {
-        if counts.iter().any(Option::is_none) {
-            "unchecked"
-        } else if counts.iter().any(|c| c.is_some_and(|v| v > 0)) {
-            "violated"
-        } else {
-            "met"
-        }
-    };
+    let ls = limit_statuses(corners.as_deref());
     let mpw = [LimitKind::MinPulseWidthHigh, LimitKind::MinPulseWidthLow];
     let per = [LimitKind::MinPeriod];
-    let tran = [LimitKind::MaxTransition];
-    let cap = [LimitKind::MaxCapacitance];
-    let fan = [LimitKind::MaxFanout];
-    let (v_mpw, v_per) = (violating(&mpw), violating(&per));
-    let (v_tran, v_cap, v_fan) = (violating(&tran), violating(&cap), violating(&fan));
-    metrics.insert("min_pulse_width_violating", &v_mpw)?;
+    metrics.insert("min_pulse_width_violating", &ls.min_pulse_width_violating)?;
     metrics.insert("worst_min_pulse_width_slack_ns", &worst(&mpw))?;
-    metrics.insert("min_period_violating", &v_per)?;
+    metrics.insert("min_period_violating", &ls.min_period_violating)?;
     metrics.insert("worst_min_period_slack_ns", &worst(&per))?;
-    metrics.insert("pulse_width_status", &status(&[v_mpw, v_per]))?;
-    metrics.insert("max_transition_violating", &v_tran)?;
-    metrics.insert("worst_max_transition_slack_ns", &worst(&tran))?;
-    metrics.insert("max_capacitance_violating", &v_cap)?;
-    metrics.insert("worst_max_capacitance_slack_pf", &worst(&cap))?;
-    metrics.insert("max_fanout_violating", &v_fan)?;
-    metrics.insert("worst_max_fanout_slack", &worst(&fan))?;
-    metrics.insert("drv_status", &status(&[v_tran, v_cap, v_fan]))?;
+    metrics.insert("pulse_width_status", &ls.pulse_width.name())?;
+    for (k, (violating, status)) in DRV_KINDS.into_iter().zip(ls.drv) {
+        let (count_key, worst_key, status_key) = match k {
+            LimitKind::MaxTransition => (
+                "max_transition_violating",
+                "worst_max_transition_slack_ns",
+                "max_transition_status",
+            ),
+            LimitKind::MaxCapacitance => (
+                "max_capacitance_violating",
+                "worst_max_capacitance_slack_pf",
+                "max_capacitance_status",
+            ),
+            _ => (
+                "max_fanout_violating",
+                "worst_max_fanout_slack",
+                "max_fanout_status",
+            ),
+        };
+        metrics.insert(count_key, &violating)?;
+        metrics.insert(worst_key, &worst(&[k]))?;
+        metrics.insert(status_key, &status.name())?;
+    }
+    metrics.insert("drv_status", &ls.drv_status.name())?;
 
-    let unclocked = corners
-        .as_ref()
-        .map(|cs| cs.iter().map(|c| c.unclocked_pulse_pins).max().unwrap_or(0));
-    completeness.insert("unchecked_pulse_width_pins", &unclocked)?;
-    match &corners {
+    let sum = |f: fn(&CornerLimitsReport) -> u64| -> Option<u64> {
+        corners
+            .as_ref()
+            .filter(|cs| !cs.is_empty())
+            .map(|cs| cs.iter().map(|c| f(c)).max().unwrap_or(0))
+    };
+    completeness.insert(
+        "unchecked_pulse_width_pins",
+        &sum(|c| c.unclocked_pulse_pins),
+    )?;
+    let uneval = sum(|c| c.kinds.values().map(|k| k.unevaluated).sum());
+    completeness.insert("unevaluated_limit_checks", &uneval)?;
+    match corners.as_ref().filter(|cs| !cs.is_empty()) {
         Some(cs) => {
             let mut unlimited = JsonObject::new();
-            for k in [
-                LimitKind::MaxTransition,
-                LimitKind::MaxCapacitance,
-                LimitKind::MaxFanout,
-            ] {
+            for k in DRV_KINDS {
                 let n = cs
                     .iter()
                     .filter_map(|c| c.kinds.get(k.name()))

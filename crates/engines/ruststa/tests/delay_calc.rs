@@ -327,7 +327,7 @@ fn seed_dff_launch(nt: &NetlistTiming, lib: &TimingLib, sb: &mut StartBuilder, p
     );
 }
 
-// STA-REQ-0010, STA-REQ-0011, STA-REQ-0012, STA-REQ-0013, STA-REQ-0014, STA-REQ-0108,
+// STA-REQ-0010, STA-REQ-0011, STA-REQ-0012, STA-REQ-0017, STA-REQ-0014, STA-REQ-0108,
 // STA-REQ-0112, STA-REQ-0114: closed-form `wt_15` (1ns / 1pF) and `wt_units` (100ps / 10fF)
 // produce identical physical capacitances, delays, slews, and check constraints within 1e-12 ns.
 #[test]
@@ -539,7 +539,7 @@ fn closed_form_wt_3d_trilinear_lookup() {
     }
 }
 
-// STA-REQ-0012, STA-REQ-0013, STA-REQ-0016, STA-REQ-0113, STA-REQ-0223: `wt_gfconv`,
+// STA-REQ-0012, STA-REQ-0017, STA-REQ-0016, STA-REQ-0113, STA-REQ-0223: `wt_gfconv`,
 // `wt_tristate`, and `wt_thresholds`.
 #[test]
 fn closed_form_wt_gfconv_wt_tristate_and_wt_thresholds() {
@@ -925,7 +925,7 @@ endmodule
     );
 }
 
-// STA-REQ-0013, STA-REQ-0110, STA-REQ-0121, STA-REQ-0223: analytic case `tristate_bus`
+// STA-REQ-0017, STA-REQ-0110, STA-REQ-0121, STA-REQ-0223: analytic case `tristate_bus`
 // (`verification/analytic/sta/tristate_bus/DERIVATION.md` and `expected.json`).
 #[test]
 fn analytic_tristate_bus() {

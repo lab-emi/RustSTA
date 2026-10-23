@@ -5,10 +5,37 @@ outside `src/engine/`) and the legacy checker (`crates/verify/ruststa-check/src/
 `src/rev/`). They are retained verbatim so that the frozen legacy tests keep citing the exact text
 they verify until package `Z1` removes the legacy engine, legacy checker, and this file.
 
-The Phase 2a timing rules that replace them are defined in [`inputs.md`](inputs.md) (`STA-REQ-0013`
-to `0016`), [`delay.md`](delay.md) (`STA-REQ-0108`, `0109`, `0120` to `0125`),
+The Phase 2a timing rules that replace them are defined in [`inputs.md`](inputs.md) (`STA-REQ-0014`
+to `0017`), [`delay.md`](delay.md) (`STA-REQ-0108`, `0109`, `0120` to `0125`),
 [`constants.md`](constants.md) (`STA-REQ-0150` to `0157`), and [`checks.md`](checks.md)
 (`STA-REQ-0217` to `0228`); see [ADR 0004](../../adr/0004-timing-conventions.md).
+
+## Superseded Phase 2a arc classification (replaced by STA-REQ-0017 in version 0.4)
+
+STA-REQ-0013 below is the arc classification of versions up to 0.3. Version 0.4 checks
+`min_pulse_width` and `minimum_period` groups as pulse checks (STA-REQ-0800, STA-REQ-0801), and
+STA-REQ-0017 in [`inputs.md`](inputs.md) replaces it. The classification of every other arc kind is
+the same in both; the independent checker, which models no pulse check, keeps citing STA-REQ-0013
+for those kinds.
+
+**STA-REQ-0013** Supported `timing_type` values and arc classification
+([`tristate_bus`](../../../verification/analytic/sta/tristate_bus/DERIVATION.md)) [@liberty2017;
+@bhasker2009static, ch. 3]:
+- combinational data arcs: `combinational` (also when `timing_type` is absent),
+  `combinational_rise`, `combinational_fall`;
+- sequential launch arcs: `rising_edge`, `falling_edge`;
+- three-state arcs on outputs with `three_state`: `three_state_enable`, `three_state_enable_rise`,
+  `three_state_enable_fall`, `three_state_disable`, `three_state_disable_rise`,
+  `three_state_disable_fall` (propagated from the enable pin to the three-state output,
+  STA-REQ-0223);
+- timing checks: `setup_rising`, `setup_falling`, `hold_rising`, `hold_falling`, `recovery_rising`,
+  `recovery_falling`, `removal_rising`, `removal_falling`;
+- asynchronous preset/clear arcs: `clear` and `preset` are retained in the library view and are not
+  propagated as combinational data arcs (asynchronous controls are checked by `recovery_*` and
+  `removal_*`, STA-REQ-0224);
+- unanalyzed arc kinds (`non_seq_setup_*`, `non_seq_hold_*`, `min_pulse_width`, `minimum_period`,
+  `skew_*`) are counted per instantiated cell in `completeness.unanalyzed_arcs` and reported as one
+  aggregated T warning per kind rather than per-library-cell notes.
 
 ## Superseded library rule (legacy engine, removed by Z1)
 

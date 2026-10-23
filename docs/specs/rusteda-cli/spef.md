@@ -39,8 +39,11 @@ fail explicitly.
   source, and the source identity of every corner is recorded. Metrics name
   `spef_corners`, `spef_kept_corners` and per imported corner `spef_imported`
   (nets, nodes, elements, compression, byte counts); a one-file import also
-  keeps the flat `spef_*` metrics. The import drops `sta`, `sta_check` and
-  `limits`.
+  keeps the flat `spef_*` metrics. The decoded sources of all corners of the
+  new table, kept and imported, which the import holds at once, total at most
+  eight times the per-file byte budget (`--max-spef-mib`); more is rejected
+  with `T0072` and nothing is committed. The import drops `sta`, `sta_check`
+  and `limits`.
 
 **RCLI-REQ-0073**: Accept plain UTF-8 and gzip SPEF, detected by magic bytes.
   Both encoded and decoded inputs obey `--max-spef-mib`; validate gzip CRC and

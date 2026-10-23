@@ -168,8 +168,9 @@ The pin limit checks of the same analysis are a separate table, `limits.rbin` (r
 version 1), committed with `sta.rbin` with the same upstream tables, so that the 24 sections of
 `STA v2` and their shared readers are unchanged (STA-REQ-0806). Its sections are `STR_BYTES` (1),
 `STR_OFFS` (2), `META` (3, 16 bytes: corners, rows, row budget), `CORNERS` (4, 24 bytes: name and
-the unclocked and conditional pulse counts), `KINDS` (5, 48 bytes per corner and kind: checked,
-violating, unlimited and kept rows, the first kept row, the worst slack or NaN) and `ROWS` (6,
+the unclocked and conditional pulse counts), `KINDS` (5, 56 bytes per corner and kind: checked,
+violating, unlimited and kept rows, the first kept row, the worst slack or NaN, and the checks
+that were not evaluated) and `ROWS` (6,
 48 bytes: value, limit, slack, node, pin, net and clock strings, corner, kind and flags with the
 transition in bits 0 and 1 and the source in bits 2 and 3), the rows of each corner and kind
 contiguous and in slack order. A reader checks every count, range and string index before use.

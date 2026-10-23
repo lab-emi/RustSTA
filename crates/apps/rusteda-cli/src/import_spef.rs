@@ -22,6 +22,9 @@ pub(crate) const TABLE: &str = "parasitics";
 const TABLE_PATH: &str = "parasitics.rbin";
 /// Largest metadata section of a container: 4 KiB per corner, for at most 64 corners.
 const MAX_METADATA_BYTES: usize = 64 * 4096;
+/// The decoded sources of all corners of a table, which an import holds at once, total at most
+/// this many per-file byte budgets (RCLI-REQ-0075).
+const MAX_TABLE_SOURCES: usize = 8;
 
 /// One corner of the new table: its metadata and decoded source.
 struct CornerEntry {
@@ -174,6 +177,25 @@ pub(crate) fn import_spefs(
         .filter(|c| !inputs.iter().any(|(_, n)| n == *c))
         .cloned()
         .collect();
+    // The decoded sources held at once: the kept corners and every imported one so far
+    // (RCLI-REQ-0075).
+    let table_budget = limits.max_bytes.saturating_mul(MAX_TABLE_SOURCES);
+    let mut held: usize = corners
+        .iter()
+        .filter(|(c, _)| kept.contains(c))
+        .map(|(_, e)| e.text.len())
+        .sum();
+    let mut hold = |n: usize| -> Result<(), Error> {
+        held = held.saturating_add(n);
+        if held > table_budget {
+            return Err(Error::input_rejected(format!(
+                "T0072: the decoded SPEF sources of the parasitics table exceed {table_budget} \
+                 bytes ({MAX_TABLE_SOURCES} times the per-file byte budget)"
+            )));
+        }
+        Ok(())
+    };
+    hold(0)?;
 
     let mut per_corner = serde_json::Map::new();
     let mut coupling_records = 0usize;
@@ -190,6 +212,7 @@ pub(crate) fn import_spefs(
             Error::input_rejected(e.to_string())
         };
         let decoded = spef::decode_source(&bytes, limits).map_err(&mut reject)?;
+        hold(decoded.text.len())?;
         let parsed = spef::read(&decoded.text, limits).map_err(&mut reject)?;
         coupling_records += parsed.coupling_records;
         per_corner.insert(

@@ -14,7 +14,7 @@
 //! | 2 | `STR_OFFS` | 4 | `u32` offsets, one more than the strings |
 //! | 3 | `META` | 16 | [`LimitsMeta`] |
 //! | 4 | `CORNERS` | 24 | [`LimitsCornerRec`] per corner |
-//! | 5 | `KINDS` | 48 | [`LimitsKindRec`] per corner and kind (`corner * 6 + kind`) |
+//! | 5 | `KINDS` | 56 | [`LimitsKindRec`] per corner and kind (`corner * 6 + kind`) |
 //! | 6 | `ROWS` | 48 | [`LimitsRowRec`] by corner, kind, slack, node |
 
 use std::ops::RangeInclusive;
@@ -97,6 +97,8 @@ pub struct LimitsKindRec {
     pub row_begin: u64,
     /// The worst slack, NaN without a checked row.
     pub worst_slack: f64,
+    /// Checks that were not evaluated (a value, limit or slack that is not finite).
+    pub unevaluated: u64,
 }
 
 /// One kept row.
@@ -200,6 +202,7 @@ impl LimitsData {
                     stored: k.stored,
                     row_begin,
                     worst_slack: k.worst_slack.unwrap_or(f64::NAN),
+                    unevaluated: k.unevaluated,
                 });
             }
         }
@@ -481,6 +484,7 @@ impl LimitsTable {
                         worst_slack: (!k.worst_slack.is_nan()).then_some(k.worst_slack),
                         unlimited: k.unlimited,
                         stored: k.stored,
+                        unevaluated: k.unevaluated,
                     },
                 });
             }
@@ -540,7 +544,7 @@ mod tests {
     fn record_sizes_are_fixed() {
         assert_eq!(size_of::<LimitsMeta>(), 16);
         assert_eq!(size_of::<LimitsCornerRec>(), 24);
-        assert_eq!(size_of::<LimitsKindRec>(), 48);
+        assert_eq!(size_of::<LimitsKindRec>(), 56);
         assert_eq!(size_of::<LimitsRowRec>(), 48);
     }
 }

@@ -8,10 +8,12 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 ## [0.4.0] - 2026-10-23
 
 ### Added
-- **Pin limit checks (`STA-REQ-0800` to `STA-REQ-0812`):** minimum pulse width (high and low) and
+- **Pin limit checks (`STA-REQ-0800` to `STA-REQ-0815`):** minimum pulse width (high and low) and
   minimum period of every clock pin on the propagated or ideal clock waveform, with the latest
   opening and earliest closing arrival, required widths from the `min_pulse_width` tables at the
-  opening transition time and the worst of conditional (`when`) groups; electrical design rules
+  opening transition time and the worst of conditional (`when`) groups and of the pin attributes
+  `min_pulse_width_high`, `min_pulse_width_low` and `min_period`; on an ideal clock the width is
+  the declared waveform with the clock latencies (note `T0139`); electrical design rules
   `max_transition`, `max_capacitance` and `max_fanout` from library pin limits and defaults and
   from `set_max_transition`, `set_max_capacitance`, `set_max_fanout` (design, port and clock-domain
   slots) and `set_fanout_load`. Rows are kept in a bounded heap (`--max-limit-rows`), counts cover
@@ -25,8 +27,15 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   (`STA-REQ-0830` to `STA-REQ-0832`).
 - **Metrics and status:** `min_pulse_width_violating`, `min_period_violating`,
   `max_transition_violating`, `max_capacitance_violating`, `max_fanout_violating`, their worst
-  slacks, `pulse_width_status`, `drv_status`, and the completeness counts
-  `unchecked_pulse_width_pins` and `drv_unlimited`, in `run`, `update`, queries and `whatif`.
+  slacks, `pulse_width_status`, `max_transition_status`, `max_capacitance_status`,
+  `max_fanout_status`, `drv_status`, and the completeness counts `unchecked_pulse_width_pins`,
+  `unevaluated_limit_checks` and `drv_unlimited`, in `run`, `update`, queries and `whatif`. One
+  rule (`STA-REQ-0813`) gives every status: `met`, `violated`, `partial`, `unconstrained` or
+  `unchecked`; a count without a checked row is `null`; unclocked pulse pins and checks with a
+  value that is not finite (`T0137`) are never reported as met.
+- **Liberty pin pulse attributes (LIBERTY-REQ-0049):** the shared reader consumes
+  `min_pulse_width_high`, `min_pulse_width_low` and `min_period` as unconditional scalar pulse
+  arcs of their pin instead of ignoring them.
 - **Extracted parasitics per corner (`STA-REQ-0820`, RCLI-REQ-0075):** `rusteda import` takes
   repeatable `--spef FILE --spef-corner NAME` pairs into a `PARASIT` v2 table; later imports add or
   replace corners; every analyzed corner uses its own extraction and a corner without one fails
@@ -44,6 +53,14 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   `pulse_width`; `timing` also covers pulse width and period violations.
 
 ### Fixed
+- `path --to` (and pin or port targets) with `--corner` returned no path when the endpoint's worst
+  path was in another corner, and without `--corner` it searched only the worst setup corner; it
+  now gives the worst path in `--corner`, or over all corners, and warns `T0138` for a requested
+  check family without a path (`STA-REQ-0814`).
+- The row sections of `report` give the checked count as `total`, with `stored`, `truncated` and
+  `unevaluated`, when the row budget leaves rows out.
+- The state estimate of a corner counts the parsed parasitics of every analyzed corner, and one
+  import holds at most eight per-file budgets of decoded SPEF (`T0072`).
 - `inspect`, its instance pins and the `pins` section reported the hold-side required time as
   `required_ns` and the setup required time as `required_hold_ns`; they now give
   `required_setup_ns` (and `required_ns`) and `required_hold_ns` at the worst slack's transition.

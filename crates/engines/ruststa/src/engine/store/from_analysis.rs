@@ -1134,6 +1134,7 @@ pub fn corner_limits_report(ca: &CornerAnalysis) -> CornerLimitsReport {
                         violating: s.violating,
                         unlimited: s.unlimited,
                         worst_slack_ns: s.worst_slack,
+                        unevaluated: s.unevaluated,
                     },
                 )
             })

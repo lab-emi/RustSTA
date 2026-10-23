@@ -15,8 +15,13 @@ parasitics, backend and precision. Endpoint completeness identifies constrained
 and unconstrained coverage. An unchecked DRC is `drc_status: "unchecked"`.
 It must not be reported as a zero-violation check. The electrical design rules
 (`max_transition`, `max_capacitance`, `max_fanout`) and the pulse checks have
-their own status, `drv_status` and `pulse_width_status`, with counts; a table
-that did not check them reports `unchecked` with `null` counts.
+their own status, `max_transition_status`, `max_capacitance_status`,
+`max_fanout_status`, `drv_status` and `pulse_width_status`, with counts. A status
+is `met` only when every check was evaluated without violation: `partial` when
+some checks were not evaluated (unclocked pulse pins, values that are not
+finite) or a design rule has no limit anywhere, `unconstrained` when there is
+nothing to check, and `unchecked` when nothing was evaluated or the table did not
+check them. A count without a checked row is `null`, never zero.
 
 ```bash
 ruststa report --workspace ./ws --rev rev2 --section limits --format json
@@ -33,7 +38,11 @@ ruststa report --workspace ./ws --rev rev2 --section endpoints \
 
 Tables expose columns and row counts, including total/matched/shown counts.
 Bounded output is a window into the result, not proof that the design has only
-that many endpoints. Path handles refer to the selected revision.
+that many endpoints. The limit row sections also give `stored` and `truncated`
+rows: their `total` counts every checked row, while only the kept rows can match
+a filter. Path handles refer to the selected revision. `ruststa path --to NAME`
+gives the worst path of the endpoint over all corners, or in `--corner`, and
+warns `T0138` when a requested check has no path.
 
 ## Workspace artifacts
 

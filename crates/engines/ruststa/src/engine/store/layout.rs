@@ -899,6 +899,10 @@ pub struct LimitKindReport {
     pub unlimited: u64,
     /// The worst slack, absent without a checked row.
     pub worst_slack_ns: Option<f64>,
+    /// Checks that were not evaluated because a value, limit or slack is not finite
+    /// (`STA-REQ-0813`).
+    #[serde(default)]
+    pub unevaluated: u64,
 }
 
 /// Completeness breakdown inside [`ScopeReport`].

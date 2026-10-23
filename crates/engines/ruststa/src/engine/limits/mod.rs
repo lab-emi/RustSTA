@@ -13,6 +13,7 @@
 
 mod drv;
 mod pulse;
+pub mod status;
 pub mod table;
 
 use std::cmp::Ordering;
@@ -193,6 +194,9 @@ pub struct KindSummary {
     pub unlimited: u64,
     /// Rows kept in [`CornerLimits::rows`] (at most the row budget).
     pub stored: u64,
+    /// Checks whose value, limit or slack is not a finite number: not evaluated, so neither
+    /// checked nor violating, and reported as unchecked (`STA-REQ-0813`).
+    pub unevaluated: u64,
 }
 
 impl KindSummary {
@@ -214,6 +218,9 @@ pub struct CornerLimits {
     pub unclocked_pulse_pins: u64,
     /// Conditional (`when`) pulse groups on the checked instance pins.
     pub conditional_pulse_groups: u64,
+    /// Checked instance pins reached by an ideal clock, whose pulse widths come from the declared
+    /// waveform and clock latencies (`STA-REQ-0815`).
+    pub ideal_clock_pulse_pins: u64,
 }
 
 impl CornerLimits {
@@ -285,6 +292,17 @@ pub fn check_corner_limits(
             ),
         ));
     }
+    if out.ideal_clock_pulse_pins > 0 {
+        diags.push(Diag::note(
+            "T0139",
+            format!(
+                "corner '{corner}': {} pin(s) with pulse checks are reached by an ideal clock; their \
+                 pulse widths are the declared waveform with the clock latencies, without the \
+                 transition distortion of the clock network (STA-REQ-0815)",
+                out.ideal_clock_pulse_pins
+            ),
+        ));
+    }
     if out.conditional_pulse_groups > 0 {
         diags.push(Diag::note(
             "T0132",
@@ -298,6 +316,18 @@ pub fn check_corner_limits(
     let (kept, kinds) = rows.finish();
     for kind in LimitKind::ALL {
         let k = &kinds[kind.index()];
+        if k.unevaluated > 0 {
+            diags.push(Diag::warning(
+                "T0137",
+                format!(
+                    "corner '{corner}': {} {} check(s) have a value, limit or slack that is not a \
+                     finite number; they are not evaluated and reported as unchecked \
+                     (STA-REQ-0813)",
+                    k.unevaluated,
+                    kind.name()
+                ),
+            ));
+        }
         if k.truncated() > 0 {
             diags.push(Diag::warning(
                 "T0134",
@@ -371,6 +401,7 @@ impl RowCollector {
 
     fn push(&mut self, mut row: LimitRow) {
         if !(row.value.is_finite() && row.limit.is_finite() && row.slack.is_finite()) {
+            self.kinds[row.kind.index()].unevaluated += 1;
             return;
         }
         row.value = canon(row.value);
@@ -454,16 +485,23 @@ mod tests {
         assert_eq!((f.checked, f.unlimited, f.stored), (1, 1, 1));
     }
 
-    // STA-REQ-0810: a budget of zero keeps no row and still counts.
+    // STA-REQ-0810, STA-REQ-0813: a budget of zero keeps no row and still counts; a row that is
+    // not finite is counted as unevaluated, never as checked.
     #[test]
     fn zero_budget_counts_only() {
         let mut c = RowCollector::new(0);
         c.push(row(LimitKind::MinPeriod, 1, -1.0));
         c.push(row(LimitKind::MinPeriod, 2, f64::NAN));
+        let mut inf = row(LimitKind::MinPeriod, 3, 1.0);
+        inf.value = f64::INFINITY;
+        c.push(inf);
         let (rows, kinds) = c.finish();
         assert!(rows.is_empty());
         let p = &kinds[LimitKind::MinPeriod.index()];
-        assert_eq!((p.checked, p.violating, p.stored), (1, 1, 0));
+        assert_eq!(
+            (p.checked, p.violating, p.stored, p.unevaluated),
+            (1, 1, 0, 2)
+        );
     }
 
     // STA-REQ-0810: the kept rows of a corner are bounded by the budget or the node count.

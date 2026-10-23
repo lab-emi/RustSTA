@@ -4,8 +4,9 @@
 //! The signoff checks of the command line: the `limits` table and its report sections
 //! (`STA-REQ-0806`, `STA-REQ-0807`, `STA-REQ-0811`), the required times of `inspect` and the
 //! `--kind` of the endpoints section (`STA-REQ-0812`), extracted parasitics bound to several
-//! corners (`STA-REQ-0820`), the wire-model requirement (`STA-REQ-0821`) and the hold-fix report
-//! (`STA-REQ-0830` to `STA-REQ-0832`).
+//! corners (`STA-REQ-0820`), the wire-model requirement (`STA-REQ-0821`), the hold-fix report
+//! (`STA-REQ-0830` to `STA-REQ-0832`), the status rules (`STA-REQ-0813`) and the paths to an
+//! endpoint by corner (`STA-REQ-0814`).
 //!
 //! The library has constant tables, so every expected value follows by hand; the oracles are the
 //! hand derivations in the comments and, for the required times, the path reports of the same
@@ -158,10 +159,13 @@ fn run_commits_limits_and_reports_them() {
             "pulse_width_status",
             "max_transition_violating",
             "worst_max_transition_slack_ns",
+            "max_transition_status",
             "max_capacitance_violating",
             "worst_max_capacitance_slack_pf",
+            "max_capacitance_status",
             "max_fanout_violating",
             "worst_max_fanout_slack",
+            "max_fanout_status",
             "drv_status",
         ]
     );
@@ -176,7 +180,12 @@ fn run_commits_limits_and_reports_them() {
         "worst transition slack",
     );
     close(&m["worst_max_fanout_slack"], -3.5, "worst fanout slack");
-    assert_eq!(m["min_pulse_width_violating"], 0);
+    // No pin has a pulse constraint: nothing to check, and no count (STA-REQ-0813).
+    assert_eq!(m["min_pulse_width_violating"], Value::Null);
+    assert_eq!(m["pulse_width_status"], "unconstrained");
+    for k in ["max_transition", "max_capacitance", "max_fanout"] {
+        assert_eq!(m[format!("{k}_status")], "violated", "{k}");
+    }
     assert_eq!(run["completeness"]["drv_unlimited"]["max_transition"], 8);
     assert_eq!(
         run["completeness"]["unanalyzed_arcs"],
@@ -190,6 +199,9 @@ fn run_commits_limits_and_reports_them() {
     assert_eq!(sta["max_trans_violating"], 2);
     assert_eq!(sta["max_cap_violating"], 2);
     assert_eq!(sta["max_fanout_violating"], 1);
+    assert_eq!(sta["max_fanout_status"], "violated");
+    assert_eq!(sta["pulse_width_status"], "unconstrained");
+    assert_eq!(sta["min_pulse_width_violating"], Value::Null);
     assert_eq!(meta.status["sta"]["drv"], "violated");
     assert_eq!(meta.summary["limits"]["limit_rows_truncated"], 0);
     // The table depends on the inputs of the timing table.
@@ -630,5 +642,206 @@ fn every_corner_is_analyzed_with_its_own_spef() {
         "spef_rc",
     ]);
     assert_eq!(code, 0, "{r}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// STA-REQ-0802, STA-REQ-0813: a design whose pulse pins no clock reaches reports its pulse checks
+// as unchecked with null counts, in the envelope and in the revision summary; a design rule
+// without any limit is unconstrained with a null count, and the design rules together partial.
+#[test]
+fn unchecked_and_unconstrained_checks_are_never_met() {
+    let dir = temp_dir("status");
+    // No default_max_fanout in the library and no set_max_fanout: max_fanout has no limit.
+    let lib = LIB.replace("default_max_fanout : 4; ", "");
+    let ws = common::netlist_workspace(
+        &dir,
+        &lib,
+        "sig.lib",
+        FF_NETLIST,
+        "set_input_delay 1 [get_ports d]\nset_max_transition 2 [current_design]\n\
+         set_max_capacitance 1 [current_design]\n",
+    );
+    let w = dir.join("ws").to_string_lossy().into_owned();
+    let (code, run) = run_json(&["run", "-w", &w, "--base-rev", "rev1"]);
+    assert_eq!(code, 0, "{run}");
+    let m = &run["metrics"];
+    assert_eq!(m["pulse_width_status"], "unchecked");
+    assert_eq!(m["min_pulse_width_violating"], Value::Null);
+    assert_eq!(m["min_period_violating"], Value::Null);
+    assert_eq!(m["worst_min_pulse_width_slack_ns"], Value::Null);
+    assert_eq!(run["completeness"]["unchecked_pulse_width_pins"], 2);
+    assert_eq!(run["completeness"]["unevaluated_limit_checks"], 0);
+    assert_eq!(m["max_fanout_status"], "unconstrained");
+    assert_eq!(m["max_fanout_violating"], Value::Null);
+    assert_eq!(m["max_transition_status"], "met");
+    assert_eq!(m["max_transition_violating"], 0);
+    assert_eq!(m["drv_status"], "partial");
+    let diags: Vec<&str> = run["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["code"].as_str().unwrap())
+        .collect();
+    assert!(diags.contains(&"T0133"), "{diags:?}");
+    let rev = ws.revision(ws.resolve_query("rev2").unwrap()).unwrap();
+    let meta = rev.meta();
+    let sta = &meta.summary["sta"];
+    assert_eq!(sta["pulse_width_status"], "unchecked");
+    assert_eq!(sta["min_pulse_width_violating"], Value::Null);
+    assert_eq!(sta["max_fanout_violating"], Value::Null);
+    assert_eq!(sta["drv_status"], "partial");
+    assert_eq!(meta.status["sta"]["pulse_width"], "unchecked");
+    assert_eq!(meta.status["sta"]["drv"], "partial");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// STA-REQ-0811: with a row budget, a row section's total is the checked count, and it names the
+// kept and the truncated rows. DRV_SDC checks 9 transitions (the engine suite: 8 unlimited of 17
+// pins with a transition time); a budget of 2 keeps 2 of them.
+#[test]
+fn row_sections_count_checked_and_truncated_rows() {
+    let dir = temp_dir("budget");
+    common::netlist_workspace(&dir, LIB, "sig.lib", DRV_NETLIST, DRV_SDC);
+    let w = dir.join("ws").to_string_lossy().into_owned();
+    let (code, run) = run_json(&[
+        "run",
+        "-w",
+        &w,
+        "--base-rev",
+        "rev1",
+        "--max-limit-rows",
+        "2",
+    ]);
+    assert_eq!(code, 0, "{run}");
+    let (code, rep) = run_json(&[
+        "report",
+        "-w",
+        &w,
+        "--section",
+        "limits,max_transition",
+        "--limit",
+        "0",
+    ]);
+    assert_eq!(code, 0, "{rep}");
+    let checked = rows(&rep, "limits")
+        .iter()
+        .find(|r| r["kind"] == "max_transition")
+        .unwrap()["checked"]
+        .as_u64()
+        .unwrap();
+    assert!(checked > 2, "{checked}");
+    let sec = &rep["sections"]["max_transition"];
+    assert_eq!(sec["total"].as_u64(), Some(checked), "{sec}");
+    assert_eq!(sec["stored"], 2);
+    assert_eq!(sec["truncated"].as_u64(), Some(checked - 2));
+    assert_eq!(sec["unevaluated"], 0);
+    assert_eq!(sec["shown"], 2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// STA-REQ-0814: `path --to` gives the worst path of the endpoint in `--corner`, or over all
+// corners without it, for each requested family, and warns T0138 for a family without a path.
+// Corner a: setup 0.05, hold 0.02; corner b: setup 0.5, hold 0.01 (from the constraint tables),
+// so the worst setup corner of f1/D is b and its worst hold corner is a.
+#[test]
+fn path_to_an_endpoint_honours_the_corner() {
+    let dir = temp_dir("pathcorner");
+    let lib_b = LIB
+        .replace(
+            "timing_type : setup_rising;\n        rise_constraint (scalar) { values (\"0.05\"); } fall_constraint (scalar) { values (\"0.05\"); }",
+            "timing_type : setup_rising;\n        rise_constraint (scalar) { values (\"0.5\"); } fall_constraint (scalar) { values (\"0.5\"); }",
+        )
+        .replace(
+            "timing_type : hold_rising;\n        rise_constraint (scalar) { values (\"0.02\"); } fall_constraint (scalar) { values (\"0.02\"); }",
+            "timing_type : hold_rising;\n        rise_constraint (scalar) { values (\"0.01\"); } fall_constraint (scalar) { values (\"0.01\"); }",
+        );
+    assert_ne!(lib_b, LIB, "the corner b library differs");
+    let sdc = FF_SDC.replace(
+        "set_output_delay -clock c 1 [get_ports {q1 q2}]",
+        "set_output_delay -clock c 1 [get_ports q2]\nset_output_delay -clock c -max 1 [get_ports q1]",
+    );
+    common::corners_workspace(
+        &dir,
+        &[("a", LIB, "sig_a.lib"), ("b", &lib_b, "sig_b.lib")],
+        FF_NETLIST,
+        &sdc,
+    );
+    let w = dir.join("ws").to_string_lossy().into_owned();
+    let (code, run) = run_json(&["run", "-w", &w, "--base-rev", "rev1"]);
+    assert_eq!(code, 0, "{run}");
+    let slack_of = |corner: &str, field: &str| -> f64 {
+        let (code, rep) = run_json(&[
+            "report",
+            "-w",
+            &w,
+            "--section",
+            "endpoints",
+            "--corner",
+            corner,
+            "--limit",
+            "0",
+        ]);
+        assert_eq!(code, 0, "{rep}");
+        rows(&rep, "endpoints")
+            .iter()
+            .find(|r| r["endpoint"] == "f1/D")
+            .unwrap()[field]
+            .as_f64()
+            .unwrap()
+    };
+    let path = |extra: &[&str]| -> Value {
+        let mut args = vec!["path", "-w", w.as_str(), "--to", "f1/D"];
+        args.extend_from_slice(extra);
+        let (code, p) = run_json(&args);
+        assert_eq!(code, 0, "{p}");
+        p
+    };
+    let one = |p: &Value| -> (String, String, f64) {
+        let paths = p["paths"].as_array().unwrap();
+        assert_eq!(paths.len(), 1, "{p}");
+        (
+            paths[0]["corner"].as_str().unwrap().to_string(),
+            paths[0]["kind"].as_str().unwrap().to_string(),
+            paths[0]["slack_ns"].as_f64().unwrap(),
+        )
+    };
+    for corner in ["a", "b"] {
+        for (kind, field) in [("hold", "hold_slack_ns"), ("setup", "setup_slack_ns")] {
+            let (c, k, slack) = one(&path(&["--kind", kind, "--corner", corner]));
+            assert_eq!((c.as_str(), k.as_str()), (corner, kind));
+            let want = slack_of(corner, field);
+            assert!(
+                (slack - want).abs() < 1e-9,
+                "{corner} {kind}: {slack} vs {want}"
+            );
+        }
+    }
+    // Without --corner: the worst corner of each family.
+    let hold_a = slack_of("a", "hold_slack_ns");
+    let hold_b = slack_of("b", "hold_slack_ns");
+    let setup_a = slack_of("a", "setup_slack_ns");
+    let setup_b = slack_of("b", "setup_slack_ns");
+    assert!(
+        hold_a < hold_b && setup_b < setup_a,
+        "the worst corners differ"
+    );
+    assert_eq!(one(&path(&["--kind", "hold"])).0, "a");
+    assert_eq!(one(&path(&["--kind", "setup"])).0, "b");
+    let both = path(&[]);
+    assert_eq!(both["paths"].as_array().unwrap().len(), 2, "{both}");
+    // q1 has only a setup check: asking for its hold path warns T0138 and gives no path.
+    let (code, p) = run_json(&[
+        "path", "-w", &w, "--to", "q1", "--kind", "hold", "--corner", "a",
+    ]);
+    assert_eq!(code, 0, "{p}");
+    assert!(p["paths"].as_array().unwrap().is_empty(), "{p}");
+    assert!(
+        p["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["code"] == "T0138"),
+        "{p}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

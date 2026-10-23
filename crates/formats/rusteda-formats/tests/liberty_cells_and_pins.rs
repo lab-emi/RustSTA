@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustEDA contributors
 
-//! Cell and pin attributes of the library model (LIBERTY-REQ-0011, LIBERTY-REQ-0012).
+//! Cell and pin attributes of the library model (LIBERTY-REQ-0011, LIBERTY-REQ-0012,
+//! LIBERTY-REQ-0049).
 
-use rusteda_formats::liberty::{Direction, Library, read_text};
+use rusteda_formats::liberty::{Direction, Library, TimingType, read_text, read_text_diags};
 
 const LIB: &str = r#"
 library (attrs) {
@@ -74,6 +75,91 @@ fn electrical_limits_and_fanout_weights() {
     assert_eq!(y.max_capacitance, Some(80.0));
     assert_eq!(y.max_transition, None);
     assert_eq!(y.max_fanout, Some(12.0));
+}
+
+// LIBERTY-REQ-0049: the pin pulse attributes become unconditional scalar pulse arcs of their pin,
+// after the arcs of its timing groups; a bad value is a pin limit problem and adds no arc. The
+// attributes are consumed: they produce no warning.
+#[test]
+fn pin_pulse_attributes_become_pulse_arcs() {
+    let text = r#"library(l) {
+        time_unit : "1ns"; capacitive_load_unit(1,pf);
+        cell(f) {area:1;
+          ff(IQ, IQN) { clocked_on : "CK"; next_state : "D"; }
+          pin(CK) {direction:input; clock:true; min_pulse_width_high:0.3;
+            min_pulse_width_low:0.25; min_period:0.9;
+            timing() { related_pin : "CK"; timing_type : min_pulse_width; when : "D";
+              rise_constraint(scalar) { values("0.2"); } }
+          }
+          pin(D) {direction:input;}
+          pin(Q) {direction:output; function:"IQ";}
+        }
+        cell(g) {area:1;
+          ff(IQ, IQN) { clocked_on : "CK"; next_state : "D"; }
+          pin(CK) {direction:input; clock:true; min_pulse_width_low:0.4;}
+          pin(D) {direction:input;}
+          pin(Q) {direction:output; function:"IQ";}
+        }
+        cell(h) {area:1;
+          pin(CK) {direction:input; clock:true; min_period:-1;}
+        }
+    }"#;
+    let (l, diags) = read_text_diags(text, "pulse.lib").expect("parses");
+    let ck = l.cells[0].pin("CK").unwrap();
+    let kinds: Vec<TimingType> = ck.arcs.iter().map(|a| a.kind()).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            TimingType::MinPulseWidth,
+            TimingType::MinPulseWidth,
+            TimingType::MinimumPeriod
+        ]
+    );
+    // The timing group comes first and keeps its condition.
+    assert_eq!(ck.arcs[0].when_text.as_deref(), Some("D"));
+    let mpw = &ck.arcs[1];
+    assert_eq!(mpw.related_pin, "CK");
+    assert!(mpw.when_text.is_none() && mpw.when.is_none() && mpw.line == 0);
+    let scalar = |t: &Option<rusteda_formats::liberty::Table>| {
+        t.as_ref()
+            .map(|t| (t.template.clone(), t.values.clone(), t.index_1.len()))
+    };
+    assert_eq!(
+        scalar(&mpw.rise_constraint),
+        Some(("scalar".into(), vec![0.3], 0))
+    );
+    assert_eq!(
+        scalar(&mpw.fall_constraint),
+        Some(("scalar".into(), vec![0.25], 0))
+    );
+    let per = &ck.arcs[2];
+    assert_eq!(per.related_pin, "CK");
+    assert_eq!(
+        scalar(&per.rise_constraint),
+        Some(("scalar".into(), vec![0.9], 0))
+    );
+    assert_eq!(
+        scalar(&per.fall_constraint),
+        Some(("scalar".into(), vec![0.9], 0))
+    );
+    // Only the low width: the high constraint stays absent, and no period arc.
+    let g = l.cells[1].pin("CK").unwrap();
+    assert_eq!(g.arcs.len(), 1);
+    assert!(g.arcs[0].rise_constraint.is_none());
+    assert_eq!(
+        scalar(&g.arcs[0].fall_constraint),
+        Some(("scalar".into(), vec![0.4], 0))
+    );
+    // A negative value is a pin limit problem (L0204) and adds no arc.
+    let h = &l.cells[2];
+    assert!(h.pin("CK").unwrap().arcs.is_empty());
+    assert!(h.problems.iter().any(|p| p.contains("min_period")));
+    assert!(diags.iter().any(|d| d.code == "L0204"));
+    // The attributes are consumed: no unsupported or unknown construct warning.
+    assert!(
+        diags.iter().all(|d| d.code != "L0100" && d.code != "L0101"),
+        "{diags:?}"
+    );
 }
 
 // LIBERTY-REQ-0011: area and dont_use defaults.

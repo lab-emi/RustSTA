@@ -33,15 +33,17 @@ note `T0132` per corner counts the conditional groups. A `minimum_period` group 
 clock period at its pin: its `rise_constraint` and `fall_constraint` are evaluated at the late
 transition time of the pin's rising and falling transition; the required period is the largest of
 them over the groups, and the slack is `period(C) - required` for every clock `C` at the pin. The
-pin-level attributes `min_pulse_width_high`, `min_pulse_width_low` and `min_period` are not part of
-the compiled library model; on the standard cells of both default libraries every pin that states
-them also has the groups, and the attributes equal the worst group, so the groups give the same
-checks.
+pin-level attributes `min_pulse_width_high`, `min_pulse_width_low` and `min_period` reach the
+library view as unconditional scalar groups of their pin (LIBERTY-REQ-0049) and enter the same
+largest constraint, so a pin that states only the attributes is checked with them. On the standard
+cells of both default libraries every pin that states the attributes also has conditional groups,
+and the attribute equals the worst group.
 
 **STA-REQ-0802** Unclocked pulse pins. An instance pin with pulse groups that no clock reaches is
 not checked: the corner counts it in `unclocked_pulse_pins`, the command envelope reports the
 worst corner's count as `completeness.unchecked_pulse_width_pins`, and the analysis emits one
-warning `T0133` per corner. Its pulse checks are never reported as met.
+warning `T0133` per corner. Its pulse checks are never reported as met: the pulse status is
+`unchecked` when no pulse check was evaluated and `partial` when some were (STA-REQ-0813).
 
 ## Electrical design rules
 
@@ -88,19 +90,21 @@ revision has a current `sta.rbin` but no current `limits` table analyzes it agai
 the table holds `limit_rows` and `limit_rows_truncated`.
 
 **STA-REQ-0807** Summaries and status. The `SCOPE` of `sta.rbin` records the counts of every kind
-of every corner. The revision summary of `sta` reports, as the worst corner: `max_trans_violating`,
-`max_cap_violating`, `max_fanout_violating` with `drv_status` (`met` or `violated`), and
-`min_pulse_width_violating` (high and low) and `min_period_violating` with `pulse_width_status`.
-The `sta` status holds `timing` (`violated` when a setup, hold, pulse width or period check fails),
-`drv` and `pulse_width`. The `SummaryRec` rows of a corner carry its transition and capacitance
-violations. A table without these counts (an analysis that did not check them) reports the counts
-as `null` and the statuses as `unchecked`, never as zero (CONTRIBUTING Rule 4.2). The command
-envelopes of `run`, `update`, `report`, `path`, `inspect` and the summaries of `whatif` add the
-metrics `min_pulse_width_violating`, `worst_min_pulse_width_slack_ns`, `min_period_violating`,
+of every corner (checked, violating, unlimited, unevaluated, worst slack). The revision summary of
+`sta` reports, as the worst corner: `max_trans_violating`, `max_cap_violating`,
+`max_fanout_violating` with `max_transition_status`, `max_capacitance_status`, `max_fanout_status`
+and `drv_status`, and `min_pulse_width_violating` (high and low) and `min_period_violating` with
+`pulse_width_status`, all following STA-REQ-0813. The `sta` status holds `timing` (`violated` when
+a setup, hold, pulse width or period check fails), `drv` and `pulse_width`. The `SummaryRec` rows
+of a corner carry its transition and capacitance violations. The command envelopes of `run`,
+`update`, `report`, `path`, `inspect` and the summaries of `whatif` add the metrics
+`min_pulse_width_violating`, `worst_min_pulse_width_slack_ns`, `min_period_violating`,
 `worst_min_period_slack_ns`, `pulse_width_status`, `max_transition_violating`,
-`worst_max_transition_slack_ns`, `max_capacitance_violating`, `worst_max_capacitance_slack_pf`,
-`max_fanout_violating`, `worst_max_fanout_slack` and `drv_status`, and the completeness
-`unchecked_pulse_width_pins` and `drv_unlimited` (per design rule).
+`worst_max_transition_slack_ns`, `max_transition_status`, `max_capacitance_violating`,
+`worst_max_capacitance_slack_pf`, `max_capacitance_status`, `max_fanout_violating`,
+`worst_max_fanout_slack`, `max_fanout_status` and `drv_status`, and the completeness
+`unchecked_pulse_width_pins`, `unevaluated_limit_checks` and `drv_unlimited` (per design rule), the
+worst corner of each, or the `--corner` alone.
 
 **STA-REQ-0810** Bounded rows. Every check is counted, and at most `--max-limit-rows` rows
 (default 100000, at most 10000000) are kept per corner and kind, the worst slack first, ties by
@@ -113,7 +117,9 @@ checked count.
 **STA-REQ-0811** Report sections. `ruststa report` has the sections `limits` (the counts per corner
 and kind), `pulse_width` (high and low rows), `min_period`, `drv` (the three design rules) and
 `max_transition`, `max_capacitance`, `max_fanout`, read from the `limits` table; without
-`--corner` every corner is reported. Rows are ordered by slack, worst first; `--sort pin` (or
+`--corner` every corner is reported. The `total` of a row section is the number of checked rows of
+its corners and kinds; the section adds `stored` (the kept rows), `truncated` (the checked rows
+left out by the row budget) and `unevaluated`, and its `matched` and `shown` count kept rows. Rows are ordered by slack, worst first; `--sort pin` (or
 `name`) orders by pin and `--sort value` by value, largest first; `--reverse` reverses. The filters
 are `violating`, `slack<X`, `pin~TEXT` (also matching the net) and `clock=NAME`; another filter is a
 usage error. A revision without a `limits` table is an error `T0136`.
@@ -126,13 +132,45 @@ required time of the worst setup and hold path to it. In the `endpoints` and `ch
 the filters `violating` and `slack<X` and the sort `slack` to that slack alone; `both` keeps the
 earlier behaviour.
 
+**STA-REQ-0813** Status rules. One rule gives the counts and statuses of the revision summary and
+of every command envelope, over the reported corners. A violating count is the worst corner's and
+is `null` when its kinds have no checked row. A check whose value, limit or slack is not a finite
+number is not evaluated: it is counted as `unevaluated`, never as checked, and a warning `T0137`
+per corner and kind names the count. The status of a group of checks (the pulse width and period
+checks together, or one design rule) is `violated` when a checked row has a negative slack;
+otherwise `unconstrained` when nothing is checked and nothing is left unevaluated (no pin with a
+pulse constraint, or no limit of the kind anywhere), `unchecked` when nothing is checked but some
+checks were left unevaluated (every pulse pin unclocked, STA-REQ-0802, or every value not finite),
+`partial` when some checks were evaluated and others not, and `met` when every check was evaluated
+without violation. `drv_status` is `violated` when a design rule is violated, `met` when all three
+are met, `unconstrained` when all three are unconstrained, `unchecked` when none was evaluated, and
+`partial` otherwise, for example when `max_fanout` has no limit anywhere. An analysis without limit
+counts reports every count as `null` and every status as `unchecked` (CONTRIBUTING Rule 4.2).
+
+**STA-REQ-0814** Paths to an endpoint by corner. `ruststa path --to NAME` and the pin and port
+targets give, for each check family that `--kind` selects (setup with recovery, hold with
+removal), the worst path of the endpoint in `--corner`, or over all corners without it. It is the
+first path of that endpoint, corner and family in rank order. A requested family without a path
+(in that corner) gives no path and a warning `T0138`, never a silent empty answer.
+
+**STA-REQ-0815** Pulse width on an ideal clock. On an ideal clock the arrival `L` of each edge at
+a pin is the ideal clock latency (`set_clock_latency`, by transition and bound), so the width is
+the waveform width moved by the latency difference of the closing and opening edges; the
+transition distortion of the clock network is not modeled. The analysis notes `T0139` per corner
+with the number of pins checked on an ideal clock. A reference timing tool, compared as a black
+box, takes the width from the propagated network for an ideal clock too and ignores the ideal
+latency there; the measured difference is recorded with the comparison of the suite's
+physical-design tool. Signoff uses propagated clocks (STA-REQ-0710), where both agree.
+
 ## Parasitics per corner
 
 **STA-REQ-0820** Extracted parasitics are bound to named corners (RCLI-REQ-0075). A revision whose
 `parasitics` table holds sources for some corners analyzes each corner with its own source; a
 corner without one is an error `T0070` that names the annotated corners, never a fallback to ideal
-wires or to another corner's source. Only the sources of the analyzed corners are read and parsed.
-A version 1 table annotates its one corner.
+wires or to another corner's source. Only the sources of the analyzed corners are read and parsed;
+they stay resident during the analysis, so the state estimate of each corner (`--max-state-gib`,
+`T0023`) counts the parsed parasitics of every analyzed corner. A version 1 table annotates its one
+corner.
 
 **STA-REQ-0821** Required wire model. `run`, `update` and `whatif` take
 `--require-wire-model spef_rc|ideal|wireload_lumped`: a revision without parasitics fails a
@@ -168,4 +206,11 @@ the engine, `tests/signoff_cli.rs` of the command line). A black-box comparison 
 timing tool on the routed pipeline fixture of the suite's physical-design tool, on both default
 libraries at three corners each with their own extracted parasitics, is kept with that tool's
 harness and results; it compares the pulse width, period and design-rule rows, the violator sets
-of planted tightened limits, and the endpoint slacks.
+of planted tightened limits, and the endpoint slacks. On the clock pins of the second default
+library, which state conditional pulse groups and the equal pin attributes, the reference tool's
+required width follows the last listed group, so its result depends on the order of the groups;
+STA-REQ-0801 takes the largest. That comparison is therefore made on a copy of the library whose
+pins keep only the attributes, read by both tools, and the order-dependent difference on the
+original library is recorded as a measured deviation, not as a pass. The reference tool rejects
+`set_max_capacitance` on a clock, so that slot of STA-REQ-0805 has the hand derivations of the
+engine suite as its only oracle.

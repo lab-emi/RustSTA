@@ -29,7 +29,7 @@ use crate::engine::types::{LibArc, Tr};
 
 pub use thresholds::CornerThresholds;
 
-/// Unateness (timing sense) of a timing arc (`STA-REQ-0012`, `STA-REQ-0013`).
+/// Unateness (timing sense) of a timing arc (`STA-REQ-0012`, `STA-REQ-0017`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sense {
     /// Output transitions in the same direction as the input (or active on rising enable).
@@ -52,7 +52,7 @@ impl Sense {
     }
 }
 
-/// Kind of a propagation timing arc (`STA-REQ-0011`, `STA-REQ-0013`, `STA-REQ-0223`).
+/// Kind of a propagation timing arc (`STA-REQ-0011`, `STA-REQ-0017`, `STA-REQ-0223`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropArcKind {
     /// Combinational data arc (`combinational`, `combinational_rise`, `combinational_fall`).
@@ -92,7 +92,7 @@ pub struct PropArc {
 
 impl PropArc {
     /// Returns `[can_rise, can_fall]` at the output pin when `input` transitions on `from`
-    /// during combinational / three-state level propagation (`STA-REQ-0013`, `STA-REQ-0112`,
+    /// during combinational / three-state level propagation (`STA-REQ-0017`, `STA-REQ-0112`,
     /// `STA-REQ-0223`).
     #[must_use]
     pub fn out_transitions(&self, input: Tr) -> [bool; 2] {
@@ -912,7 +912,7 @@ fn is_unanalyzed_type(tt: &TimingType) -> bool {
 }
 
 /// Resolves the [`Sense`] of `a` from its explicit `timing_sense` attribute or derives it from the
-/// pin's `function` / `three_state` expression (`STA-REQ-0012`, `STA-REQ-0013`).
+/// pin's `function` / `three_state` expression (`STA-REQ-0012`, `STA-REQ-0017`).
 fn resolve_sense(a: &rusteda_core::liberty::TimingArc, p: &Pin, tt: &TimingType) -> Sense {
     match a.sense() {
         Some(TimingSense::PositiveUnate) => return Sense::Positive,

@@ -182,7 +182,7 @@ pub struct PropagationRecord {
     pub evaluated: Vec<u64>,
 }
 
-/// Compiles the library view of every corner (`STA-REQ-0013`).
+/// Compiles the library view of every corner (`STA-REQ-0017`).
 pub fn compile_corner_libs(corners: &[CornerLibs<'_>]) -> Result<Vec<TimingLib>, Diag> {
     corners
         .iter()
@@ -226,7 +226,7 @@ pub struct CornerAnalysis {
     pub node_values: TimingValues,
     /// Aggregated endpoint records, path groups, unconstrained counts, and corner summary.
     pub endpoints: CornerEndpoints,
-    /// Count of unanalyzed library arcs across instantiated cells in this corner (`STA-REQ-0013`,
+    /// Count of unanalyzed library arcs across instantiated cells in this corner (`STA-REQ-0017`,
     /// `STA-REQ-0015`).
     pub unanalyzed_arcs: usize,
     /// Pulse width, period and electrical design-rule checks of the corner (`STA-REQ-0806`).
@@ -799,7 +799,11 @@ fn setup_corner<'l>(
                 graph.num_nodes(),
                 options.max_limit_rows,
             ))
-            .saturating_add(corner_rc.map_or(0, |p| p.data.estimated_state_bytes()))
+            // The parsed parasitics of every analyzed corner stay resident while any corner is
+            // analyzed, so each corner counts all of them (`STA-REQ-0820`).
+            .saturating_add(options.parasitics.iter().fold(0u64, |n, p| {
+                n.saturating_add(p.data.estimated_state_bytes())
+            }))
             .saturating_add(if corner_rc.is_some() {
                 graph.arcs().len() as u64 * 192
             } else {
@@ -1001,7 +1005,7 @@ fn analyze_one_corner(
         drop(lowered);
     }
 
-    // 9. Check unanalyzed arcs, max capacitance, and max transition (`STA-REQ-0013`,
+    // 9. Check unanalyzed arcs, max capacitance, and max transition (`STA-REQ-0017`,
     // `STA-REQ-0015`, `STA-REQ-0120`).
     let clock = PhaseClock::start(ctx, "electrical_checks");
     let (unanalyzed_arcs, unanalyzed_diags) = lib.unanalyzed_arc_warnings(netlist);
