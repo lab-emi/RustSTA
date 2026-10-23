@@ -13,7 +13,7 @@
 //! | 1 | `STR_BYTES` | 1 | UTF-8 strings (string 0 is empty) |
 //! | 2 | `STR_OFFS` | 4 | `u32` offsets, one more than the strings |
 //! | 3 | `META` | 16 | [`LimitsMeta`] |
-//! | 4 | `CORNERS` | 24 | [`LimitsCornerRec`] per corner |
+//! | 4 | `CORNERS` | 32 | [`LimitsCornerRec`] per corner |
 //! | 5 | `KINDS` | 56 | [`LimitsKindRec`] per corner and kind (`corner * 6 + kind`) |
 //! | 6 | `ROWS` | 48 | [`LimitsRowRec`] by corner, kind, slack, node |
 
@@ -29,7 +29,7 @@ use crate::engine::input::NetTarget;
 use crate::engine::store::hash::{StringTableBuilder, StringTableView};
 use crate::engine::types::{NodeId, Tr};
 
-use super::{CornerLimits, KindSummary, LimitKind, LimitRow, LimitSource};
+use super::{CornerLimits, KindSummary, LimitKind, LimitRow, LimitSource, PulseRules};
 
 /// The `rbin` container kind of the table.
 pub const KIND: &str = "LIMITS";
@@ -73,12 +73,16 @@ pub struct LimitsMeta {
 pub struct LimitsCornerRec {
     /// The corner name.
     pub name_str: u32,
-    /// Zero.
-    pub reserved: u32,
+    /// The pulse rules of the corner's checks ([`PulseRules::bits`], `STA-REQ-0816`,
+    /// `STA-REQ-0817`).
+    pub pulse_rules: u32,
     /// Instance pins with pulse checks that no clock reaches.
     pub unclocked_pulse_pins: u64,
     /// Conditional pulse groups on the checked pins.
     pub conditional_pulse_groups: u64,
+    /// Clocked instance pins with pulse constraints that pass their clock on, not checked under
+    /// the scope `clock-ends` (`STA-REQ-0817`).
+    pub pass_through_pulse_pins: u64,
 }
 
 /// The counts of one kind in one corner.
@@ -162,9 +166,10 @@ impl LimitsData {
             let l = &ca.limits;
             corners.push(LimitsCornerRec {
                 name_str: strings.intern(&ca.corner_name),
-                reserved: 0,
+                pulse_rules: l.rules.bits(),
                 unclocked_pulse_pins: l.unclocked_pulse_pins,
                 conditional_pulse_groups: l.conditional_pulse_groups,
+                pass_through_pulse_pins: l.pass_through_pulse_pins,
             });
             for kind in LimitKind::ALL {
                 let k = l.kind(kind);
@@ -390,6 +395,12 @@ impl LimitsTable {
         if corners.iter().any(|c| c.name_str >= n_str) {
             return Err(corrupt(&t.rbin, "corner name out of range"));
         }
+        if corners
+            .iter()
+            .any(|c| PulseRules::from_bits(c.pulse_rules).is_none())
+        {
+            return Err(corrupt(&t.rbin, "unknown pulse rule bits"));
+        }
         let mut next = 0u64;
         for k in kinds {
             if k.row_begin != next || k.stored > k.checked || k.violating > k.checked {
@@ -460,6 +471,27 @@ impl LimitsTable {
             .section::<LimitsCornerRec>(section::CORNERS)?
             .iter()
             .map(|c| c.unclocked_pulse_pins)
+            .collect())
+    }
+
+    /// The pulse rules of each corner's checks (`STA-REQ-0816`, `STA-REQ-0817`).
+    pub fn pulse_rules(&self) -> Result<Vec<PulseRules>> {
+        self.section::<LimitsCornerRec>(section::CORNERS)?
+            .iter()
+            .map(|c| {
+                PulseRules::from_bits(c.pulse_rules)
+                    .ok_or_else(|| corrupt(&self.rbin, "unknown pulse rule bits"))
+            })
+            .collect()
+    }
+
+    /// Clocked pins with pulse constraints left out by the scope `clock-ends`, per corner
+    /// (`STA-REQ-0817`).
+    pub fn pass_through_pulse_pins(&self) -> Result<Vec<u64>> {
+        Ok(self
+            .section::<LimitsCornerRec>(section::CORNERS)?
+            .iter()
+            .map(|c| c.pass_through_pulse_pins)
             .collect())
     }
 
@@ -543,7 +575,7 @@ mod tests {
     #[test]
     fn record_sizes_are_fixed() {
         assert_eq!(size_of::<LimitsMeta>(), 16);
-        assert_eq!(size_of::<LimitsCornerRec>(), 24);
+        assert_eq!(size_of::<LimitsCornerRec>(), 32);
         assert_eq!(size_of::<LimitsKindRec>(), 56);
         assert_eq!(size_of::<LimitsRowRec>(), 48);
     }

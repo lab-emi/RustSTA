@@ -225,7 +225,19 @@ pub enum PulseCheckKind {
     Period,
 }
 
-/// A `min_pulse_width` or `minimum_period` timing group of a cell pin (`STA-REQ-0800`).
+/// Where a pulse check of a pin comes from (`STA-REQ-0801`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PulseSource {
+    /// A `min_pulse_width` or `minimum_period` timing group of the pin; the checks of a pin keep
+    /// the order of its groups in the library.
+    Group,
+    /// The pin attributes `min_pulse_width_high`/`min_pulse_width_low` or `min_period`, as scalar
+    /// tables, after the groups of the pin (LIBERTY-REQ-0049).
+    Attribute,
+}
+
+/// A pulse constraint of a cell pin: a `min_pulse_width` or `minimum_period` timing group, or the
+/// pin's pulse attributes (`STA-REQ-0800`, `STA-REQ-0801`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PulseCheck {
     /// The constrained pin (the pin that owns the timing group) in [`TimingCell::pins`].
@@ -235,9 +247,11 @@ pub struct PulseCheck {
     /// Constraint tables `[rise_constraint, fall_constraint]`, indexed by the transition time of
     /// the pin at the edge that opens the pulse (or at the edge of the period).
     pub table: [TableId; 2],
-    /// True when the group has a `when` condition: every condition is taken as possible and the
-    /// worst group of a pin applies (`STA-REQ-0801`).
+    /// True when the group has a `when` condition: every condition is taken as possible
+    /// (`STA-REQ-0801`).
     pub conditional: bool,
+    /// A timing group or the pin attributes.
+    pub source: PulseSource,
 }
 
 /// A pin of a [`TimingCell`] with its capacitances, design-rule limits, and Boolean functions.
@@ -438,6 +452,7 @@ impl TimingLib {
                             a,
                         )?;
                     }
+                    add_pulse_attributes(&mut view.lut_bank, &mut tc, lib, to, p)?;
                 }
 
                 // Populate truth tables for combinational and three-state functions (`<= 6` inputs).
@@ -657,6 +672,58 @@ fn build_pin(lib: &Library, p: &Pin, tu: f64, cu: f64) -> CellPin {
     }
 }
 
+/// Adds the pulse attributes of pin `p` (`min_pulse_width_high`/`min_pulse_width_low` and
+/// `min_period`, LIBERTY-REQ-0049) as unconditional scalar pulse checks after the pin's groups
+/// (`STA-REQ-0801`): a width check whose rise table is the high and whose fall table is the low
+/// width, and a period check with `min_period` as both tables.
+fn add_pulse_attributes(
+    lut_bank: &mut LutBank,
+    tc: &mut TimingCell,
+    lib: &Library,
+    to: usize,
+    p: &Pin,
+) -> Result<(), Diag> {
+    let (tu, cu) = (lib.time_unit_ns, lib.cap_unit_pf);
+    let mut scalar = |v: Option<f64>, attr: &str| -> Result<TableId, Diag> {
+        let Some(v) = v else {
+            return Ok(NO_TABLE);
+        };
+        let tab = Table {
+            template: "scalar".to_string(),
+            values: vec![v],
+            ..Table::default()
+        };
+        lut_bank.add_table(
+            &tab,
+            &lib.templates,
+            TableKind::Check,
+            tu,
+            cu,
+            format!("cell {} pin {} {attr}", tc.name, p.name),
+        )
+    };
+    let width = [
+        scalar(p.min_pulse_width_high, "min_pulse_width_high")?,
+        scalar(p.min_pulse_width_low, "min_pulse_width_low")?,
+    ];
+    let period = scalar(p.min_period, "min_period")?;
+    for (kind, table) in [
+        (PulseCheckKind::Width, width),
+        (PulseCheckKind::Period, [period, period]),
+    ] {
+        if table != [NO_TABLE; 2] {
+            tc.pulse_checks.push(PulseCheck {
+                pin: to,
+                kind,
+                table,
+                conditional: false,
+                source: PulseSource::Attribute,
+            });
+        }
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn compile_arc(
     lut_bank: &mut LutBank,
@@ -714,6 +781,7 @@ fn compile_arc(
                 kind,
                 table,
                 conditional: a.when_text.is_some(),
+                source: PulseSource::Group,
             });
         }
         return Ok(());

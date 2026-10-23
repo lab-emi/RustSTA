@@ -9,6 +9,7 @@ use rusteda_workspace::text::next_line;
 use rusteda_workspace::{
     DiagCode, Diagnostic, Envelope, Error, Handle, JsonObject, Revision, Severity, Workspace, exit,
 };
+use ruststa::engine::graph::CheckKind;
 use ruststa::engine::store::{InspectedInstance, InspectedNode, StaStore, StaStoreView, canon_f64};
 use ruststa::engine::types::NodeId;
 
@@ -63,7 +64,33 @@ pub(crate) fn required_at_worst(
     best.map(|(_, r)| canon_f64(r))
 }
 
-fn format_inspected_node(n: &InspectedNode, num_port_bits: u32) -> Result<JsonObject, Error> {
+/// The required times `[setup, hold]` of the worst setup and hold path that ends at endpoint `n`
+/// in its corner, as `ruststa path --to` reports them: the required times of the endpoint's own
+/// checks, which go with its endpoint slacks (`STA-REQ-0812`). The node's own required time can
+/// be earlier at a latch data pin, whose backward pass also covers the paths through the
+/// transparent latch. `None` for a family without a ranked path.
+fn endpoint_required(store: &StaStore, n: &InspectedNode) -> [Option<f64>; 2] {
+    let worst = |kind: CheckKind| {
+        store
+            .query_path_to(&n.name, Some(n.corner_idx), Some(kind))
+            .ok()?
+            .into_iter()
+            .filter(|p| p.slack.is_finite() && p.required.is_finite())
+            .min_by(|a, b| {
+                a.slack
+                    .total_cmp(&b.slack)
+                    .then(a.rank_idx.cmp(&b.rank_idx))
+            })
+            .map(|p| canon_f64(p.required))
+    };
+    [worst(CheckKind::Setup), worst(CheckKind::Hold)]
+}
+
+fn format_inspected_node(
+    store: &StaStore,
+    n: &InspectedNode,
+    num_port_bits: u32,
+) -> Result<JsonObject, Error> {
     let mut worst_late_arr: Option<f64> = None;
     let mut worst_early_arr: Option<f64> = None;
     for t in &n.tags {
@@ -75,8 +102,15 @@ fn format_inspected_node(n: &InspectedNode, num_port_bits: u32) -> Result<JsonOb
         }
     }
 
-    let setup_req = required_at_worst(n.required, n.slack, 1);
-    let hold_req = required_at_worst(n.required, n.slack, 0);
+    // An endpoint reports the required times of its own checks, which go with its endpoint
+    // slacks; another pin the node's (`STA-REQ-0812`).
+    let [ep_setup_req, ep_hold_req] = if n.is_endpoint {
+        endpoint_required(store, n)
+    } else {
+        [None, None]
+    };
+    let setup_req = ep_setup_req.or_else(|| required_at_worst(n.required, n.slack, 1));
+    let hold_req = ep_hold_req.or_else(|| required_at_worst(n.required, n.slack, 0));
     let setup_slack = n.endpoint_setup_slack.and_then(finite_opt).or_else(|| {
         worst_early([
             [n.slack[0][1], n.slack[0][1]],
@@ -291,7 +325,7 @@ fn inspect_net_by_row(
         let node = NodeId(num_port_bits + pin_row);
         let pname = resolve_pin_or_port_name(v, rbin, node)?;
         if let Ok(insp) = store.inspect_pin(&pname, corner_idx) {
-            pins_json.push(format_inspected_node(&insp, num_port_bits)?);
+            pins_json.push(format_inspected_node(store, &insp, num_port_bits)?);
         }
     }
 
@@ -430,7 +464,7 @@ fn inspect_single_handle(
             let insp = store
                 .inspect_pin(&pname, corner_idx)
                 .map_err(map_store_error)?;
-            out_items.push(format_inspected_node(&insp, num_port_bits)?);
+            out_items.push(format_inspected_node(store, &insp, num_port_bits)?);
         }
         "port" => {
             let port_row = h.index() - 1;
@@ -452,7 +486,7 @@ fn inspect_single_handle(
             let insp = store
                 .inspect_port(&pname, corner_idx)
                 .map_err(map_store_error)?;
-            out_items.push(format_inspected_node(&insp, num_port_bits)?);
+            out_items.push(format_inspected_node(store, &insp, num_port_bits)?);
         }
         "net" => {
             let net_row = (h.index() - 1) as usize;
@@ -585,7 +619,7 @@ pub fn exec_inspect(
             ));
             map_store_error(e)
         })?;
-        items.push(format_inspected_node(&insp, num_port_bits)?);
+        items.push(format_inspected_node(&store, &insp, num_port_bits)?);
     }
 
     if let Some(net_name) = &args.net {

@@ -144,6 +144,50 @@ pub enum ReportSection {
     HoldFix,
 }
 
+/// How the constraint of a pulse check is chosen among the groups and the attribute of a pin
+/// (`--pulse-groups`, `STA-REQ-0801`, `STA-REQ-0816`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PulseGroupsArg {
+    /// The largest constraint of every group and the attribute (order-independent).
+    #[value(name = "worst")]
+    Worst,
+    /// Per transition the last listed group that states it, else the attribute; a period reads
+    /// its rise_constraint only.
+    #[value(name = "last")]
+    Last,
+}
+
+/// The clock pins whose pulse constraints are checked (`--pulse-pins`, `STA-REQ-0817`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PulsePinsArg {
+    /// Every pin with pulse constraints that a clock reaches.
+    #[value(name = "all")]
+    All,
+    /// Only pins where the clock ends; pins that pass their clock on through their cell (clock
+    /// gaters, buffers) are counted, not checked.
+    #[value(name = "clock-ends")]
+    ClockEnds,
+}
+
+/// The pulse rules of `groups` and `pins` (`STA-REQ-0816`, `STA-REQ-0817`).
+#[must_use]
+pub fn pulse_rules(
+    groups: PulseGroupsArg,
+    pins: PulsePinsArg,
+) -> ruststa::engine::limits::PulseRules {
+    use ruststa::engine::limits::{PulseGroupRule, PulsePinScope, PulseRules};
+    PulseRules {
+        groups: match groups {
+            PulseGroupsArg::Worst => PulseGroupRule::Worst,
+            PulseGroupsArg::Last => PulseGroupRule::Last,
+        },
+        pins: match pins {
+            PulsePinsArg::All => PulsePinScope::All,
+            PulsePinsArg::ClockEnds => PulsePinScope::ClockEnds,
+        },
+    }
+}
+
 /// The wire model a timing command can require (`--require-wire-model`, `STA-REQ-0821`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum WireModelArg {
@@ -432,6 +476,27 @@ pub struct RunArgs {
     #[arg(long = "require-wire-model", value_enum, value_name = "MODEL")]
     pub require_wire_model: Option<WireModelArg>,
 
+    /// Pulse constraint of a pin among its `min_pulse_width`/`minimum_period` groups and
+    /// attributes: `worst` (the largest) or `last` (the last listed group stating it, else the
+    /// attribute; periods read the rise_constraint; `STA-REQ-0816`).
+    #[arg(
+        long = "pulse-groups",
+        value_enum,
+        default_value_t = PulseGroupsArg::Worst,
+        value_name = "RULE"
+    )]
+    pub pulse_groups: PulseGroupsArg,
+
+    /// Clock pins whose pulse constraints are checked: `all`, or `clock-ends` (pins that pass
+    /// their clock on through their cell are counted, not checked; `STA-REQ-0817`).
+    #[arg(
+        long = "pulse-pins",
+        value_enum,
+        default_value_t = PulsePinsArg::All,
+        value_name = "SCOPE"
+    )]
+    pub pulse_pins: PulsePinsArg,
+
     /// Storage mode for `sta.rbin` (`full` or `summary`).
     #[arg(
         long = "sta-store",
@@ -494,6 +559,27 @@ pub struct UpdateArgs {
     /// `wireload_lumped`; `STA-REQ-0821`).
     #[arg(long = "require-wire-model", value_enum, value_name = "MODEL")]
     pub require_wire_model: Option<WireModelArg>,
+
+    /// Pulse constraint of a pin among its `min_pulse_width`/`minimum_period` groups and
+    /// attributes: `worst` (the largest) or `last` (the last listed group stating it, else the
+    /// attribute; periods read the rise_constraint; `STA-REQ-0816`).
+    #[arg(
+        long = "pulse-groups",
+        value_enum,
+        default_value_t = PulseGroupsArg::Worst,
+        value_name = "RULE"
+    )]
+    pub pulse_groups: PulseGroupsArg,
+
+    /// Clock pins whose pulse constraints are checked: `all`, or `clock-ends` (pins that pass
+    /// their clock on through their cell are counted, not checked; `STA-REQ-0817`).
+    #[arg(
+        long = "pulse-pins",
+        value_enum,
+        default_value_t = PulsePinsArg::All,
+        value_name = "SCOPE"
+    )]
+    pub pulse_pins: PulsePinsArg,
 
     /// Storage mode for `sta.rbin` (`full` or `summary`).
     #[arg(

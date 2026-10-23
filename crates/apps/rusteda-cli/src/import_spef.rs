@@ -27,8 +27,8 @@ const MAX_METADATA_BYTES: usize = 64 * 4096;
 const MAX_TABLE_SOURCES: usize = 8;
 
 /// One corner of the new table: its metadata and decoded source.
-struct CornerEntry {
-    source: CornerSource,
+pub(crate) struct CornerEntry {
+    pub(crate) source: CornerSource,
     text: Vec<u8>,
 }
 
@@ -87,7 +87,7 @@ fn read_source(path: &Path, limits: Limits) -> Result<Vec<u8>, Error> {
 /// The corners of a `parasitics` table of `rev`, read back for carry-forward (RCLI-REQ-0075).
 /// A version 1 table holds one corner without a recorded source path, which is taken from the
 /// revision's sources of the table.
-fn read_corners(rev: &Revision) -> Result<Vec<CornerEntry>, Error> {
+pub(crate) fn read_corners(rev: &Revision) -> Result<Vec<CornerEntry>, Error> {
     let rbin = rev.open_rbin(TABLE, "PARASIT", 1..=2)?;
     rbin.verify_hash()?;
     let bad = |e: String| Error::input_rejected(format!("invalid PARASIT table: {e}"));

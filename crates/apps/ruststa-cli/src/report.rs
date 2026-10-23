@@ -232,6 +232,10 @@ fn build_endpoints_section(
         Some(FilterPred::NameContains(sub)) => ep.name.contains(sub),
     });
 
+    // `--kind hold` orders the endpoints by hold slack unless another key is given, so that
+    // `--limit N` lists the N worst hold endpoints (`STA-REQ-0812`); otherwise the table order
+    // (worst setup slack first) is kept.
+    let sort_key = sort_key.or((kind == PathKind::Hold).then_some("hold"));
     if let Some(sk) = sort_key {
         let sk = if sk == "slack" && kind == PathKind::Hold {
             "hold"

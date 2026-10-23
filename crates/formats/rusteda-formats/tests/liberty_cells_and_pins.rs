@@ -77,11 +77,11 @@ fn electrical_limits_and_fanout_weights() {
     assert_eq!(y.max_fanout, Some(12.0));
 }
 
-// LIBERTY-REQ-0049: the pin pulse attributes become unconditional scalar pulse arcs of their pin,
-// after the arcs of its timing groups; a bad value is a pin limit problem and adds no arc. The
-// attributes are consumed: they produce no warning.
+// LIBERTY-REQ-0049: the pin pulse attributes are kept on their pin, in library units, and add no
+// timing arc: the pin keeps exactly the arcs of its timing groups. A bad value is a pin limit
+// problem and is not kept. The attributes are consumed: they produce no warning.
 #[test]
-fn pin_pulse_attributes_become_pulse_arcs() {
+fn pin_pulse_attributes_are_kept_on_the_pin() {
     let text = r#"library(l) {
         time_unit : "1ns"; capacitive_load_unit(1,pf);
         cell(f) {area:1;
@@ -106,53 +106,29 @@ fn pin_pulse_attributes_become_pulse_arcs() {
     }"#;
     let (l, diags) = read_text_diags(text, "pulse.lib").expect("parses");
     let ck = l.cells[0].pin("CK").unwrap();
+    assert_eq!(
+        (
+            ck.min_pulse_width_high,
+            ck.min_pulse_width_low,
+            ck.min_period
+        ),
+        (Some(0.3), Some(0.25), Some(0.9))
+    );
+    // Only the timing group is an arc, with its condition.
     let kinds: Vec<TimingType> = ck.arcs.iter().map(|a| a.kind()).collect();
-    assert_eq!(
-        kinds,
-        vec![
-            TimingType::MinPulseWidth,
-            TimingType::MinPulseWidth,
-            TimingType::MinimumPeriod
-        ]
-    );
-    // The timing group comes first and keeps its condition.
+    assert_eq!(kinds, vec![TimingType::MinPulseWidth]);
     assert_eq!(ck.arcs[0].when_text.as_deref(), Some("D"));
-    let mpw = &ck.arcs[1];
-    assert_eq!(mpw.related_pin, "CK");
-    assert!(mpw.when_text.is_none() && mpw.when.is_none() && mpw.line == 0);
-    let scalar = |t: &Option<rusteda_formats::liberty::Table>| {
-        t.as_ref()
-            .map(|t| (t.template.clone(), t.values.clone(), t.index_1.len()))
-    };
-    assert_eq!(
-        scalar(&mpw.rise_constraint),
-        Some(("scalar".into(), vec![0.3], 0))
-    );
-    assert_eq!(
-        scalar(&mpw.fall_constraint),
-        Some(("scalar".into(), vec![0.25], 0))
-    );
-    let per = &ck.arcs[2];
-    assert_eq!(per.related_pin, "CK");
-    assert_eq!(
-        scalar(&per.rise_constraint),
-        Some(("scalar".into(), vec![0.9], 0))
-    );
-    assert_eq!(
-        scalar(&per.fall_constraint),
-        Some(("scalar".into(), vec![0.9], 0))
-    );
-    // Only the low width: the high constraint stays absent, and no period arc.
+    // Only the low width: the other attributes stay absent, and no arc.
     let g = l.cells[1].pin("CK").unwrap();
-    assert_eq!(g.arcs.len(), 1);
-    assert!(g.arcs[0].rise_constraint.is_none());
+    assert!(g.arcs.is_empty());
     assert_eq!(
-        scalar(&g.arcs[0].fall_constraint),
-        Some(("scalar".into(), vec![0.4], 0))
+        (g.min_pulse_width_high, g.min_pulse_width_low, g.min_period),
+        (None, Some(0.4), None)
     );
-    // A negative value is a pin limit problem (L0204) and adds no arc.
+    // A negative value is a pin limit problem (L0204) and is not kept.
     let h = &l.cells[2];
-    assert!(h.pin("CK").unwrap().arcs.is_empty());
+    let hck = h.pin("CK").unwrap();
+    assert!(hck.arcs.is_empty() && hck.min_period.is_none());
     assert!(h.problems.iter().any(|p| p.contains("min_period")));
     assert!(diags.iter().any(|d| d.code == "L0204"));
     // The attributes are consumed: no unsupported or unknown construct warning.

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustEDA contributors
 
-//! Atomic import and dependency invalidation (RCLI-REQ-0070, STA-REQ-0700).
+//! Atomic import and dependency invalidation (RCLI-REQ-0070, RCLI-REQ-0075, RCLI-REQ-0076,
+//! STA-REQ-0700).
 use rusteda_workspace::{Invocation, RbinWriter, Upstream, Workspace};
 use serde_json::Value;
 use std::{
@@ -340,6 +341,15 @@ fn several_corners_are_bound_kept_and_replaced() {
         again["metrics"]["spef_kept_corners"],
         serde_json::json!(["slow"])
     );
+    // A table that is replaced, not dropped, gives no T0140 (RCLI-REQ-0076).
+    assert!(
+        !again["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["code"] == "T0140"),
+        "{again}"
+    );
     let (names3, texts3) = corners("rev3");
     assert_eq!(names3, ["fast", "slow"]);
     assert!(String::from_utf8_lossy(&texts3[0]).contains("u:A 2"));
@@ -390,6 +400,17 @@ fn several_corners_are_bound_kept_and_replaced() {
     ]);
     assert_eq!(eco["ok"], true, "{eco}");
     assert!(eco["tables"].get("parasitics").is_none(), "{eco}");
+    // RCLI-REQ-0076: the drop is never silent: one warning T0140 names the dropped corners.
+    let warned: Vec<&Value> = eco["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d["code"] == "T0140")
+        .collect();
+    assert_eq!(warned.len(), 1, "{eco}");
+    assert_eq!(warned[0]["severity"], "warning", "{eco}");
+    let msg = warned[0]["message"].as_str().unwrap();
+    assert!(msg.contains("fast, slow") && msg.contains("rev4"), "{msg}");
     fs::remove_dir_all(&dir).unwrap();
 }
 

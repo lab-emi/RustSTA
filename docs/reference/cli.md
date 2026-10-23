@@ -40,6 +40,8 @@ ruststa check --help
 | `--sta-store full\|summary` | Select timing persistence detail |
 | `--max-limit-rows N` | Bound kept pulse-width, period and design-rule rows per corner and kind |
 | `--require-wire-model MODEL` | Fail unless every corner uses `spef_rc`, `ideal` or `wireload_lumped` |
+| `--pulse-groups worst\|last` | Choose a pin's pulse constraint: the largest of its groups and attributes (default), or the last listed group that states it |
+| `--pulse-pins all\|clock-ends` | Check pulse constraints on every clocked pin (default), or only where a clock ends (clock-gater inputs are counted, not checked) |
 | `--section NAME` | Select summary, paths, endpoints, pins, clocks, checks, unconstrained, notes, limits, pulse_width, min_period, drv, max_transition, max_capacitance, max_fanout or hold_fix |
 | `--target-margin NS` | Hold slack target of the `hold_fix` section |
 | `--filter EXPR`, `--sort KEY`, `--limit N` | Restrict report tables |

@@ -6,7 +6,9 @@
 use std::path::PathBuf;
 
 use rusteda_workspace::text::{mutation_header, next_line};
-use rusteda_workspace::{Diagnostic, Envelope, Error, Invocation, JsonMap, JsonObject, Workspace};
+use rusteda_workspace::{
+    DiagCode, Diagnostic, Envelope, Error, Invocation, JsonMap, JsonObject, Severity, Workspace,
+};
 
 use crate::OutputOutcome;
 use crate::import_lib::import_libs;
@@ -104,6 +106,36 @@ pub(crate) fn run_import(
 
     let committed = txn.commit(metrics.clone())?;
     diags.extend(committed.warnings);
+    // A dropped `parasitics` table is never silent: the next timing run of the revision has no
+    // extracted parasitics (RCLI-REQ-0076).
+    if let Some(dropped) = committed
+        .meta
+        .dropped
+        .iter()
+        .find(|d| d.table == crate::import_spef::TABLE)
+    {
+        let corners: Vec<String> = ws
+            .revision(committed.base)
+            .ok()
+            .and_then(|base| crate::import_spef::read_corners(&base).ok())
+            .map(|c| c.into_iter().map(|e| e.source.corner).collect())
+            .unwrap_or_default();
+        let names = if corners.is_empty() {
+            String::new()
+        } else {
+            format!(" of corner(s) {}", corners.join(", "))
+        };
+        diags.push(Diagnostic::new(
+            Severity::Warning,
+            DiagCode::of("T0140"),
+            format!(
+                "the extracted parasitics{names} were dropped ({}): timing of {} uses no SPEF \
+                 until it is imported again; `--require-wire-model spef_rc` makes such a run \
+                 an error",
+                dropped.reason, committed.rev
+            ),
+        ));
+    }
 
     let mut env = Envelope::new("rusteda import");
     env.workspace = Some(ws_arg.to_string());

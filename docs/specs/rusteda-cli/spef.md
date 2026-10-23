@@ -45,6 +45,14 @@ fail explicitly.
   with `T0072` and nothing is committed. The import drops `sta`, `sta_check`
   and `limits`.
 
+**RCLI-REQ-0076**: An import that drops the `parasitics` table of its base
+  revision (its netlist changed, so the table's upstream no longer holds) warns
+  with one `T0140` that names the dropped corners, the reason and the new
+  revision: its timing has no extracted parasitics until SPEF is imported again,
+  and a timing command that requires them (`--require-wire-model spef_rc`)
+  rejects it. The `dropped` list of the envelope names the table as before. An
+  import that replaces or keeps the table does not warn.
+
 **RCLI-REQ-0073**: Accept plain UTF-8 and gzip SPEF, detected by magic bytes.
   Both encoded and decoded inputs obey `--max-spef-mib`; validate gzip CRC and
   concatenated members. Store canonical decoded source in `PARASIT` section 1,

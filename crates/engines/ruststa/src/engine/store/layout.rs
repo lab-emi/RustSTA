@@ -886,6 +886,24 @@ pub struct CornerLimitsReport {
     pub kinds: BTreeMap<String, LimitKindReport>,
     /// Instance pins with pulse checks reached by no clock.
     pub unclocked_pulse_pins: u64,
+    /// Clocked instance pins with pulse constraints that pass their clock on through their
+    /// cell, not checked under the pulse pin scope `clock-ends` (`STA-REQ-0817`).
+    #[serde(default)]
+    pub pass_through_pulse_pins: u64,
+    /// The pulse group rule of the analysis, `worst` or `last` (`STA-REQ-0816`).
+    #[serde(default = "default_pulse_groups")]
+    pub pulse_groups: String,
+    /// The pulse pin scope of the analysis, `all` or `clock-ends` (`STA-REQ-0817`).
+    #[serde(default = "default_pulse_pins")]
+    pub pulse_pins: String,
+}
+
+fn default_pulse_groups() -> String {
+    "worst".to_owned()
+}
+
+fn default_pulse_pins() -> String {
+    "all".to_owned()
 }
 
 /// The counts of one check kind in one corner (`STA-REQ-0807`).

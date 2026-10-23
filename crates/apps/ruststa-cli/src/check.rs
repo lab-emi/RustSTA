@@ -320,6 +320,7 @@ pub fn verify_sta_store(
             max_state_gib: 16.0,
             max_limit_rows: ruststa::engine::limits::DEFAULT_MAX_LIMIT_ROWS,
             require_wire_model: None,
+            pulse_rules: ruststa::engine::limits::PulseRules::default(),
         };
         let mut full_diags = Vec::new();
         let fresh_data = run_sta_on_revision(ws, base_rev, &opts, &mut full_diags)?.store;

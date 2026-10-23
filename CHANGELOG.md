@@ -8,7 +8,7 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 ## [0.4.0] - 2026-10-23
 
 ### Added
-- **Pin limit checks (`STA-REQ-0800` to `STA-REQ-0815`):** minimum pulse width (high and low) and
+- **Pin limit checks (`STA-REQ-0800` to `STA-REQ-0817`):** minimum pulse width (high and low) and
   minimum period of every clock pin on the propagated or ideal clock waveform, with the latest
   opening and earliest closing arrival, required widths from the `min_pulse_width` tables at the
   opening transition time and the worst of conditional (`when`) groups and of the pin attributes
@@ -33,9 +33,20 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   rule (`STA-REQ-0813`) gives every status: `met`, `violated`, `partial`, `unconstrained` or
   `unchecked`; a count without a checked row is `null`; unclocked pulse pins and checks with a
   value that is not finite (`T0137`) are never reported as met.
-- **Liberty pin pulse attributes (LIBERTY-REQ-0049):** the shared reader consumes
-  `min_pulse_width_high`, `min_pulse_width_low` and `min_period` as unconditional scalar pulse
-  arcs of their pin instead of ignoring them.
+- **Liberty pin pulse attributes (LIBERTY-REQ-0049, WS-REQ-0117):** the shared reader keeps
+  `min_pulse_width_high`, `min_pulse_width_low` and `min_period` on their `Pin` instead of ignoring
+  them (no timing arc is added), and the compiled library format `LIBERTY` v4 carries them; a
+  cached v3 `.rlib` is compiled again from its `.lib`.
+- **Selectable pulse rules (`STA-REQ-0816`, `STA-REQ-0817`):** `run` and `update` take
+  `--pulse-groups worst|last` (the largest constraint of a pin's groups and attributes, the
+  default, or per transition the last listed group that states it) and `--pulse-pins
+  all|clock-ends` (every clocked pin, the default, or only the pins where a clock ends; clock-gater
+  inputs are then counted in `completeness.pass_through_pulse_pins`, warned with `T0141`, and the
+  pulse status is `partial`). The envelope reports `scope.pulse_rules`; the `limits` table and the
+  `sta.rbin` scope record the rules per corner; `T0142` counts unused period fall tables under
+  `last`.
+- **`T0140`** warns when an import drops the `parasitics` table because the netlist changed
+  (RCLI-REQ-0076).
 - **Extracted parasitics per corner (`STA-REQ-0820`, RCLI-REQ-0075):** `rusteda import` takes
   repeatable `--spef FILE --spef-corner NAME` pairs into a `PARASIT` v2 table; later imports add or
   replace corners; every analyzed corner uses its own extraction and a corner without one fails
@@ -64,7 +75,18 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 - `inspect`, its instance pins and the `pins` section reported the hold-side required time as
   `required_ns` and the setup required time as `required_hold_ns`; they now give
   `required_setup_ns` (and `required_ns`) and `required_hold_ns` at the worst slack's transition.
-- `report --kind setup|hold` now applies to the `endpoints` and `checks` sections.
+- `report --kind setup|hold` now applies to the `endpoints` and `checks` sections, and without
+  `--sort` the `endpoints` section of `--kind hold` is ordered by hold slack, so `--limit N` lists
+  the worst hold endpoints.
+- `inspect` of a latch data endpoint reported the node's required time, which also covers the
+  paths through the transparent latch; an endpoint now reports the required times of its worst
+  setup and hold path, consistent with its endpoint slacks and with `path --to` (`STA-REQ-0812`).
+- On revisions with extracted parasitics, `update` (full fallback) and `run` of the same revision
+  could commit `sta.rbin` files that differed by about 1e-4 ns in required times behind latches:
+  the backward pass lowered a corner again without pinning the latch `G -> Q` transitions. Both
+  now lower a corner through one function (`STA-REQ-0806`).
+- A design rule checked on some pins while others have no limit is `partial`, not `met`
+  (`STA-REQ-0813`).
 
 ## [0.3.0] and earlier development previews
 

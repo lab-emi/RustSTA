@@ -264,13 +264,10 @@ stores `operating_conditions` (`OperatingConditions` with `name`, `process`, `te
 
 **LIBERTY-REQ-0049** Pin pulse attributes: the pin attributes `min_pulse_width_high`,
 `min_pulse_width_low` and `min_period` are consumed (in addition to the constructs of
-LIBERTY-REQ-0054) as unconditional pulse checks of their pin, in library time units. A pin with
-`min_pulse_width_high` or `min_pulse_width_low` gets a timing arc of type `min_pulse_width` whose
-scalar `rise_constraint` is `min_pulse_width_high` and whose scalar `fall_constraint` is
-`min_pulse_width_low` (absent when the attribute is absent); a pin with `min_period` gets a timing
-arc of type `minimum_period` with `min_period` as its scalar `rise_constraint` and
-`fall_constraint`. Both arcs relate the pin to itself, have no `when` and line 0
-(LIBERTY-REQ-0046), and follow the arcs of the pin's `timing` groups (LIBERTY-REQ-0019). A
-negative or non-finite value is a pin limit problem (`L0204`, LIBERTY-REQ-0057) and adds no arc
-[@liberty2017].
+LIBERTY-REQ-0054) and kept on their `Pin` as `min_pulse_width_high`, `min_pulse_width_low` and
+`min_period`, in library time units: the unconditional minimum widths of the high and the low pulse
+and the minimum period at the pin. They add no timing arc, so the arcs of a pin are exactly its
+`timing` groups (LIBERTY-REQ-0019). A negative or non-finite value is a pin limit problem (`L0204`,
+LIBERTY-REQ-0057) and is not kept. The compiled library carries them from format version 4
+(WS-REQ-0117) [@liberty2017].
 

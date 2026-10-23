@@ -92,6 +92,7 @@ pub fn exec_run(
         max_state_gib: args.max_state_gib,
         max_limit_rows: args.max_limit_rows,
         require_wire_model: args.require_wire_model,
+        pulse_rules: crate::args::pulse_rules(args.pulse_groups, args.pulse_pins),
     };
 
     let step_res = (|| {

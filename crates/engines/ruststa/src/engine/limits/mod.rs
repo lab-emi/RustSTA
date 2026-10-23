@@ -46,6 +46,89 @@ pub fn retained_bytes(num_nodes: usize, max_rows: usize) -> u64 {
         .saturating_mul(size_of::<LimitRow>() as u64)
 }
 
+/// How the constraint of a pulse check is chosen among the `min_pulse_width` or `minimum_period`
+/// groups of a pin and its pulse attributes (`STA-REQ-0801`, `STA-REQ-0816`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum PulseGroupRule {
+    /// The largest constraint of every group and of the attribute: every `when` condition is
+    /// taken as possible, and the result does not depend on the order of the groups (default).
+    #[default]
+    Worst,
+    /// Per transition, the last listed group that states its constraint, else the attribute; a
+    /// minimum period uses the `rise_constraint` only (`STA-REQ-0816`).
+    Last,
+}
+
+impl PulseGroupRule {
+    /// The name of the rule in reports and on the command line.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Worst => "worst",
+            Self::Last => "last",
+        }
+    }
+}
+
+/// Which clock pins with pulse constraints are checked (`STA-REQ-0802`, `STA-REQ-0817`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum PulsePinScope {
+    /// Every pin with pulse constraints that a clock reaches (default).
+    #[default]
+    All,
+    /// Only the pins where the clock ends: a pin whose clock passes on through its cell to an
+    /// output pin (a clock gater or buffer input) is not checked and is counted instead
+    /// (`STA-REQ-0817`).
+    ClockEnds,
+}
+
+impl PulsePinScope {
+    /// The name of the scope in reports and on the command line.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::ClockEnds => "clock-ends",
+        }
+    }
+}
+
+/// The rules of the pulse checks (`STA-REQ-0801`, `STA-REQ-0816`, `STA-REQ-0817`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct PulseRules {
+    /// The choice among the groups and the attribute of a pin.
+    pub groups: PulseGroupRule,
+    /// The pins that are checked.
+    pub pins: PulsePinScope,
+}
+
+impl PulseRules {
+    /// The rules as the bits of the `limits` table (`STA-REQ-0806`): bit 0 set for
+    /// [`PulseGroupRule::Last`], bit 1 for [`PulsePinScope::ClockEnds`].
+    #[must_use]
+    pub fn bits(self) -> u32 {
+        u32::from(self.groups == PulseGroupRule::Last)
+            | (u32::from(self.pins == PulsePinScope::ClockEnds) << 1)
+    }
+
+    /// The rules of `bits` ([`Self::bits`]); `None` when another bit is set.
+    #[must_use]
+    pub fn from_bits(bits: u32) -> Option<Self> {
+        (bits & !3 == 0).then_some(Self {
+            groups: if bits & 1 == 0 {
+                PulseGroupRule::Worst
+            } else {
+                PulseGroupRule::Last
+            },
+            pins: if bits & 2 == 0 {
+                PulsePinScope::All
+            } else {
+                PulsePinScope::ClockEnds
+            },
+        })
+    }
+}
+
 /// The kind of a pin limit check (`STA-REQ-0800`, `STA-REQ-0803`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
@@ -221,6 +304,14 @@ pub struct CornerLimits {
     /// Checked instance pins reached by an ideal clock, whose pulse widths come from the declared
     /// waveform and clock latencies (`STA-REQ-0815`).
     pub ideal_clock_pulse_pins: u64,
+    /// Clocked instance pins with pulse constraints that pass their clock on through their cell,
+    /// not checked under [`PulsePinScope::ClockEnds`] (`STA-REQ-0817`).
+    pub pass_through_pulse_pins: u64,
+    /// `fall_constraint` tables of `minimum_period` groups on checked pins that
+    /// [`PulseGroupRule::Last`] does not use (`STA-REQ-0816`).
+    pub unused_period_fall_tables: u64,
+    /// The rules the pulse checks ran with.
+    pub rules: PulseRules,
 }
 
 impl CornerLimits {
@@ -252,6 +343,8 @@ pub struct LimitInputs<'a> {
     pub node_values: &'a TimingValues,
     /// The net loads of the corner.
     pub net_loads: &'a NetLoads,
+    /// The rules of the pulse checks.
+    pub pulse_rules: PulseRules,
 }
 
 impl std::fmt::Debug for LimitInputs<'_> {
@@ -274,7 +367,10 @@ pub fn check_corner_limits(
     diags: &mut Vec<Diag>,
 ) -> CornerLimits {
     let mut rows = RowCollector::new(max_rows);
-    let mut out = CornerLimits::default();
+    let mut out = CornerLimits {
+        rules: inputs.pulse_rules,
+        ..CornerLimits::default()
+    };
     pulse::check_pulses(inputs, tracker, &mut rows, &mut out);
     let mut sdc_diags = Vec::new();
     drv::check_design_rules(inputs, &mut rows, &mut sdc_diags);
@@ -304,12 +400,38 @@ pub fn check_corner_limits(
         ));
     }
     if out.conditional_pulse_groups > 0 {
+        let rule = match inputs.pulse_rules.groups {
+            PulseGroupRule::Worst => "combined as the worst group of their pin (STA-REQ-0801)",
+            PulseGroupRule::Last => {
+                "resolved per transition by the last listed group of their pin (STA-REQ-0816)"
+            }
+        };
         diags.push(Diag::note(
             "T0132",
             format!(
-                "corner '{corner}': {} conditional (when) pulse group(s) combined as the worst \
-                 group of their pin (STA-REQ-0801)",
+                "corner '{corner}': {} conditional (when) pulse group(s) {rule}",
                 out.conditional_pulse_groups
+            ),
+        ));
+    }
+    if out.pass_through_pulse_pins > 0 {
+        diags.push(Diag::warning(
+            "T0141",
+            format!(
+                "corner '{corner}': {} clocked pin(s) with pulse constraints pass their clock on \
+                 through their cell and are not checked (pulse pins 'clock-ends'); the pulse \
+                 checks are partial (STA-REQ-0817)",
+                out.pass_through_pulse_pins
+            ),
+        ));
+    }
+    if out.unused_period_fall_tables > 0 {
+        diags.push(Diag::note(
+            "T0142",
+            format!(
+                "corner '{corner}': {} minimum_period fall_constraint table(s) not used (pulse \
+                 groups 'last' read the rise_constraint; STA-REQ-0816)",
+                out.unused_period_fall_tables
             ),
         ));
     }

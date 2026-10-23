@@ -21,29 +21,57 @@ opposite edge for a negative sense), and the closing transition from the next so
 `t(e_o)`. With the clock arrival `L` of the clock model (ideal or propagated), the width is taken
 with the latest opening and the earliest closing arrival:
 `W = (t(e_c) + L(e_c, close, early)) - (t(e_o) + L(e_o, open, late))`. The required width is the
-largest constraint of the pin's groups for that sense, each evaluated at the late transition time
-of the opening transition; the slack is `W - required`, the worst over the opening edges. Clock
+constraint of the pin for that sense that the pulse group rule chooses (STA-REQ-0801,
+STA-REQ-0816), evaluated at the late transition time of the opening transition; the slack is
+`W - required`, the worst over the opening edges. Clock
 uncertainty and CPPR do not enter the check (CPPR is off in this version). A group without a
 constraint table is a note of the library view and checks nothing. These groups are pulse checks
 and are no longer counted in `completeness.unanalyzed_arcs`.
 
-**STA-REQ-0801** Conditional groups and minimum period. Groups with a `when` condition are taken as
-all possible: the worst (largest) constraint over the groups of a pin applies, and one aggregated
-note `T0132` per corner counts the conditional groups. A `minimum_period` group constrains the
-clock period at its pin: its `rise_constraint` and `fall_constraint` are evaluated at the late
-transition time of the pin's rising and falling transition; the required period is the largest of
-them over the groups, and the slack is `period(C) - required` for every clock `C` at the pin. The
-pin-level attributes `min_pulse_width_high`, `min_pulse_width_low` and `min_period` reach the
-library view as unconditional scalar groups of their pin (LIBERTY-REQ-0049) and enter the same
-largest constraint, so a pin that states only the attributes is checked with them. On the standard
-cells of both default libraries every pin that states the attributes also has conditional groups,
-and the attribute equals the worst group.
+**STA-REQ-0801** Conditional groups and minimum period (the default rule `worst`). Groups with a
+`when` condition are taken as all possible: the worst (largest) constraint over the groups of a pin
+applies, whatever their order, and one aggregated note `T0132` per corner counts the conditional
+groups. A `minimum_period` group constrains the clock period at its pin: its `rise_constraint` and
+`fall_constraint` are evaluated at the late transition time of the pin's rising and falling
+transition; the required period is the largest of them over the groups, and the slack is
+`period(C) - required` for every clock `C` at the pin. The pin attributes `min_pulse_width_high`,
+`min_pulse_width_low` and `min_period` (LIBERTY-REQ-0049) are unconditional scalar constraints of
+their pin, after its groups, and enter the same largest constraint, so a pin that states only the
+attributes is checked with them. On the standard cells of both default libraries every pin that
+states the attributes also has conditional groups, and the attribute equals the worst group.
 
 **STA-REQ-0802** Unclocked pulse pins. An instance pin with pulse groups that no clock reaches is
 not checked: the corner counts it in `unclocked_pulse_pins`, the command envelope reports the
 worst corner's count as `completeness.unchecked_pulse_width_pins`, and the analysis emits one
 warning `T0133` per corner. Its pulse checks are never reported as met: the pulse status is
 `unchecked` when no pulse check was evaluated and `partial` when some were (STA-REQ-0813).
+
+**STA-REQ-0816** The pulse group rule `last`. `ruststa run` and `update` take
+`--pulse-groups worst|last` (default `worst`, STA-REQ-0801). Under `last` the required width of a
+sense is the constraint of the last listed `min_pulse_width` group of the pin that states it
+(`rise_constraint` for the high pulse, `fall_constraint` for the low pulse), else the pin attribute
+of that sense; the required period is the `rise_constraint` of the last listed `minimum_period`
+group that states one, at the late rising transition time, else `min_period`. The note `T0132`
+names the rule, and a note `T0142` per corner counts the `fall_constraint` tables of
+`minimum_period` groups on checked pins that the rule does not read. The rule depends on the order
+of the groups in the library; it reproduces the choice that a reference timing tool makes, observed
+as a black box by reordering the groups of a copied library (a pin's attribute applies only to a
+sense that no group states, and a period group with only a `fall_constraint` is not read). The
+default `worst` does not depend on the order and is never smaller.
+
+**STA-REQ-0817** The pulse pin scope. `ruststa run` and `update` take `--pulse-pins all|clock-ends`
+(default `all`). Under `clock-ends` a clocked instance pin whose clock passes on through its cell,
+that is, an arc of the cell leads from the pin to an output pin of the instance that one of the
+pin's clocks reaches (the clock pin of a clock gater, the input of a clock buffer), is not checked:
+the corner counts it in `pass_through_pulse_pins`, the command envelope reports the worst corner's
+count as `completeness.pass_through_pulse_pins`, a warning `T0141` per corner names the count, and
+the pulse status is `partial` (STA-REQ-0813), never `met`. The pins where a clock ends (flip-flop
+and latch clock pins, asynchronous pins driven by a clock) are checked under both scopes. A
+reference timing tool, observed as a black box, checks only the pins where a clock ends; `all`
+also checks the clock pins of clock gaters, whose internal latch has its own minimum pulse width.
+The rules of a run are its scope: the envelope reports `scope.pulse_rules` (`groups`, `pins`), the
+`SCOPE` of `sta.rbin` records them per corner with `pass_through_pulse_pins`, and the `limits`
+table records them in its corner records (STA-REQ-0806).
 
 ## Electrical design rules
 
@@ -81,11 +109,15 @@ with a warning `T0131`. `set_max_transition`, `set_max_capacitance`, `set_max_fa
 
 **STA-REQ-0806** The `limits` table. `ruststa run` and `ruststa update` commit, with `sta.rbin` and
 with the same upstream tables, a table `limits` (`limits.rbin`, rbin kind `LIMITS`, version 1): per
-corner the counts of every kind (checked, violating, worst slack, unlimited, kept rows) and the
-kept rows with the names of their pin, net and clock, the value, limit, slack, transition and
-source. Equal inputs give byte-identical tables; `update --verify-full` requires the incremental
+corner the pulse rules (bit 0 for `last`, bit 1 for `clock-ends`; other bits are a corrupt table),
+the unclocked, conditional and pass-through pulse counts, the counts of every kind (checked,
+violating, worst slack, unlimited, kept rows) and the kept rows with the names of their pin, net
+and clock, the value, limit, slack, transition and source. Equal inputs give byte-identical tables; `update --verify-full` requires the incremental
 table to equal the table of a full analysis byte for byte, as for `sta.rbin`; a timing session
-verified against a full analysis compares the limit checks of every corner. An `update` whose base
+verified against a full analysis compares the limit checks of every corner. The backward pass of
+`sta.rbin` reads the lowered problem that the analysis kept, or a problem lowered again by the same
+function (latch transitions pinned and wire model prepared), so `update` and `run` of one revision
+commit the same bytes, with extracted parasitics too. An `update` whose base
 revision has a current `sta.rbin` but no current `limits` table analyzes it again. The summary of
 the table holds `limit_rows` and `limit_rows_truncated`.
 
@@ -124,13 +156,19 @@ left out by the row budget) and `unevaluated`, and its `matched` and `shown` cou
 are `violating`, `slack<X`, `pin~TEXT` (also matching the net) and `clock=NAME`; another filter is a
 usage error. A revision without a `limits` table is an error `T0136`.
 
-**STA-REQ-0812** Required times and the endpoint kind. `inspect`, its instance pins and the `pins`
-report give `required_setup_ns` (also as `required_ns`) and `required_hold_ns`: the late and the
-early required time at the transition of the worst late and early slack of the pin, which is the
-required time of the worst setup and hold path to it. In the `endpoints` and `checks` sections of
-`report`, `--kind setup` (or `hold`) keeps the endpoints with a setup (or hold) slack and applies
-the filters `violating` and `slack<X` and the sort `slack` to that slack alone; `both` keeps the
-earlier behaviour.
+**STA-REQ-0812** Required times and the endpoint kind. `inspect --pin` (and a pin, port or net
+handle) reports for an endpoint, with its endpoint slacks `slack_ns` and `hold_slack_ns`, the
+required times of its own checks: `required_setup_ns` (also as `required_ns`) and
+`required_hold_ns` are the required times of the worst setup and hold path that ends at it in the
+corner, as `ruststa path --to` reports them. For another pin, and for the instance pins of
+`inspect --inst` and the `pins` report, which give node slacks, they are the late and the early
+required time of the node at the transition of its worst late and early slack; at a latch data
+pin the node values also cover the paths through the transparent latch and can be earlier than its
+own check's. In the `endpoints` and `checks` sections of `report`, `--kind setup` (or `hold`) keeps
+the endpoints with a setup (or hold) slack and applies the filters `violating` and `slack<X` and
+the sort `slack` to that slack alone; without `--sort`, `--kind hold` orders the endpoints by hold
+slack, worst first (ties by name), so that `--limit N` lists the `N` worst hold endpoints; `both`
+keeps the earlier behaviour.
 
 **STA-REQ-0813** Status rules. One rule gives the counts and statuses of the revision summary and
 of every command envelope, over the reported corners. A violating count is the worst corner's and
@@ -141,8 +179,10 @@ checks together, or one design rule) is `violated` when a checked row has a nega
 otherwise `unconstrained` when nothing is checked and nothing is left unevaluated (no pin with a
 pulse constraint, or no limit of the kind anywhere), `unchecked` when nothing is checked but some
 checks were left unevaluated (every pulse pin unclocked, STA-REQ-0802, or every value not finite),
-`partial` when some checks were evaluated and others not, and `met` when every check was evaluated
-without violation. `drv_status` is `violated` when a design rule is violated, `met` when all three
+`partial` when some checks were evaluated and others not (unclocked pulse pins, pulse pins left
+out by the scope `clock-ends`, STA-REQ-0817, values that are not finite, or a design rule checked
+on some pins or drivers while others have a value but no limit, `completeness.drv_unlimited`), and
+`met` when every check was evaluated without violation. `drv_status` is `violated` when a design rule is violated, `met` when all three
 are met, `unconstrained` when all three are unconstrained, `unchecked` when none was evaluated, and
 `partial` otherwise, for example when `max_fanout` has no limit anywhere. An analysis without limit
 counts reports every count as `null` and every status as `unchecked` (CONTRIBUTING Rule 4.2).

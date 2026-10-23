@@ -19,8 +19,12 @@ use super::exceptions::{AnalysisKind, ExceptionContext, PathAnalysisResolution};
 use super::lower::{ArcTagMaps, LoweredCorner};
 use super::relation::latch_window_relations;
 use super::tags::{Tag, TagTable};
+use crate::engine::delay::load::NetLoads;
+use crate::engine::delay::wire::WireModel;
 use crate::engine::graph::{ArcKind, CheckArc, TimingGraph};
+use crate::engine::input::NetlistView;
 use crate::engine::input::constr::{CompiledConstraints, MaxTimeBorrowTarget};
+use crate::engine::input::libview::TimingLib;
 use crate::engine::types::{An, ClockId, NodeId, Tr};
 
 /// Value of `TagMapRec::open` that rejects all arrivals for a bound (`< f64::INFINITY` and finite
@@ -403,6 +407,33 @@ pub fn build_latch_tag_maps<C: Cppr>(
     }
 
     Ok(tag_maps)
+}
+
+/// Lowers the problem of one corner onto the compute timing task: the graph with its start rows
+/// and latch tag maps, the latch `G -> Q` transitions pinned on the latch `D -> Q` arcs
+/// ([`pin_latch_gq_slews`]) and the prepared wire model (`STA-REQ-0222`, `STA-REQ-0401`).
+///
+/// The analysis and the backward pass of the timing table lower a corner only through this
+/// function, so that a table built from a kept lowered problem and one built from a problem
+/// lowered again read the same arc values and are byte-identical (`STA-REQ-0806`).
+#[allow(clippy::too_many_arguments)]
+pub fn lower_corner<'l>(
+    netview: &NetlistView<'_>,
+    graph: &TimingGraph,
+    lib: &'l TimingLib,
+    net_loads: &NetLoads,
+    ntags: u32,
+    starts: rusteda_compute::timing::StartRows,
+    launch_slews: &FxHashMap<NodeId, [f64; 4]>,
+    latch_maps: &ArcTagMaps,
+    wire_model: &dyn WireModel,
+    max_state_bytes: u64,
+) -> Result<LoweredCorner<'l>, Diag> {
+    let mut lowered =
+        LoweredCorner::lower(netview, graph, lib, net_loads, ntags, starts, latch_maps)?;
+    pin_latch_gq_slews(graph, launch_slews, &mut lowered);
+    lowered.set_wire_model(graph, netview, wire_model, lib, max_state_bytes)?;
+    Ok(lowered)
 }
 
 /// Pins the output slew tables of enabled latch `D -> Q` arcs in `lowered` to the latch output

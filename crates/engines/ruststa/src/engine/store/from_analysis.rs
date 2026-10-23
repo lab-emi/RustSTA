@@ -30,6 +30,7 @@ use crate::engine::prop::backward::{BackwardPass, ByNode};
 use crate::engine::prop::checks::{EndpointCheckKind, SlackRecord};
 use crate::engine::prop::clocks::ClockModel;
 use crate::engine::prop::endpoints::EndpointStatus;
+use crate::engine::prop::latch::lower_corner;
 use crate::engine::prop::lower::LoweredCorner;
 use crate::engine::prop::starts::build_start_rows;
 use crate::engine::store::{
@@ -1079,25 +1080,22 @@ fn compute_corner_backward_pass(
         &ca.exceptions,
         &ca.net_loads,
         &NoDerate,
-    ) && let Ok(mut lowered) = LoweredCorner::lower(
-        analysis.netview,
-        analysis.graph,
-        &ca.lib,
-        &ca.net_loads,
-        ntags as u32,
-        start_build.rows,
-        &ca.latch_maps,
     ) {
-        // The same graph, starts and RC data passed analysis preflight already.
-        lowered
-            .set_wire_model(
-                analysis.graph,
-                analysis.netview,
-                &ca.wire_model,
-                &ca.lib,
-                u64::MAX,
-            )
-            .expect("RC preparation of a validated analysis is deterministic");
+        // The same graph, starts and RC data passed analysis preflight already; the lowering is
+        // the analysis's own (`lower_corner`), so the arc values equal those of a kept problem.
+        let lowered = lower_corner(
+            analysis.netview,
+            analysis.graph,
+            &ca.lib,
+            &ca.net_loads,
+            ntags as u32,
+            start_build.rows,
+            &start_build.launch_slews,
+            &ca.latch_maps,
+            &ca.wire_model,
+            u64::MAX,
+        )
+        .expect("the lowering of a validated analysis is deterministic");
         bp.propagate(analysis.graph, &lowered, &values);
     }
     bp
@@ -1140,5 +1138,8 @@ pub fn corner_limits_report(ca: &CornerAnalysis) -> CornerLimitsReport {
             })
             .collect(),
         unclocked_pulse_pins: ca.limits.unclocked_pulse_pins,
+        pass_through_pulse_pins: ca.limits.pass_through_pulse_pins,
+        pulse_groups: ca.limits.rules.groups.name().to_owned(),
+        pulse_pins: ca.limits.rules.pins.name().to_owned(),
     }
 }

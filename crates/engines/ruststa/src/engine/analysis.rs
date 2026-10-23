@@ -33,7 +33,7 @@ use crate::engine::input::constr::{CompiledConstraints, CornerLibs, ExceptionKin
 use crate::engine::input::libview::TimingLib;
 use crate::engine::input::{NetTarget, NetlistView};
 use crate::engine::limits::{
-    CornerLimits, DEFAULT_MAX_LIMIT_ROWS, LimitInputs, check_corner_limits,
+    CornerLimits, DEFAULT_MAX_LIMIT_ROWS, LimitInputs, PulseRules, check_corner_limits,
 };
 use crate::engine::prop::checks::evaluate_all_checks;
 use crate::engine::prop::clocks::ClockModel;
@@ -42,7 +42,7 @@ use crate::engine::prop::cppr::NoCppr;
 use crate::engine::prop::endpoints::{CornerEndpoints, EndpointRecord};
 use crate::engine::prop::exceptions::ExceptionContext;
 use crate::engine::prop::gating::{ClockGatingSite, discover_gating_sites};
-use crate::engine::prop::latch::{build_latch_tag_maps, pin_latch_gq_slews};
+use crate::engine::prop::latch::{build_latch_tag_maps, lower_corner};
 use crate::engine::prop::lower::{
     self, ArcTagMaps, BackendKind, LoweredCorner, LoweredResult, Precision, TimingValues,
 };
@@ -97,6 +97,8 @@ pub struct AnalysisOptions {
     /// Rows kept per corner and kind by the pin limit checks
     /// ([`DEFAULT_MAX_LIMIT_ROWS`] by default; `STA-REQ-0810`).
     pub max_limit_rows: usize,
+    /// The rules of the pulse checks (`STA-REQ-0816`, `STA-REQ-0817`).
+    pub pulse_rules: PulseRules,
 }
 
 /// Default limit of the propagation state of one corner: 16 GiB (`STA-REQ-0024`).
@@ -116,6 +118,7 @@ impl Default for AnalysisOptions {
             tag_budget: DEFAULT_TAG_BUDGET,
             max_state_bytes: DEFAULT_MAX_STATE_BYTES,
             max_limit_rows: DEFAULT_MAX_LIMIT_ROWS,
+            pulse_rules: PulseRules::default(),
         }
     }
 }
@@ -851,17 +854,18 @@ fn setup_corner<'l>(
     // 7. Lower onto `rusteda_compute::timing` and pin latch `G -> Q` slews (`STA-REQ-0222`,
     // `STA-REQ-0401`).
     let ntags = tags.len().max(1) as u32;
-    let mut lowered = LoweredCorner::lower(
+    let lowered = lower_corner(
         netview,
         graph,
         lib,
         &net_loads,
         ntags,
         start_build.rows,
+        &start_build.launch_slews,
         &latch_maps,
+        &wire_model,
+        options.max_state_bytes,
     )?;
-    pin_latch_gq_slews(graph, &start_build.launch_slews, &mut lowered);
-    lowered.set_wire_model(graph, netview, &wire_model, lib, options.max_state_bytes)?;
 
     Ok(CornerSetup {
         wire_model,
@@ -1022,6 +1026,7 @@ fn analyze_one_corner(
             tags: &tags,
             node_values: &node_values,
             net_loads: &net_loads,
+            pulse_rules: options.pulse_rules,
         },
         options.max_limit_rows,
         corner_id.index() == 0,

@@ -39,7 +39,10 @@
 - **Pin limit checks (0.4):** minimum pulse width and minimum period of clock pins, and the
   design rules `max_transition`, `max_capacitance` and `max_fanout` from the library and the
   constraints, in the `limits` table, with a hold-fix report for physical repair
-  ([limits](../specs/sta/limits.md)).
+  ([limits](../specs/sta/limits.md)). The pulse rules are selectable: the largest constraint
+  over a pin's conditional groups and attributes and every clocked pin (the defaults), or the
+  last listed group and only the pins where a clock ends (`--pulse-groups last
+  --pulse-pins clock-ends`).
 
 ## Current limits
 

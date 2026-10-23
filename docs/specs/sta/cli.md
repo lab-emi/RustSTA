@@ -10,10 +10,12 @@ codes, and exit codes are specified in [`docs/specs/cli/README.md`](../cli/READM
 ruststa [GLOBAL] run         -w <WS> --base-rev <REV> [--corner <NAME>]... [--backend cpu|cuda|gpu]
                              [--precision f64|f32] [--max-paths <N>] [--max-state-gib <GIB>]
                              [--max-limit-rows <N>] [--require-wire-model <MODEL>]
+                             [--pulse-groups worst|last] [--pulse-pins all|clock-ends]
                              [--sta-store full|summary] [--check [--tolerance <NS>]] [-m <TEXT>]
 ruststa [GLOBAL] update      -w <WS> --base-rev <REV> [--corner <NAME>]... [--backend cpu|cuda|gpu]
                              [--precision f64|f32] [--max-paths <N>] [--max-state-gib <GIB>]
                              [--max-limit-rows <N>] [--require-wire-model <MODEL>]
+                             [--pulse-groups worst|last] [--pulse-pins all|clock-ends]
                              [--sta-store full|summary] [--check [--tolerance <NS>]] [--verify-full]
                              [-m <TEXT>]
 ruststa [GLOBAL] check       -w <WS> --base-rev <REV> [--method independent|full|both]
@@ -29,7 +31,8 @@ ruststa [GLOBAL] report      -w <WS> [--rev <REV|HEAD>] [--section <SECTION>...]
 ruststa [GLOBAL] completions [<SHELL>]
 ```
 
-`--max-limit-rows`, `--require-wire-model`, the report sections `limits`, `pulse_width`,
+`--max-limit-rows`, `--require-wire-model`, `--pulse-groups`, `--pulse-pins`, the report sections
+`limits`, `pulse_width`,
 `min_period`, `drv`, `max_transition`, `max_capacitance`, `max_fanout` and `hold_fix`, and
 `--target-margin` are specified in [limits.md](limits.md) (STA-REQ-0806 to STA-REQ-0832).
 `--max-paths` sets the number of worst setup/hold paths included in `top_paths` (default `5`);

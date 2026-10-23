@@ -10,19 +10,26 @@
 //! source edge `e_c = opposite(e_o)` (`t(e_c)` is moved one period later when it does not follow
 //! `t(e_o)`). Its width is taken with the latest opening and the earliest closing arrival,
 //! `W = (t(e_c) + L(e_c, fall, early)) - (t(e_o) + L(e_o, rise, late))`; the low pulse swaps rise and
-//! fall. The required width is the largest `rise_constraint` (high) or `fall_constraint` (low) of
-//! the pin's `min_pulse_width` groups at the opening transition time `s(e_o, ., late)`; the slack
-//! is `W - required`, the worst over the opening edges. The period check compares the clock period
-//! with the largest constraint of the pin's `minimum_period` groups (each table at the transition
-//! time of its own transition) and its slack is `period - required`. Clock uncertainty and CPPR do
-//! not enter these checks.
+//! fall. The required width is the `rise_constraint` (high) or `fall_constraint` (low) of the pin's
+//! `min_pulse_width` constraints at the opening transition time `s(e_o, ., late)`; the slack is
+//! `W - required`, the worst over the opening edges. The period check compares the clock period
+//! with the constraint of the pin's `minimum_period` constraints (each table at the transition time
+//! of its own transition) and its slack is `period - required`. Under [`PulseGroupRule::Worst`] the
+//! constraint is the largest of every group and the pin attribute (`STA-REQ-0801`); under
+//! [`PulseGroupRule::Last`] it is the last listed group that states it, else the attribute, and a
+//! period reads the `rise_constraint` only (`STA-REQ-0816`). Under [`PulsePinScope::ClockEnds`] a
+//! pin whose clock passes on through its cell is counted, not checked (`STA-REQ-0817`). Clock
+//! uncertainty and CPPR do not enter these checks.
 
-use crate::engine::delay::lut::RangeTracker;
-use crate::engine::input::libview::{PulseCheck, PulseCheckKind, TimingCell};
-use crate::engine::prop::clocks::{ClockModel, source_edges_for_pin_tr};
+use crate::engine::delay::lut::{NO_TABLE, RangeTracker};
+use crate::engine::input::libview::{PulseCheck, PulseCheckKind, PulseSource, TimingCell};
+use crate::engine::prop::clocks::{ClockModel, SenseBits, source_edges_for_pin_tr};
 use crate::engine::types::{An, ClockId, NodeId, Tr};
 
-use super::{CornerLimits, LimitInputs, LimitKind, LimitRow, LimitSource, RowCollector};
+use super::{
+    CornerLimits, LimitInputs, LimitKind, LimitRow, LimitSource, PulseGroupRule, PulsePinScope,
+    RowCollector,
+};
 
 /// The pulse checks of each pin of a cell, by cell pin of the netlist cell.
 type CellPulseChecks<'l> = Option<(&'l TimingCell, Vec<Vec<&'l PulseCheck>>)>;
@@ -61,7 +68,7 @@ pub(super) fn check_pulses(
 
     for inst in 0..frozen.instances.len() as u32 {
         let cell_row = frozen.instances[inst as usize].cell as usize;
-        let Some((_, pins)) = &per_cell[cell_row] else {
+        let Some((tc, pins)) = &per_cell[cell_row] else {
             continue;
         };
         for pin_row in frozen.instance_pins(inst) {
@@ -75,7 +82,23 @@ pub(super) fn check_pulses(
                 out.unclocked_pulse_pins += 1;
                 continue;
             }
+            if inputs.pulse_rules.pins == PulsePinScope::ClockEnds
+                && passes_clock_on(inputs, tc, inst, checks[0].pin, clocks)
+            {
+                out.pass_through_pulse_pins += 1;
+                continue;
+            }
             out.conditional_pulse_groups += checks.iter().filter(|c| c.conditional).count() as u64;
+            if inputs.pulse_rules.groups == PulseGroupRule::Last {
+                out.unused_period_fall_tables += checks
+                    .iter()
+                    .filter(|c| {
+                        c.kind == PulseCheckKind::Period
+                            && c.source == PulseSource::Group
+                            && c.table[Tr::Fall.index()] != NO_TABLE
+                    })
+                    .count() as u64;
+            }
             if clocks.iter().any(|&(clock, _)| {
                 inputs
                     .constraints
@@ -104,12 +127,45 @@ pub(super) fn check_pulses(
     }
 }
 
+/// True when a clock of pin `lib_pin` of instance `inst` passes on through the cell: an arc of
+/// the cell leads from the pin to an output pin of the instance that one of `clocks` reaches
+/// (`STA-REQ-0817`).
+fn passes_clock_on(
+    inputs: &LimitInputs<'_>,
+    tc: &TimingCell,
+    inst: u32,
+    lib_pin: usize,
+    clocks: &[(ClockId, SenseBits)],
+) -> bool {
+    let nv = inputs.netview;
+    let frozen = nv.frozen();
+    let cell_row = frozen.instances[inst as usize].cell;
+    tc.arcs
+        .iter()
+        .map(|&a| inputs.lib.arc(a))
+        .filter(|arc| arc.from == lib_pin)
+        .any(|arc| {
+            frozen.instance_pins(inst).any(|pin_row| {
+                let cp = frozen.pin_cellpin[pin_row];
+                tc.pin(nv.cell_pin_name(cell_row, cp)) == Some(arc.to)
+                    && inputs
+                        .clock_model
+                        .pin_clocks(nv.pin_row_node(pin_row as u32))
+                        .iter()
+                        .any(|(c, _)| clocks.iter().any(|(k, _)| k == c))
+            })
+        })
+}
+
 /// The source edges of `ck` that produce transition `tr` at a pin reached with `bits`.
 fn opening_edges(tr: Tr, bits: u8) -> Vec<Tr> {
     source_edges_for_pin_tr(tr, bits)
 }
 
-/// The largest constraint of the `kind` checks for `tr` at transition time `slew`, if any.
+/// The constraint of the `kind` checks for `tr` at transition time `slew`, if any: the largest of
+/// every group and the attribute under [`PulseGroupRule::Worst`], or under
+/// [`PulseGroupRule::Last`] the last listed group with a `tr` table, else the attribute
+/// (`STA-REQ-0801`, `STA-REQ-0816`).
 fn required(
     inputs: &LimitInputs<'_>,
     tracker: &mut RangeTracker,
@@ -118,11 +174,21 @@ fn required(
     tr: Tr,
     slew: f64,
 ) -> Option<f64> {
-    checks
+    let of_kind = checks
         .iter()
-        .filter(|c| c.kind == kind)
-        .filter_map(|c| inputs.lib.eval_pulse(c, tr, slew, tracker))
-        .reduce(f64::max)
+        .filter(|c| c.kind == kind && c.table[tr.index()] != NO_TABLE);
+    match inputs.pulse_rules.groups {
+        PulseGroupRule::Worst => of_kind
+            .filter_map(|c| inputs.lib.eval_pulse(c, tr, slew, tracker))
+            .reduce(f64::max),
+        PulseGroupRule::Last => {
+            let chosen = of_kind
+                .clone()
+                .rfind(|c| c.source == PulseSource::Group)
+                .or_else(|| of_kind.clone().find(|c| c.source == PulseSource::Attribute))?;
+            inputs.lib.eval_pulse(chosen, tr, slew, tracker)
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -204,7 +270,12 @@ fn period_row(
         return None;
     }
     let mut worst: Option<(f64, Tr)> = None;
-    for tr in Tr::ALL {
+    // `last` reads the rise_constraint of the period only (`STA-REQ-0816`).
+    let trs: &[Tr] = match inputs.pulse_rules.groups {
+        PulseGroupRule::Worst => &Tr::ALL,
+        PulseGroupRule::Last => &[Tr::Rise],
+    };
+    for &tr in trs {
         // The transition time of the pin's `tr` edges: the latest over the source edges that
         // produce them.
         let slew = opening_edges(tr, bits)

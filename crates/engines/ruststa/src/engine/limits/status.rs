@@ -12,8 +12,10 @@
 //! - `unconstrained`: there is nothing to check (no pin with a pulse constraint, or no limit of
 //!   the kind anywhere);
 //! - `violated`: a checked row has a negative slack;
-//! - `partial`: no violation, but some checks were not evaluated (unclocked pulse pins, values
-//!   that are not finite) or, for the design rules as a whole, a kind is unconstrained;
+//! - `partial`: no violation, but some checks were not evaluated (unclocked pulse pins, pulse pins
+//!   left out by the `clock-ends` scope, values
+//!   that are not finite, pins or drivers of a design rule without a limit while others have
+//!   one) or, for the design rules as a whole, a kind is unconstrained;
 //! - `met`: every check was evaluated and none is violated.
 //!
 //! A violating count is `null` whenever its kinds have no checked row.
@@ -104,22 +106,33 @@ fn counts<'a>(
     kinds.iter().filter_map(|k| corner.kinds.get(k.name()))
 }
 
-/// The checked rows of `kinds` over `corners`, the violating rows of the worst corner, and the
-/// unevaluated checks over `corners`.
-fn totals(corners: &[&CornerLimitsReport], kinds: &[LimitKind]) -> (u64, u64, u64) {
-    let mut checked = 0u64;
-    let mut violating = 0u64;
-    let mut unevaluated = 0u64;
+/// The counts of a group of kinds over a set of corners.
+#[derive(Debug, Clone, Copy, Default)]
+struct Totals {
+    /// Checked rows over the corners.
+    checked: u64,
+    /// Violating rows of the worst corner.
+    violating: u64,
+    /// Checks not evaluated (values that are not finite) over the corners.
+    unevaluated: u64,
+    /// Pins or drivers with a value but no limit over the corners (design rules).
+    unlimited: u64,
+}
+
+/// The [`Totals`] of `kinds` over `corners`.
+fn totals(corners: &[&CornerLimitsReport], kinds: &[LimitKind]) -> Totals {
+    let mut t = Totals::default();
     for c in corners {
         let mut v = 0u64;
         for k in counts(c, kinds) {
-            checked = checked.saturating_add(k.checked);
-            unevaluated = unevaluated.saturating_add(k.unevaluated);
+            t.checked = t.checked.saturating_add(k.checked);
+            t.unevaluated = t.unevaluated.saturating_add(k.unevaluated);
+            t.unlimited = t.unlimited.saturating_add(k.unlimited);
             v = v.saturating_add(k.violating);
         }
-        violating = violating.max(v);
+        t.violating = t.violating.max(v);
     }
-    (checked, violating, unevaluated)
+    t
 }
 
 /// The counts and statuses of `corners`, or of an analysis without limit checks when `corners`
@@ -137,21 +150,33 @@ pub fn limit_statuses(corners: Option<&[&CornerLimitsReport]>) -> LimitStatuses 
     };
     let count = |checked: u64, violating: u64| (checked > 0).then_some(violating);
 
-    let (mpw_checked, mpw_violating, mpw_uneval) = totals(corners, &MPW_KINDS);
-    let (per_checked, per_violating, per_uneval) = totals(corners, &[LimitKind::MinPeriod]);
-    let unclocked = corners.iter().map(|c| c.unclocked_pulse_pins).max();
-    let pulse_incomplete = unclocked.is_some_and(|u| u > 0) || mpw_uneval + per_uneval > 0;
+    let mpw = totals(corners, &MPW_KINDS);
+    let per = totals(corners, &[LimitKind::MinPeriod]);
+    // Pins reached by no clock, and pins left out by the `clock-ends` scope, are not checked
+    // (`STA-REQ-0802`, `STA-REQ-0817`).
+    let unchecked = corners
+        .iter()
+        .map(|c| {
+            c.unclocked_pulse_pins
+                .saturating_add(c.pass_through_pulse_pins)
+        })
+        .max();
+    let pulse_incomplete =
+        unchecked.is_some_and(|u| u > 0) || mpw.unevaluated + per.unevaluated > 0;
     let pulse_width = CheckStatus::of(
-        mpw_checked + per_checked,
-        mpw_violating + per_violating,
+        mpw.checked + per.checked,
+        mpw.violating + per.violating,
         pulse_incomplete,
     );
 
+    // A design rule checked on some pins but without a limit on others is `partial`, never
+    // `met`; without a limit anywhere it is `unconstrained`.
     let drv = DRV_KINDS.map(|k| {
-        let (checked, violating, uneval) = totals(corners, &[k]);
+        let t = totals(corners, &[k]);
+        let unlimited = t.checked > 0 && t.unlimited > 0;
         (
-            count(checked, violating),
-            CheckStatus::of(checked, violating, uneval > 0),
+            count(t.checked, t.violating),
+            CheckStatus::of(t.checked, t.violating, t.unevaluated > 0 || unlimited),
         )
     });
     let statuses = drv.map(|(_, s)| s);
@@ -172,8 +197,8 @@ pub fn limit_statuses(corners: Option<&[&CornerLimitsReport]>) -> LimitStatuses 
     };
 
     LimitStatuses {
-        min_pulse_width_violating: count(mpw_checked, mpw_violating),
-        min_period_violating: count(per_checked, per_violating),
+        min_pulse_width_violating: count(mpw.checked, mpw.violating),
+        min_period_violating: count(per.checked, per.violating),
         pulse_width,
         drv,
         drv_status,
@@ -207,6 +232,7 @@ mod tests {
                 })
                 .collect(),
             unclocked_pulse_pins: unclocked,
+            ..CornerLimitsReport::default()
         }
     }
 
@@ -286,6 +312,30 @@ mod tests {
             limit_statuses(Some(&[&viol])).drv_status,
             CheckStatus::Violated
         );
+    }
+
+    // STA-REQ-0813: a design rule with a limit on some pins and none on others is partial, never
+    // met; a violation still wins, and without any limit the rule stays unconstrained.
+    #[test]
+    fn partly_limited_design_rules_are_partial() {
+        let with_unlimited = |kind: LimitKind, checked, violating, unlimited| {
+            let mut c = corner(&[(Tran, 2, 0, 0), (Cap, 2, 0, 0), (Fan, 2, 0, 0)], 0);
+            let k = c.kinds.get_mut(kind.name()).expect("kind");
+            (k.checked, k.violating, k.unlimited) = (checked, violating, unlimited);
+            c
+        };
+        let c = with_unlimited(Cap, 1, 0, 7);
+        let s = limit_statuses(Some(&[&c]));
+        assert_eq!(s.drv[1], (Some(0), CheckStatus::Partial));
+        assert_eq!(s.drv_status, CheckStatus::Partial);
+        let c = with_unlimited(Tran, 3, 1, 29);
+        let s = limit_statuses(Some(&[&c]));
+        assert_eq!(s.drv[0], (Some(1), CheckStatus::Violated));
+        assert_eq!(s.drv_status, CheckStatus::Violated);
+        let c = with_unlimited(Fan, 0, 0, 19);
+        let s = limit_statuses(Some(&[&c]));
+        assert_eq!(s.drv[2], (None, CheckStatus::Unconstrained));
+        assert_eq!(s.drv_status, CheckStatus::Partial);
     }
 
     // STA-REQ-0813: checks that are not finite make their kind partial or unchecked; the worst

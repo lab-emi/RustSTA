@@ -375,6 +375,7 @@ fn counter_flow_and_envelope_key_order() {
             "cppr",
             "backend",
             "precision",
+            "pulse_rules",
         ]
     );
 
@@ -391,6 +392,7 @@ fn counter_flow_and_envelope_key_order() {
             "disabled_arcs",
             "unanalyzed_arcs",
             "unchecked_pulse_width_pins",
+            "pass_through_pulse_pins",
             "unevaluated_limit_checks",
             "drv_unlimited",
         ]

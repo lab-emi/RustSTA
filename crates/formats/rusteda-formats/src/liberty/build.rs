@@ -923,17 +923,11 @@ impl Builder<'_> {
         let max_transition = limit(self, "max_transition");
         let max_fanout = limit(self, "max_fanout");
         let fanout_load = limit(self, "fanout_load");
-        // The pin-level pulse attributes are unconditional pulse checks of the pin, kept as
-        // synthetic timing arcs after the arcs of its `timing` groups (LIBERTY-REQ-0049).
-        let pulse_high = limit(self, "min_pulse_width_high");
-        let pulse_low = limit(self, "min_pulse_width_low");
-        let pulse_period = limit(self, "min_period");
-        arcs.extend(pulse_attribute_arcs(
-            name,
-            pulse_high,
-            pulse_low,
-            pulse_period,
-        ));
+        // The pin-level pulse attributes: unconditional pulse constraints of the pin
+        // (LIBERTY-REQ-0049).
+        let min_pulse_width_high = limit(self, "min_pulse_width_high");
+        let min_pulse_width_low = limit(self, "min_pulse_width_low");
+        let min_period = limit(self, "min_period");
         let (three_state, three_state_function) =
             self.function(p, "three_state", cell, name, problems);
         let capacitance = self.number(p, PIN, "capacitance");
@@ -957,6 +951,9 @@ impl Builder<'_> {
             max_transition,
             max_fanout,
             fanout_load,
+            min_pulse_width_high,
+            min_pulse_width_low,
+            min_period,
             is_clock: self.flag(p, PIN, "clock"),
             arcs,
             internal_power,
@@ -997,39 +994,6 @@ impl Builder<'_> {
             }
         }
     }
-}
-
-/// The synthetic timing arcs of the pin-level pulse attributes of pin `pin` (LIBERTY-REQ-0049):
-/// a `min_pulse_width` arc whose scalar `rise_constraint` is `min_pulse_width_high` and whose
-/// scalar `fall_constraint` is `min_pulse_width_low` (either may be absent), and a
-/// `minimum_period` arc with `min_period` as both scalar constraints. Both relate the pin to
-/// itself, carry no `when` and have line 0 (LIBERTY-REQ-0046).
-fn pulse_attribute_arcs(
-    pin: &str,
-    high: Option<f64>,
-    low: Option<f64>,
-    period: Option<f64>,
-) -> Vec<TimingArc> {
-    let scalar = |v: f64| Table {
-        template: "scalar".to_string(),
-        values: vec![v],
-        ..Table::default()
-    };
-    let arc = |timing_type: &str, rise: Option<f64>, fall: Option<f64>| TimingArc {
-        related_pin: pin.to_string(),
-        timing_type: timing_type.to_string(),
-        rise_constraint: rise.map(scalar),
-        fall_constraint: fall.map(scalar),
-        ..TimingArc::default()
-    };
-    let mut arcs = Vec::new();
-    if high.is_some() || low.is_some() {
-        arcs.push(arc("min_pulse_width", high, low));
-    }
-    if period.is_some() {
-        arcs.push(arc("minimum_period", period, period));
-    }
-    arcs
 }
 
 fn seq_from_group(kind: SeqKind, g: &Group) -> Result<Sequential, String> {

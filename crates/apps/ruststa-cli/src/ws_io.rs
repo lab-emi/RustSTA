@@ -50,6 +50,9 @@ pub struct StaRunOptions {
     pub max_limit_rows: usize,
     /// The wire model every analyzed corner must use (`--require-wire-model`, `STA-REQ-0821`).
     pub require_wire_model: Option<WireModelArg>,
+    /// The rules of the pulse checks (`--pulse-groups`, `--pulse-pins`; `STA-REQ-0816`,
+    /// `STA-REQ-0817`).
+    pub pulse_rules: ruststa::engine::limits::PulseRules,
 }
 
 /// Code of an analysis whose wire model is not the required one (`STA-REQ-0821`).
@@ -368,6 +371,7 @@ pub fn analysis_settings(
         tag_budget: DEFAULT_TAG_BUDGET,
         max_state_bytes: (opts.max_state_gib * f64::from(1u32 << 30)) as u64,
         max_limit_rows: opts.max_limit_rows,
+        pulse_rules: opts.pulse_rules,
     };
     Ok((
         analysis_opts,
@@ -823,6 +827,17 @@ pub fn envelope_headers_from_store(
         &mut completeness,
         &mut metrics,
     )?;
+    // The rules of the pulse checks are part of their scope (`STA-REQ-0816`, `STA-REQ-0817`).
+    let pulse_rules = match scope_rep.limits.as_deref().and_then(<[_]>::first) {
+        Some(c) => {
+            let mut r = JsonObject::new();
+            r.insert("groups", &c.pulse_groups)?;
+            r.insert("pins", &c.pulse_pins)?;
+            Some(r)
+        }
+        None => None,
+    };
+    scope.insert("pulse_rules", &pulse_rules)?;
 
     Ok((scope, completeness, metrics))
 }
@@ -893,6 +908,10 @@ pub fn add_limit_headers(
     completeness.insert(
         "unchecked_pulse_width_pins",
         &sum(|c| c.unclocked_pulse_pins),
+    )?;
+    completeness.insert(
+        "pass_through_pulse_pins",
+        &sum(|c| c.pass_through_pulse_pins),
     )?;
     let uneval = sum(|c| c.kinds.values().map(|k| k.unevaluated).sum());
     completeness.insert("unevaluated_limit_checks", &uneval)?;
