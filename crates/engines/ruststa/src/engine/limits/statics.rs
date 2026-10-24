@@ -22,7 +22,6 @@ use rustc_hash::FxHashMap;
 use rusteda_compute::timing::lut::lookup;
 use rusteda_compute::timing::{ArcClass, NONE};
 
-use crate::engine::delay::gate::GateDelay;
 use crate::engine::delay::load::NetLoads;
 use crate::engine::delay::wire::{DriverLoad, WireModel};
 use crate::engine::graph::{ArcKind, ArcSense, DisableReason, GraphArc, LaunchArc, TimingGraph};
@@ -104,7 +103,7 @@ fn cell_class(view: &NetlistView<'_>, lib: &TimingLib, arc: &GraphArc) -> Option
 
 /// The late output transitions `[rise, fall]` of the clock-to-output arc `l` when its clock pin
 /// has the transition `s` at the arc's edge, as the launch of the start rows evaluates it
-/// (`STA-REQ-0217`).
+/// (`STA-REQ-0217`), with the driver resistances of their waveforms (`STA-REQ-0729`).
 fn launch_transition(
     view: &NetlistView<'_>,
     lib: &TimingLib,
@@ -112,8 +111,9 @@ fn launch_transition(
     totals: &[[[f64; 2]; 2]],
     l: &LaunchArc,
     s: f64,
-) -> [f64; 2] {
+) -> ([f64; 2], [Option<(f64, f64)>; 2]) {
     let mut out = [f64::NEG_INFINITY; 2];
+    let mut drives = [None; 2];
     let Some(global) = view
         .frozen()
         .instances
@@ -121,7 +121,7 @@ fn launch_transition(
         .and_then(|i| lib.cell(view.cell_name(i.cell)))
         .and_then(|tc| tc.arcs.get(l.lib_arc.index()).copied())
     else {
-        return out;
+        return (out, drives);
     };
     let prop = lib.arc(global);
     let net = match view.node_net(l.out_pin) {
@@ -142,12 +142,13 @@ fn launch_transition(
             Some(n) => net_loads.physical_load(n, to, late, c),
             None => DriverLoad::Lumped { c },
         };
-        let ds = lib.arc_delay(global, to, late, s, load);
+        let (ds, drive) = lib.arc_delay_drive_3d(global, to, s, load, 0.0);
         if ds.slew.is_finite() {
             out[to.index()] = ds.slew.max(0.0);
+            drives[to.index()] = drive;
         }
     }
-    out
+    (out, drives)
 }
 
 /// The static transitions of the pins without a propagated transition in `values` (node order)
@@ -251,6 +252,8 @@ pub fn static_transitions(
     let totals = canonical_net_totals(view, net_loads);
     let none = f64::NEG_INFINITY;
     let mut value: Vec<Option<[f64; 2]>> = vec![None; m];
+    // The driver resistance of each static transition (`STA-REQ-0729`).
+    let mut drive_of: Vec<[Option<(f64, f64)>; 2]> = vec![[None; 2]; m];
     let mut queue: Vec<u32> = (0..m as u32).filter(|&k| indeg[k as usize] == 0).collect();
     let mut head = 0;
     while head < queue.len() {
@@ -258,6 +261,7 @@ pub fn static_transitions(
         head += 1;
         let node = NodeId(missing[k]);
         let mut tr = [none; 2];
+        let mut dr = [None; 2];
         for &ai in &in_arcs[in_off[k] as usize..in_off[k + 1] as usize] {
             let launch = (ai as usize)
                 .checked_sub(arcs.len())
@@ -266,24 +270,32 @@ pub fn static_transitions(
                 Some(l) => l.clock_pin.index(),
                 None => arcs[ai as usize].src.index(),
             };
-            let s_in = if slot[src] == u32::MAX {
-                [
-                    values.transition(src, 0, late),
-                    values.transition(src, 1, late),
-                ]
+            let (s_in, d_in) = if slot[src] == u32::MAX {
+                let d = lowered
+                    .drives
+                    .get(graph.topo_rank(NodeId(src as u32)) as usize)
+                    .map_or([None; 2], |d| [d[late], d[2 + late]]);
+                (
+                    [
+                        values.transition(src, 0, late),
+                        values.transition(src, 1, late),
+                    ],
+                    d,
+                )
             } else {
                 match value[slot[src] as usize] {
-                    Some(v) => v,
+                    Some(v) => (v, drive_of[slot[src] as usize]),
                     None => continue,
                 }
             };
             if let Some(l) = launch {
                 let s = s_in[l.edge.index()];
                 if s.is_finite() {
-                    let q = launch_transition(view, lib, net_loads, &totals, l, s);
+                    let (q, d) = launch_transition(view, lib, net_loads, &totals, l, s);
                     for to in 0..2 {
                         if q[to] > tr[to] {
                             tr[to] = q[to];
+                            dr[to] = d[to];
                         }
                     }
                 }
@@ -312,8 +324,8 @@ pub fn static_transitions(
                     if !class.allows(ti, to) {
                         continue;
                     }
-                    let q = if lowered.arc_values.is_empty() {
-                        if class.is_wire() {
+                    let (q, drive) = if lowered.arc_values.is_empty() {
+                        let q = if class.is_wire() {
                             s
                         } else {
                             let l = load.map_or(0.0, |l| l[to * 2 + late]);
@@ -324,22 +336,37 @@ pub fn static_transitions(
                                 [s, l, l],
                             );
                             if q < 0.0 { 0.0 } else { q }
-                        }
+                        };
+                        (q, None)
                     } else {
                         let l = load.map_or(0.0, |l| l[to * 2 + late]);
-                        match arc_value(&lowered.luts, &class, a, view, wire, lib, l, s, to, late) {
-                            Ok((_, q, _)) => q,
+                        match arc_value(
+                            &lowered.luts,
+                            &class,
+                            a,
+                            view,
+                            wire,
+                            lib,
+                            l,
+                            s,
+                            to,
+                            late,
+                            d_in[ti],
+                        ) {
+                            Ok(v) => (v.slew, v.drive),
                             Err(_) => continue,
                         }
                     };
                     if q > tr[to] {
                         tr[to] = q;
+                        dr[to] = drive;
                     }
                 }
             }
         }
         if tr.iter().any(|x| x.is_finite()) {
             value[k] = Some(tr);
+            drive_of[k] = dr;
         } else if !any_in[k]
             && constant.get(node.index()).copied().unwrap_or(false)
             && view.is_driver(node)

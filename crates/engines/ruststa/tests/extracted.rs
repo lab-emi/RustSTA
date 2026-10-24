@@ -85,7 +85,7 @@ fn pi_reduction_preserves_a_section_and_zero_resistance() {
         .find(|p| p.name == "A")
         .unwrap()
         .cap[0][0];
-    // STA-REQ-0726, STA-REQ-0727: diagnostic tracking must not change the physical delay model.
+    // STA-REQ-0728, STA-REQ-0727: diagnostic tracking must not change the physical delay model.
     let arc = library.cell("wt_buf_1").unwrap().arcs[0];
     let load = DriverLoad::Pi {
         c_near: 0.01,

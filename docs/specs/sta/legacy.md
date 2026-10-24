@@ -241,3 +241,43 @@ the final charge residual (relative 1e-8). Maximum counts: 64 load bisections,
 56 bracketed duration iterations, 48 inner single-pole solves and 80 two-pole crossings.
 Cell delay uses NLDM at Ceff; slew is the actual pi root's threshold span,
 including the nonlinear tail. Apply this to CK->Q too. This is not CCS.
+
+## Superseded RC effective capacitance and wire response (replaced in version 0.4.2 by STA-REQ-0728, 0729)
+
+The rules below took the effective capacitance from the converged end-of-ramp charge solution
+and drove every wire with a ramp of the driver transition. Against transistor-level transients of
+both default PDKs the charge solution over-estimates the shielding of resistive loads (driver
+delay low by up to 45 ps at 3 kOhm, sink arrival error 6.5 ps mean on two-segment RC trees), and
+a ramp misses the tail of a shielded driver waveform (sink transitions low; endpoint differences
+of 0.8 to 5.2 ps against a reference timing tool on routed designs of both PDKs). STA-REQ-0728 takes one Newton-Raphson correction
+from the total load, STA-REQ-0729 drives the wires of such a driver with its waveform.
+`rusteda_compute::rc::gate_detail_with_resistance` keeps the charge solve (its tests cite
+STA-REQ-0726) and `rusteda_compute::rc::wire` the single-pole ramp response (its tests cite
+STA-REQ-0722).
+
+**STA-REQ-0726**: Fit a finite-ramp Thevenin driver to NLDM's lower and
+output-delay trip-point times (replaces STA-REQ-0721). Its explicit resistance
+proxy is the forward NLDM delay/load sensitivity over 1 fF above the total pi
+load (the table at the arc's input transition, `(d(Ctotal + 1 fF) - d(Ctotal))
+/ 1 fF`), multiplied by -ln(1-output_threshold); this is an estimate from the
+available timing tables, not a measured transistor DC value. A table breakpoint
+less than 1 fF above the total load enters the estimate. For each candidate
+Ceff in [Cnear,Ctotal], fit the source duration to the lower and delay
+trip-point interval of the single-capacitance response. Match charge at the
+end of that active source ramp:
+Ceff*Vnominal(T) = Cnear*Vroot(T) + Cfar*Vfar(T).
+Evaluate the two-pole pi response analytically, bracket the load root and verify
+the final charge residual (relative 1e-8). Maximum counts: 64 load bisections,
+56 bracketed duration iterations, 48 inner single-pole solves and 80 two-pole crossings.
+Cell delay uses NLDM at Ceff; slew is the actual pi root's threshold span,
+including the nonlinear tail. Apply this to CK->Q too. This is not CCS. The
+shared `rusteda_compute::rc::gate_detail_with_resistance` solves the circuit for
+the caller's resistance; `rc::gate_detail` keeps the estimate of STA-REQ-0721.
+
+**STA-REQ-0722**: For interconnect driven by a cell, solve the single-pole ramp
+response with pole time equal to the per-sink Elmore moment, at the Liberty
+input delay and slew thresholds. Report threshold delay relative to the driver's
+output threshold and receiver slew in library units. A primary port without a
+characterized driving cell uses an exponential RC threshold response with its
+annotated transition added to the exponential transition span. Distinguish
+first moments from voltage-threshold delays. Zero RC preserves the transition.

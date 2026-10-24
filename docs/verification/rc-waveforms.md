@@ -1,7 +1,9 @@
 # RC waveform acceptance
 
 Version 0.3 uses a three-moment passive pi, a charge-matched finite-ramp
-Thevenin driver and per-sink threshold/slew propagation. Its driver resistance
+Thevenin driver and per-sink threshold/slew propagation; version 0.4.2 takes the
+effective capacitance from one Newton-Raphson correction of that driver and drives
+the wires of a resistive pi with the driver's own waveform. Its driver resistance
 is explicitly estimated from local NLDM delay sensitivity. This parameter is
 not a transistor DC characterization; CCS, crosstalk and signoff accuracy are
 outside the validated scope. See [the equations and budgets](../specs/sta/rc-waveforms.md).
@@ -37,10 +39,13 @@ RUSTEDA_RC_WIRE_WORKSPACE=work/wire-oracle \
 RUST_TEST_THREADS=2 cargo test -p rusteda-compute --test rc_transient -- --ignored
 ```
 
-The engine's driver rule (STA-REQ-0726, STA-REQ-0727) has its own external cases in
-`crates/engines/ruststa/tests/rc_driver_spice.rs`: two pi loads near a table breakpoint with the
-forward 1 fF resistance (crossings, transition and end-of-ramp charge within the same 1e-6 ns and
-1e-8 pF tolerances) and two pi loads below one thousandth of the driver resistance, where the
+The engine's driver rule (STA-REQ-0728, STA-REQ-0727) and the wires that follow its waveform
+(STA-REQ-0729) have their own external cases in `crates/engines/ruststa/tests/rc_driver_spice.rs`:
+two pi loads near a table breakpoint with the forward 1 fF resistance (root crossings and
+transition of the one-step capacitance's source within 1e-6 ns; the end-of-ramp charge of the pi
+below that of the corrected capacitance by less than the gap to the charge solution; a sink
+buffered from the root behind one pole of its first moment within 1e-6 ns of
+`rc::wire_from_driver`) and two pi loads below one thousandth of the driver resistance, where the
 simulated pi and its lumped total give driver waveforms within 1e-4 of the transition while the
 fitted waveform transition differs from the table transition by more than 1 %:
 
@@ -48,6 +53,26 @@ fitted waveform transition differs from the table transition by more than 1 %:
 RUSTSTA_NGSPICE=/path/to/ngspice RUSTSTA_RC_DRIVER_WORKSPACE=work/engine-driver-oracle \
 RUST_TEST_THREADS=2 cargo test -p ruststa --test rc_driver_spice -- --ignored
 ```
+
+These circuits check the declared model. Its choice (one correction from the total load, wires
+driven by the driver waveform) was checked against transistor-level transients of the default
+PDKs' cells (Ngspice 45.2 with the PDK device models; sky130 `clkbuf_1` at tt/ss/ff, `buf_2` and
+`inv_2` at tt; gf180 `clkbuf_1` at tt/ff, `buf_2` and `inv_1` at tt, `clkbuf_2` at ss). Each cell
+is characterized by the same simulator into 48 lumped loads; the resulting one-dimensional tables
+drive the models, so that only the model error remains. Thirty pi loads (2 to 50 fF, 30 Ohm to
+3 kOhm) and 24 two-segment RC trees per cell and edge give (mean / maximum absolute error):
+
+| Quantity | Charge solution + ramp wires (0.4.1) | One step + driver-waveform wires (0.4.2) |
+| --- | --- | --- |
+| Driver delay, pi loads | 3.06 / 45.0 ps | 1.76 / 33.5 ps |
+| Driver delay, RC trees | 5.58 / 32.2 ps | 2.32 / 20.5 ps |
+| Driver transition, pi loads | 20.5 / 204 ps | 17.8 / 174 ps |
+| Sink arrival (driver + wire), RC trees | 6.50 / 39.6 ps | 0.64 / 9.0 ps |
+| Sink transition, RC trees | 38.2 / 172 ps | 24.4 / 114 ps |
+
+The largest remaining errors are at 3 kOhm, where a single linear Thevenin source is a coarse
+model of a transistor driving a strongly shielded load. The harness and its receipts stay local
+with the timing comparison.
 
 Run binaries with an OS memory ceiling and timeout, as in the repository's
 engineering rules. Both evidence directories must be fresh. Native core crates

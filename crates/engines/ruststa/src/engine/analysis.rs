@@ -877,6 +877,7 @@ fn setup_corner<'l>(
         ntags,
         start_build.rows,
         &start_build.launch_slews,
+        &start_build.launch_drives,
         &latch_maps,
         &wire_model,
         options.max_state_bytes,

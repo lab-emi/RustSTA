@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! External nodal transient validation of the engine's pi-load driver rule (`STA-REQ-0726`,
-//! `STA-REQ-0727`): the Thevenin resistance from the forward delay sensitivity over 1 fF and the
-//! lumped regime below one thousandth of it. The simulator solves the circuit equations; nothing
-//! here re-implements the charge solve.
+//! External nodal transient validation of the engine's pi-load driver rule (`STA-REQ-0728`,
+//! `STA-REQ-0727`) and of the wires that follow its waveform (`STA-REQ-0729`): the Thevenin
+//! resistance from the forward delay sensitivity over 1 fF, the lumped regime below one
+//! thousandth of it, the one-step effective capacitance and the sink response. The simulator
+//! solves the circuit equations; nothing here re-implements the models.
 //!
-//! Peak memory: four sequential circuits of at most six nodes, < 32 MiB each; no paths.
+//! Peak memory: four sequential circuits of at most ten nodes, < 32 MiB each; no paths.
 use rusteda_compute::rc::{self, Pi, Thresholds};
+use ruststa::engine::delay::driver::pi_drive;
 use ruststa::engine::delay::driver::{LUMPED_RESISTANCE_RATIO, SENSITIVITY_STEP_PF, pi_response};
 use std::{
     collections::BTreeMap,
@@ -69,9 +71,13 @@ fn trips() -> Thresholds {
     }
 }
 
-// STA-REQ-0726: with the forward sensitivity over 1 fF (half of the step above the breakpoint
-// for a total of 0.0095 pF), the charge solve still satisfies its circuit: the simulated root
-// crossings, slew and end-of-ramp charge match within 1e-6 ns and 1e-8 pF.
+// STA-REQ-0728: with the forward sensitivity over 1 fF (half of the step above the breakpoint
+// for a total of 0.0095 pF), the one-step capacitance and its fitted source satisfy their
+// circuit: the simulated root crossings and slew match within 1e-6 ns, and the end-of-ramp
+// charge of the pi lies below that of the corrected capacitance by less than the gap to the
+// converged charge solution (the correction stops short of it, as specified).
+// STA-REQ-0729: a sink behind a single pole of first moment tau, buffered from the root, has
+// the delay and transition of `rc::wire_from_driver` within 1e-6 ns.
 // STA-REQ-0727: below one thousandth of that resistance the pi and its lumped total give the
 // same driver waveform to within 1e-4 of the transition, so the table values at the total load
 // (the characterization of a lumped load) replace the fitted waveform, whose transition differs
@@ -104,21 +110,26 @@ fn ngspice_forward_sensitivity_and_lumped_regime() {
             far,
             resistance: ratio * LUMPED_RESISTANCE_RATIO * res,
         };
-        // The circuit of the charge solve at this resistance, lumped or not.
-        let r = rc::gate_detail_with_resistance(pi, t, res, law).unwrap();
+        // The circuit of the one-step capacitance at this resistance, lumped or not.
+        let r = rc::gate_one_step(pi, t, res, law).unwrap();
+        let converged = rc::gate_detail_with_resistance(pi, t, res, law).unwrap();
         let (d, s, c) = pi_response(pi, t, law).unwrap();
         let lumped = ratio < 1.0;
-        let stop = 0.1 + r.duration + 30.0 * (res * total + pi.resistance * far);
+        let tau = 0.4 * res * total;
+        let stop = 0.1 + r.duration + 30.0 * (res * total + pi.resistance * far + tau);
         let circuit = format!(
             "RC driver transient\nVsrc src 0 PWL(0 0 0.1n 0 {end}n 1)\nRd src root {rd}\n\
              Rpi root far {rp}\nCn root 0 {cn}p\nCf far 0 {cf}p\nRnom src nom {rd}\n\
-             Cnom nom 0 {ce}p\nRlum src lum {rd}\nClum lum 0 {ct}p\n.control\nset numdgt=17\n\
+             Cnom nom 0 {ce}p\nRlum src lum {rd}\nClum lum 0 {ct}p\n\
+             Esink buf 0 root 0 1\nRsink buf sink {rs}\nCsink sink 0 1p\n.control\nset numdgt=17\n\
              tran {step}n {stop}n\n\
              meas tran tlo WHEN v(root)=0.2 RISE=1\nmeas tran tmid WHEN v(root)=0.5 RISE=1\n\
              meas tran thi WHEN v(root)=0.8 RISE=1\nmeas tran llo WHEN v(lum)=0.2 RISE=1\n\
              meas tran lmid WHEN v(lum)=0.5 RISE=1\nmeas tran lhi WHEN v(lum)=0.8 RISE=1\n\
              meas tran vr FIND v(root) AT={end}n\nmeas tran vf FIND v(far) AT={end}n\n\
-             meas tran vn FIND v(nom) AT={end}n\nquit\n.endc\n.end\n",
+             meas tran vn FIND v(nom) AT={end}n\nmeas tran slo WHEN v(sink)=0.2 RISE=1\n\
+             meas tran smid WHEN v(sink)=0.5 RISE=1\nmeas tran shi WHEN v(sink)=0.8 RISE=1\n\
+             quit\n.endc\n.end\n",
             end = 0.1 + r.duration,
             rd = res * 1000.0,
             rp = pi.resistance * 1000.0,
@@ -126,12 +137,19 @@ fn ngspice_forward_sensitivity_and_lumped_regime() {
             cf = far,
             ce = r.capacitance,
             ct = total,
+            rs = tau * 1000.0,
             step = stop / 100_000.0,
         );
         let m = simulate(&tool, &root, &format!("case{i}"), &circuit);
         let crossing = (m["tmid"] * 1e9 - 0.1 - r.root_crossing).abs();
         let slew = ((m["thi"] - m["tlo"]) * 1e9 - r.slew).abs();
-        let charge = (near * m["vr"] + far * m["vf"] - r.capacitance * m["vn"]).abs();
+        // Positive: the pi has drawn less charge than the corrected capacitance at the ramp end.
+        let charge = r.capacitance * m["vn"] - (near * m["vr"] + far * m["vf"]);
+        let gap = r.capacitance - converged.capacitance;
+        let (sink_delay, sink_slew) = rc::wire_from_driver(pi, res, r.duration, tau, t).unwrap();
+        let sink = ((m["smid"] - m["tmid"]) * 1e9 - sink_delay)
+            .abs()
+            .max(((m["shi"] - m["slo"]) * 1e9 - sink_slew).abs());
         let pi_vs_lumped = [
             (m["tlo"] - m["llo"]).abs(),
             (m["tmid"] - m["lmid"]).abs(),
@@ -142,12 +160,17 @@ fn ngspice_forward_sensitivity_and_lumped_regime() {
             * 1e9;
         metrics.push_str(&format!(
             "case{i} lumped={lumped} crossing_error_ns {crossing:e} slew_error_ns {slew:e} \
-             charge_error_pf {charge:e} pi_vs_lumped_ns {pi_vs_lumped:e} model_slew_ns {} \
-             table_slew_ns {}\n",
+             charge_residual_pf {charge:e} converged_gap_pf {gap:e} sink_error_ns {sink:e} \
+             pi_vs_lumped_ns {pi_vs_lumped:e} model_slew_ns {} table_slew_ns {}\n",
             r.slew,
             law(total).1
         ));
-        assert!(crossing < 1e-6 && slew < 1e-6 && charge < 1e-8, "case{i}");
+        assert!(crossing < 1e-6 && slew < 1e-6 && sink < 1e-6, "case{i}");
+        assert!(
+            gap > 0.0 && charge > -1e-8 && charge < gap,
+            "case{i}: {charge} {gap}"
+        );
+        assert_eq!(pi_drive(pi, t, law).unwrap().drive.is_none(), lumped);
         if lumped {
             assert_eq!((d, s, c), (law(total).0, law(total).1, total), "case{i}");
             assert!(pi_vs_lumped < 1e-4 * s, "case{i}: {pi_vs_lumped}");

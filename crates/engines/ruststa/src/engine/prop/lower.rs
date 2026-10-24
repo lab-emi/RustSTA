@@ -15,6 +15,8 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
+use rustc_hash::FxHashMap;
+
 mod rc;
 mod slew_only;
 mod start_builder;
@@ -182,6 +184,13 @@ pub struct LoweredCorner<'a> {
     pub wires: Vec<WireRec>,
     /// CPU-prepared f64 RC arc values, shared by all propagation backends.
     pub arc_values: Vec<ArcValues>,
+    /// Per level-ordered node `[Rise/Early, Rise/Late, Fall/Early, Fall/Late]`: the driver
+    /// waveform (Thevenin resistance in kOhm, source ramp duration in ns) that set the node's
+    /// prepared transition, when a cell arc into a pi load outside the lumped regime set it
+    /// (empty without RC preparation; `STA-REQ-0729`).
+    pub drives: Vec<[Option<(f64, f64)>; 4]>,
+    /// The driver waveforms of the start transitions at sequential outputs (`STA-REQ-0729`).
+    pub start_drives: FxHashMap<NodeId, [Option<(f64, f64)>; 4]>,
     /// The tag map of the incoming arcs that carry only their output transition (an empty record
     /// range, so that no arrival passes them), or [`NONE`] without any such arc: the arcs and
     /// launches that logic values disable, and the library transitions that a sense refinement
@@ -339,6 +348,8 @@ impl<'a> LoweredCorner<'a> {
             starts,
             wires: Vec::new(),
             arc_values: Vec::new(),
+            drives: Vec::new(),
+            start_drives: FxHashMap::default(),
             slew_only_map,
             lower_s,
         })

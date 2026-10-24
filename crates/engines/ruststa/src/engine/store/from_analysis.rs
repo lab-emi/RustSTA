@@ -1091,6 +1091,7 @@ fn compute_corner_backward_pass(
             ntags as u32,
             start_build.rows,
             &start_build.launch_slews,
+            &start_build.launch_drives,
             &ca.latch_maps,
             &ca.wire_model,
             u64::MAX,

@@ -445,6 +445,7 @@ pub fn lower_corner<'l>(
     ntags: u32,
     starts: rusteda_compute::timing::StartRows,
     launch_slews: &FxHashMap<NodeId, [f64; 4]>,
+    launch_drives: &FxHashMap<NodeId, [Option<(f64, f64)>; 4]>,
     latch_maps: &ArcTagMaps,
     wire_model: &dyn WireModel,
     max_state_bytes: u64,
@@ -452,6 +453,7 @@ pub fn lower_corner<'l>(
     let mut lowered =
         LoweredCorner::lower(netview, graph, lib, net_loads, ntags, starts, latch_maps)?;
     pin_latch_gq_slews(graph, launch_slews, &mut lowered);
+    lowered.start_drives = launch_drives.clone();
     lowered.set_wire_model(graph, netview, wire_model, lib, max_state_bytes)?;
     Ok(lowered)
 }

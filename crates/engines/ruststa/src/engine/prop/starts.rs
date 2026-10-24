@@ -47,6 +47,10 @@ pub struct SeededStarts {
     /// `CK -> Q` / `G -> Q` launch arcs, used to preserve `G -> Q` slews at latch `Q` pins
     /// (`STA-REQ-0222`).
     pub launch_slews: FxHashMap<NodeId, [f64; 4]>,
+    /// The driver waveform (resistance, source duration) of the launch that set each slew of
+    /// `launch_slews`, when that launch drives a pi load outside the lumped regime; the net's
+    /// wires follow it (`STA-REQ-0729`).
+    pub launch_drives: FxHashMap<NodeId, [Option<(f64, f64)>; 4]>,
     /// Per-port resolved driving-cell effects `[tr][an]`.
     pub driving_cells: FxHashMap<NodeId, [[Option<DriveCellEffect>; 2]; 2]>,
 }
@@ -155,6 +159,11 @@ pub fn build_start_rows<D: Derate>(
     // `set_disable_timing` (`STA-REQ-0156`). The launches that logic values disable carry their
     // transition as slew-only arcs (`STA-REQ-0117`); a user-disabled one carries nothing.
     let mut launch_slews: FxHashMap<NodeId, [f64; 4]> = FxHashMap::default();
+    let mut launch_drives: FxHashMap<NodeId, [Option<(f64, f64)>; 4]> = FxHashMap::default();
+    let wins = |an: An, s: f64, old: f64| match an {
+        An::Early => s < old,
+        An::Late => s > old,
+    };
     for (li, l) in graph.launches().iter().enumerate() {
         if graph.is_launch_disabled(li) {
             continue;
@@ -174,7 +183,7 @@ pub fn build_start_rows<D: Derate>(
                         continue;
                     };
                     for to in Tr::ALL {
-                        let Some((delay, slew)) = launch_value(
+                        let Some((delay, slew, drive)) = launch_value(
                             netview,
                             lib,
                             net_loads,
@@ -200,6 +209,9 @@ pub fn build_start_rows<D: Derate>(
                             An::Late.absent(),
                         ]);
                         let s_idx = to.index() * 2 + an.index();
+                        if wins(an, slew, entry[s_idx]) {
+                            launch_drives.entry(l.out_pin).or_insert([None; 4])[s_idx] = drive;
+                        }
                         entry[s_idx] = an.merge(slew, entry[s_idx]);
                     }
                 }
@@ -237,6 +249,9 @@ pub fn build_start_rows<D: Derate>(
                     An::Late.absent(),
                 ]);
                 let s_idx = to.index() * 2 + an.index();
+                if wins(an, s, entry[s_idx]) {
+                    launch_drives.entry(l.out_pin).or_insert([None; 4])[s_idx] = None;
+                }
                 entry[s_idx] = an.merge(s, entry[s_idx]);
             }
         }
@@ -245,11 +260,13 @@ pub fn build_start_rows<D: Derate>(
     Ok(SeededStarts {
         rows: builder.build(),
         launch_slews,
+        launch_drives,
         driving_cells,
     })
 }
 
-/// The delay and the output transition (`>= 0`) of the clock-to-output arc with the library arc
+/// The delay, the output transition (`>= 0`) and the driver resistance of the waveform that the
+/// net's wires follow (`STA-REQ-0729`) of the clock-to-output arc with the library arc
 /// `global_arc` and the output pin `out_pin` for the output transition `to` and the bound `an`
 /// when its clock pin has the transition `ck_slew`, at the load of the output's net; `None` when
 /// the arc has no table for `to` (`STA-REQ-0217`).
@@ -264,26 +281,26 @@ pub(crate) fn launch_value(
     to: Tr,
     an: An,
     ck_slew: f64,
-) -> Result<Option<(f64, f64)>, Diag> {
+) -> Result<Option<(f64, f64, Option<(f64, f64)>)>, Diag> {
     let prop_arc = lib.arc(global_arc);
     if prop_arc.delay[to.index()] == NO_TABLE && prop_arc.slew[to.index()] == NO_TABLE {
         return Ok(None);
     }
     let c_load = node_net_cap(netview, canon_totals, out_pin)[to.index()][an.index()];
-    let ds = lib.arc_delay(
+    let (ds, drive) = lib.arc_delay_drive_3d(
         global_arc,
         to,
-        an,
         ck_slew,
         match netview.node_net(out_pin) {
             NetTarget::Net(net) => net_loads.physical_load(net, to, an, c_load),
             _ => DriverLoad::Lumped { c: c_load },
         },
+        0.0,
     );
     if !ds.delay.is_finite() || !ds.slew.is_finite() {
         return Err(Diag::error("T0077", "nonfinite RC sequential launch"));
     }
-    Ok(Some((ds.delay, ds.slew.max(0.0))))
+    Ok(Some((ds.delay, ds.slew.max(0.0), drive)))
 }
 
 /// The output transitions `[tr][an]` of launch arc `li` when it is an ideal launch of `graph`:
@@ -323,7 +340,7 @@ pub(crate) fn ideal_launch_transition(
         for an in An::ALL {
             let ck_slew = clock_model.clock_transition(cid, l.edge, an);
             for to in Tr::ALL {
-                if let Some((_, s)) = launch_value(
+                if let Some((_, s, _)) = launch_value(
                     netview,
                     lib,
                     net_loads,
@@ -387,7 +404,7 @@ pub(crate) fn launch_transitions(
                         continue;
                     };
                     for to in Tr::ALL {
-                        if let Some((_, s)) = launch_value(
+                        if let Some((_, s, _)) = launch_value(
                             netview,
                             lib,
                             net_loads,

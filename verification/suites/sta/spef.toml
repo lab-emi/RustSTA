@@ -7,7 +7,7 @@ description = "Bounded detailed parasitics, typed-input validation, loads, zero 
 
 [[suite]]
 name = "rc-waveforms"
-requirement = ["STA-REQ-0720", "STA-REQ-0721", "STA-REQ-0722", "STA-REQ-0723", "STA-REQ-0724", "STA-REQ-0725"]
+requirement = ["STA-REQ-0720", "STA-REQ-0721", "STA-REQ-0722", "STA-REQ-0723", "STA-REQ-0724", "STA-REQ-0725", "STA-REQ-0727", "STA-REQ-0728", "STA-REQ-0729"]
 test = "crates/engines/ruststa/tests/extracted.rs"
 cases = "verification/fixtures/synthetic/spef"
 description = "Three-moment pi, nonlinear effective loads/slews, parsed metadata, full/incremental and CPU/CUDA agreement. External transient and dual-library acceptance are explicitly enabled."

@@ -441,12 +441,14 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | STA-REQ-0714 | docs/specs/sta/propagated-clock.md | crates/engines/ruststa/src/engine/prop/clocks/propagated.rs<br>crates/engines/ruststa/tests/held_sequential.rs |
 | STA-REQ-0720 | docs/specs/sta/rc-waveforms.md | crates/engines/ruststa/tests/extracted.rs<br>crates/engines/ruststa/tests/limits.rs |
 | STA-REQ-0721 | docs/specs/sta/legacy.md | crates/core/rusteda-compute/src/rc.rs |
-| STA-REQ-0722 | docs/specs/sta/rc-waveforms.md | crates/core/rusteda-compute/src/rc.rs<br>crates/core/rusteda-compute/tests/rc_transient.rs |
+| STA-REQ-0722 | docs/specs/sta/legacy.md | crates/core/rusteda-compute/src/rc.rs<br>crates/core/rusteda-compute/tests/rc_transient.rs<br>crates/engines/ruststa/src/engine/prop/lower/rc.rs |
 | STA-REQ-0723 | docs/specs/sta/rc-waveforms.md | crates/engines/ruststa/src/engine/limits/statics.rs<br>crates/engines/ruststa/src/engine/prop/lower/rc.rs |
 | STA-REQ-0724 | docs/specs/sta/rc-waveforms.md | crates/core/rusteda-compute/tests/rc_transient.rs |
 | STA-REQ-0725 | docs/specs/sta/rc-waveforms.md | crates/engines/ruststa/src/engine/input/libview/thresholds.rs |
-| STA-REQ-0726 | docs/specs/sta/rc-waveforms.md | crates/core/rusteda-compute/src/rc.rs<br>crates/engines/ruststa/src/engine/delay/driver.rs<br>crates/engines/ruststa/src/engine/delay/gate.rs<br>crates/engines/ruststa/src/engine/prop/lower/rc.rs<br>crates/engines/ruststa/tests/extracted.rs<br>crates/engines/ruststa/tests/rc_driver_spice.rs |
+| STA-REQ-0726 | docs/specs/sta/legacy.md | crates/core/rusteda-compute/src/rc.rs |
 | STA-REQ-0727 | docs/specs/sta/rc-waveforms.md | crates/engines/ruststa/src/engine/delay/driver.rs<br>crates/engines/ruststa/src/engine/delay/gate.rs<br>crates/engines/ruststa/src/engine/prop/lower/rc.rs<br>crates/engines/ruststa/tests/extracted.rs<br>crates/engines/ruststa/tests/rc_driver_spice.rs |
+| STA-REQ-0728 | docs/specs/sta/rc-waveforms.md | crates/core/rusteda-compute/src/rc.rs<br>crates/engines/ruststa/src/engine/delay/driver.rs<br>crates/engines/ruststa/src/engine/delay/gate.rs<br>crates/engines/ruststa/src/engine/prop/lower/rc.rs<br>crates/engines/ruststa/tests/extracted.rs<br>crates/engines/ruststa/tests/rc_driver_spice.rs |
+| STA-REQ-0729 | docs/specs/sta/rc-waveforms.md | crates/core/rusteda-compute/src/rc.rs<br>crates/engines/ruststa/src/engine/delay/driver.rs<br>crates/engines/ruststa/src/engine/delay/gate.rs<br>crates/engines/ruststa/src/engine/limits/statics.rs<br>crates/engines/ruststa/src/engine/prop/lower.rs<br>crates/engines/ruststa/src/engine/prop/lower/rc.rs<br>crates/engines/ruststa/src/engine/prop/starts.rs<br>crates/engines/ruststa/tests/rc_driver_spice.rs |
 | STA-REQ-0800 | docs/specs/sta/limits.md | crates/apps/ruststa-cli/tests/signoff_cli.rs<br>crates/engines/ruststa/src/engine/analysis.rs<br>crates/engines/ruststa/src/engine/input/libview/mod.rs<br>crates/engines/ruststa/src/engine/limits/mod.rs<br>crates/engines/ruststa/src/engine/limits/pulse.rs<br>crates/engines/ruststa/tests/delay_calc.rs<br>crates/engines/ruststa/tests/limits.rs |
 | STA-REQ-0801 | docs/specs/sta/limits.md | crates/apps/ruststa-cli/src/args.rs<br>crates/engines/ruststa/src/engine/input/libview/mod.rs<br>crates/engines/ruststa/src/engine/limits/mod.rs<br>crates/engines/ruststa/src/engine/limits/pulse.rs<br>crates/engines/ruststa/tests/limits.rs<br>crates/engines/ruststa/tests/pulse_rules.rs |
 | STA-REQ-0802 | docs/specs/sta/limits.md | crates/apps/ruststa-cli/tests/signoff_cli.rs<br>crates/engines/ruststa/src/engine/limits/mod.rs<br>crates/engines/ruststa/src/engine/limits/pulse.rs<br>crates/engines/ruststa/src/engine/limits/status.rs<br>crates/engines/ruststa/tests/limits.rs |
@@ -614,8 +616,8 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | PROTO | 23 | 0 |
 | RCLI | 30 | 0 |
 | SDC | 56 | 0 |
-| STA | 184 | 0 |
+| STA | 186 | 0 |
 | VERILOG | 28 | 0 |
 | WS | 100 | 0 |
 
-590 requirements, 0 without a citing test or source.
+592 requirements, 0 without a citing test or source.

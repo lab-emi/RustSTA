@@ -43,7 +43,7 @@ impl TimingLib {
     /// Evaluates the delay and output slew of `arc` for output transition `out`, input slew
     /// `slew` (ns), output `load`, and an optional third-axis argument `axis3` (`STA-REQ-0108`,
     /// `STA-REQ-0109`, `STA-REQ-0113`, `STA-REQ-0114`); a pi load goes through the driver rule of
-    /// [`super::driver::pi_response`] (`STA-REQ-0726`, `STA-REQ-0727`).
+    /// [`super::driver::pi_response`] (`STA-REQ-0728`, `STA-REQ-0727`).
     #[inline]
     #[must_use]
     pub fn arc_delay_3d(
@@ -54,6 +54,21 @@ impl TimingLib {
         load: DriverLoad,
         axis3: f64,
     ) -> DelaySlew {
+        self.arc_delay_drive_3d(arc, out, slew, load, axis3).0
+    }
+
+    /// [`Self::arc_delay_3d`] together with the driver waveform (Thevenin resistance in kOhm and
+    /// source ramp duration in ns) into a pi load outside the lumped regime, which the net's wires
+    /// follow (`STA-REQ-0729`); `None` for a lumped load and in the lumped regime.
+    #[must_use]
+    pub fn arc_delay_drive_3d(
+        &self,
+        arc: LibArc,
+        out: Tr,
+        slew: f64,
+        load: DriverLoad,
+        axis3: f64,
+    ) -> (DelaySlew, Option<(f64, f64)>) {
         let pa = self.arc(arc);
         if let DriverLoad::Pi { c_near, c_far, r } = load {
             let eval = |c| {
@@ -63,7 +78,7 @@ impl TimingLib {
                     self.lut_bank.eval(pa.slew[out.index()], x),
                 )
             };
-            return match super::driver::pi_response(
+            return match super::driver::pi_drive(
                 rusteda_compute::rc::Pi {
                     near: c_near,
                     far: c_far,
@@ -72,19 +87,31 @@ impl TimingLib {
                 self.thresholds.rc(out == Tr::Fall),
                 eval,
             ) {
-                Ok((delay, slew, _)) => DelaySlew { delay, slew },
-                Err(_) => DelaySlew {
-                    delay: f64::NAN,
-                    slew: f64::NAN,
-                },
+                Ok(p) => (
+                    DelaySlew {
+                        delay: p.delay,
+                        slew: p.slew,
+                    },
+                    p.drive,
+                ),
+                Err(_) => (
+                    DelaySlew {
+                        delay: f64::NAN,
+                        slew: f64::NAN,
+                    },
+                    None,
+                ),
             };
         }
         let x = [slew, load.total(), axis3];
         let k = out.index();
-        DelaySlew {
-            delay: self.lut_bank.eval(pa.delay[k], x),
-            slew: self.lut_bank.eval(pa.slew[k], x),
-        }
+        (
+            DelaySlew {
+                delay: self.lut_bank.eval(pa.delay[k], x),
+                slew: self.lut_bank.eval(pa.slew[k], x),
+            },
+            None,
+        )
     }
 
     /// Evaluates the delay and output slew of `arc` while recording any table extrapolation in

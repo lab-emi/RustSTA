@@ -5,6 +5,52 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-24
+
+Effective capacitance and wire response of extracted RC nets. On the final layouts of eight
+routed designs of the suite (32 design, library and extraction cases with native and reference
+extraction, 96 corner comparisons), the largest endpoint difference against the reference timing
+tool falls from 5.21 ps (54 comparisons above 1 ps) to 0.97 ps (none above 1 ps), and against
+transistor-level transients of the default cells the modelled arrival at the sinks of RC trees
+improves from 6.5 ps to 0.64 ps mean error.
+
+### Changed
+- **Effective capacitance (STA-REQ-0728, replaces STA-REQ-0726):** the Thevenin driver's
+  effective capacitance is one Newton-Raphson correction of the driver system (two trip-point
+  residuals of the single-capacitance response and the end-of-ramp charge) from the total load,
+  no longer the converged charge solution. The resistance (forward sensitivity over 1 fF) and
+  the lumped regime (STA-REQ-0727) are unchanged. The converged solution over-estimates the
+  shielding of resistive loads: against transistor-level transients of buffers and inverters of
+  both default PDKs (each characterized by the same simulator), the mean driver delay error falls
+  from 3.1 to 1.8 ps on pi loads and from 5.6 to 2.3 ps on two-segment RC trees. Driver delays into
+  resistive nets are larger than in 0.4.1 by up to a few picoseconds per stage.
+- **Wires of a resistive driver (STA-REQ-0729, replaces STA-REQ-0722):** when the transition at a
+  driver pin comes from a cell arc (clock-to-output launches included) into a resistive pi, every
+  sink of the net follows that driver's own waveform through a single pole of its first moment,
+  instead of a ramp with the driver's transition; other nets keep the ramp, primary ports the
+  exponential response. Sink transitions of shielded nets are larger (by up to 22 ps on the
+  synthetic probes), and the sink arrival against the circuit improves as stated above.
+- The RC preparation is faster: the correction replaces the bounded bisection of the charge
+  solve. End-to-end `ruststa run` (three corners, two threads, median of seven sequential runs
+  on a shared machine) takes 0.17 s instead of 0.39 s on a GF180 transmitter, 0.39 s instead of
+  1.10 s on a GF180 register file and 0.40 s instead of 1.26 s on a sky130 multiplier; peak
+  memory is unchanged (within 1 %). The driver waveform record adds 96 bytes per pin.
+
+### Added
+- `rusteda_compute::rc::gate_one_step` and `rusteda_compute::rc::wire_from_driver` (shared crate,
+  additive; `gate_detail`, `gate_detail_with_resistance` and `wire` are unchanged).
+- `ruststa::engine::delay::driver::pi_drive` returns the driver waveform (resistance and source
+  duration) with the response; `TimingLib::arc_delay_drive_3d` does so for a library arc.
+- The external-simulator case of the engine's driver rule (`tests/rc_driver_spice.rs`, ignored by default)
+  also checks the sink response of STA-REQ-0729 and the position of the one-step capacitance
+  between the charge solution and the total load.
+
+### Known differences
+- Above about 1 kOhm of pi resistance the reference timing tool's effective capacitance lies
+  between the one-step value and the charge solution (driver delay differences up to 8 ps at
+  3 kOhm on the default cells; 0.06 ps up to 100 Ohm, 0.3 ps up to 500 Ohm). Its driver waveform
+  transition differs from the refitted one by up to 1.5 % (1.5 ps on a 0.1 ns transition).
+
 ## [0.4.1] - 2026-10-24
 
 Shared crates converged with those of the suite's logic synthesis tool: both repositories vendor

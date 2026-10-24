@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! The response of a cell output that drives an extracted pi load (`STA-REQ-0726`,
+//! The response of a cell output that drives an extracted pi load (`STA-REQ-0728`,
 //! `STA-REQ-0727`).
 //!
 //! The Thevenin resistance of the finite-ramp driver is the forward delay sensitivity of the NLDM
 //! table over one femtofarad above the total load, times `-ln(1 - output threshold)`. A pi whose
 //! resistance is below one thousandth of that resistance is a lumped load: the delay and the
 //! transition are the table values at the total capacitance, as for a load without resistance.
-//! Every other pi goes through the bounded charge solve of `rusteda_compute::rc`.
+//! Every other pi takes its effective capacitance from one Newton-Raphson correction of the
+//! driver system from the total load (`rusteda_compute::rc::gate_one_step`); the net's wires then
+//! follow the driver waveform of that resistance (`STA-REQ-0729`).
 
 use rusteda_compute::ComputeError;
 use rusteda_compute::rc::{self, Pi, Thresholds};
@@ -24,8 +26,30 @@ pub const LUMPED_RESISTANCE_RATIO: f64 = 1e-3;
 pub fn pi_response(
     pi: Pi,
     t: Thresholds,
-    mut eval: impl FnMut(f64) -> (f64, f64),
+    eval: impl FnMut(f64) -> (f64, f64),
 ) -> Result<(f64, f64, f64), ComputeError> {
+    let r = pi_drive(pi, t, eval)?;
+    Ok((r.delay, r.slew, r.capacitance))
+}
+
+/// The response of a cell arc into a pi load together with its driver waveform, which the wires
+/// of the net then follow (`STA-REQ-0729`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PiDrive {
+    pub delay: f64,
+    pub slew: f64,
+    pub capacitance: f64,
+    /// The Thevenin resistance (kOhm) and the source ramp duration (ns) of the driver waveform;
+    /// `None` in the lumped regime.
+    pub drive: Option<(f64, f64)>,
+}
+
+/// [`pi_response`] with the driver waveform.
+pub fn pi_drive(
+    pi: Pi,
+    t: Thresholds,
+    mut eval: impl FnMut(f64) -> (f64, f64),
+) -> Result<PiDrive, ComputeError> {
     pi.validate()?;
     t.validate()?;
     if t.output <= t.lower || t.output >= t.upper {
@@ -41,10 +65,20 @@ pub fn pi_response(
     let sensitivity = (eval(total + SENSITIVITY_STEP_PF).0 - d0) / SENSITIVITY_STEP_PF;
     let res = sensitivity.max(0.0) * (-(1.0 - t.output).ln());
     if pi.resistance < LUMPED_RESISTANCE_RATIO * res && s0 > 0.0 {
-        return Ok((d0, s0, total));
+        return Ok(PiDrive {
+            delay: d0,
+            slew: s0,
+            capacitance: total,
+            drive: None,
+        });
     }
-    let r = rc::gate_detail_with_resistance(pi, t, res, eval)?;
-    Ok((r.delay, r.slew, r.capacitance))
+    let r = rc::gate_one_step(pi, t, res, eval)?;
+    Ok(PiDrive {
+        delay: r.delay,
+        slew: r.slew,
+        capacitance: r.capacitance,
+        drive: (r.resistance > 0.0).then_some((r.resistance, r.duration)),
+    })
 }
 
 #[cfg(test)]
@@ -62,7 +96,7 @@ mod tests {
     }
 
     // STA-REQ-0727: below one thousandth of the Thevenin resistance the load is lumped (table
-    // values at the total load); above it, the charge solve with the same resistance.
+    // values at the total load); above it, the one-step correction with the same resistance.
     #[test]
     fn lumped_below_one_thousandth_of_the_driver_resistance() {
         let t = trips();
@@ -74,24 +108,37 @@ mod tests {
             far: 0.003,
             resistance: threshold * 0.999,
         };
-        let (d, s, c) = pi_response(below, t, eval).unwrap();
-        assert_eq!((d, s, c), (eval(0.004).0, eval(0.004).1, 0.004));
+        let r = pi_drive(below, t, eval).unwrap();
+        assert_eq!(
+            (r.delay, r.slew, r.capacitance, r.drive),
+            (eval(0.004).0, eval(0.004).1, 0.004, None)
+        );
         let above = Pi {
             resistance: threshold * 1.001,
             ..below
         };
-        let (d, s, c) = pi_response(above, t, eval).unwrap();
-        let r =
-            rc::gate_detail_with_resistance(above, t, 10.0 * std::f64::consts::LN_2, eval).unwrap();
-        for (x, y) in [(d, r.delay), (s, r.slew), (c, r.capacitance)] {
+        let r = pi_drive(above, t, eval).unwrap();
+        let g = rc::gate_one_step(above, t, 10.0 * std::f64::consts::LN_2, eval).unwrap();
+        for (x, y) in [
+            (r.delay, g.delay),
+            (r.slew, g.slew),
+            (r.capacitance, g.capacitance),
+        ] {
             assert!((x - y).abs() < 1e-12, "{x} {y}");
         }
+        let (res, duration) = r.drive.unwrap();
+        assert!((res - 10.0 * std::f64::consts::LN_2).abs() < 1e-9);
+        assert!(
+            (duration - g.duration).abs() < 1e-12,
+            "{duration} {}",
+            g.duration
+        );
         // The model's transition of a nearly lumped load is not the table transition: the
         // switch is a discontinuity of the declared model, not of the circuit.
-        assert!(c < 0.004 && (s - eval(0.004).1).abs() > 1e-3);
+        assert!(r.capacitance < 0.004 && (r.slew - eval(0.004).1).abs() > 1e-3);
     }
 
-    // STA-REQ-0726: the sensitivity is the forward difference over 1 fF at the total load, so a
+    // STA-REQ-0728: the sensitivity is the forward difference over 1 fF at the total load, so a
     // table breakpoint within 1 fF above the total load changes the resistance.
     #[test]
     fn forward_sensitivity_over_one_femtofarad() {
@@ -111,7 +158,7 @@ mod tests {
         };
         // total 0.0095: half of the step lies above the breakpoint, slope 7 ns/pF.
         let (_, s, _) = pi_response(pi, t, kink).unwrap();
-        let r = rc::gate_detail_with_resistance(pi, t, 7.0 * std::f64::consts::LN_2, kink).unwrap();
+        let r = rc::gate_one_step(pi, t, 7.0 * std::f64::consts::LN_2, kink).unwrap();
         assert!((s - r.slew).abs() < 1e-12, "{s} {}", r.slew);
         // lumped threshold with the same slope: 7 * ln 2 Ohm.
         let lumped = Pi {
@@ -121,7 +168,111 @@ mod tests {
         assert_eq!(pi_response(lumped, t, kink).unwrap().2, 0.0095);
     }
 
-    // STA-REQ-0726: invalid inputs keep their errors; a flat table has no resistance.
+    // STA-REQ-0728: the corrected capacitance of linear synthetic tables (delay 0.06 + S c,
+    // transition 0.07 + T c at the 0.1 ns input transition), with the effective capacitance that a
+    // reference timing tool reports for the same pi loads (black-box delay-calculation reports,
+    // 20/80 % trip points without derate and 30/70 % with derate 0.5).
+    #[test]
+    fn one_step_capacitance_matches_measured_reference() {
+        let s_in = 0.099_999_994;
+        let cases = [
+            // (lower, upper, derate, S, T, near, kOhm, far, reference Ceff)
+            (
+                0.2,
+                0.8,
+                1.0,
+                10.0,
+                20.0,
+                0.01,
+                0.664_610_684,
+                0.01,
+                0.019_872_354,
+            ),
+            (
+                0.2,
+                0.8,
+                1.0,
+                10.0,
+                20.0,
+                0.003,
+                0.399_147_958,
+                0.050_000_001,
+                0.052_167_863,
+            ),
+            (
+                0.2,
+                0.8,
+                1.0,
+                10.0,
+                20.0,
+                0.003,
+                0.221_632_689,
+                0.050_000_001,
+                0.052_539_434,
+            ),
+            (
+                0.3,
+                0.7,
+                0.5,
+                2.0,
+                4.0,
+                0.02,
+                0.031_186_515,
+                0.005,
+                0.024_994_662,
+            ),
+            (
+                0.3,
+                0.7,
+                0.5,
+                2.0,
+                4.0,
+                0.01,
+                0.010_816,
+                0.01,
+                0.019_991_899,
+            ),
+            (
+                0.3,
+                0.7,
+                0.5,
+                2.0,
+                4.0,
+                0.02,
+                0.076_865_889,
+                0.005,
+                0.024_986_843,
+            ),
+        ];
+        for (lower, upper, derate, sd, st, near, resistance, far, reference) in cases {
+            let t = Thresholds {
+                lower,
+                upper,
+                input: 0.5,
+                output: 0.5,
+                derate,
+            };
+            let eval = |c: f64| (0.05 + 0.1 * s_in + sd * c, 0.02 + 0.5 * s_in + st * c);
+            let r = pi_drive(
+                Pi {
+                    near,
+                    far,
+                    resistance,
+                },
+                t,
+                eval,
+            )
+            .unwrap();
+            assert!(
+                (r.capacitance - reference).abs() < 2e-8,
+                "{} {reference}",
+                r.capacitance
+            );
+            assert!(r.capacitance < near + far && r.drive.is_some());
+        }
+    }
+
+    // STA-REQ-0728: invalid inputs keep their errors; a flat table has no resistance.
     #[test]
     fn invalid_models_are_errors() {
         let t = trips();
