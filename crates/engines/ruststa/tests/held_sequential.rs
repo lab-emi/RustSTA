@@ -3,7 +3,8 @@
 
 //! Sequential cells and clock networks next to logic constants: a flop whose asynchronous clear is
 //! held active (`STA-REQ-0162`), clock gate outputs (`STA-REQ-0162`), constant pins pass no
-//! arrival (`STA-REQ-0164`), launched signals that enter a propagated clock network
+//! arrival (`STA-REQ-0164`), also into a sequential output pin, launched signals that enter a
+//! propagated clock network
 //! (`STA-REQ-0714`) and ideal clock networks stopped by a constant (`STA-REQ-0822`).
 //! These rules replace STA-REQ-0116, STA-REQ-0151, STA-REQ-0161 and STA-REQ-0818; each test
 //! states where the superseded rule gave a different result.
@@ -468,4 +469,79 @@ fn false_when_checks_are_not_timed() {
         .endpoint(node(&a, "rw/D"))
         .expect("rw/D endpoint");
     assert_eq!(ep.status.as_str(), "disabled");
+}
+
+// STA-REQ-0164, STA-REQ-0156: case analysis holds the flop output r0/Q (and hr/Q, a DFFR whose
+// clear is tied active). Their clock-to-output arcs launch no arrival although the clock reaches
+// their clock pins, and carry their transitions: r0/Q equals its twin r1/Q, CK -> Q at the ideal
+// clock transition 0.1 into b0/A: 0.08 + 0.05 + 0.002 = 0.132. Without an arrival r0/Q is not in
+// the clock's domain: `set_max_transition 0.12` on the clock checks r1/Q (violated) and not r0/Q,
+// which keeps the design limit 0.5. b0/Y gets no arrival and o0 is not timed. The clock-to-output
+// arc of ud is disabled by `set_disable_timing -from CK -to Q` and carries nothing: ud/Q has
+// neither an arrival nor a transition and is counted as untimed. (Before this version the three
+// launch arcs launched their arrivals: r0/Q took the clock limit 0.12 and violated it.)
+#[test]
+fn held_sequential_outputs_launch_no_arrival() {
+    let lib = lib();
+    let netlist = "module top (input clk, input a, output o0, output o1, output o2, output o3);\n\
+        wire lo, q0, q1, q2, q3;\nTIEL tl (.ZN(lo));\n\
+        DFF r0 (.CK(clk), .D(a), .Q(q0));\nBUF b0 (.A(q0), .Y(o0));\n\
+        DFF r1 (.CK(clk), .D(a), .Q(q1));\nBUF b1 (.A(q1), .Y(o1));\n\
+        DFFR hr (.CK(clk), .D(a), .RN(lo), .Q(q2));\nBUF b2 (.A(q2), .Y(o2));\n\
+        DFF ud (.CK(clk), .D(a), .Q(q3));\nBUF b3 (.A(q3), .Y(o3));\nendmodule\n";
+    let sdc = "create_clock -name c -period 10 [get_ports clk]\n\
+        set_clock_transition 0.1 [get_clocks c]\n\
+        set_input_transition 0.2 [get_ports {clk a}]\n\
+        set_input_delay 0 -clock c [get_ports a]\n\
+        set_output_delay 0.5 -clock c [get_ports {o0 o1 o2 o3}]\n\
+        set_case_analysis 0 [get_pins r0/Q]\n\
+        set_case_analysis 1 [get_pins hr/Q]\n\
+        set_disable_timing -from CK -to Q [get_cells ud]\n\
+        set_max_transition 0.5 [current_design]\n\
+        set_max_transition 0.12 [get_clocks c]\n";
+    let frozen = freeze(netlist, &lib);
+    let a = analyze(&frozen, &lib, sdc);
+    let launch = |pin: &str| {
+        let q = node(&a, pin);
+        let li = a.graph.launches().iter().position(|l| l.out_pin == q);
+        a.graph.launch_disable_reason(li.expect("launch"))
+    };
+    assert_eq!(launch("r0/Q"), Some(DisableReason::CaseAnalysis));
+    assert_eq!(launch("hr/Q"), Some(DisableReason::CaseAnalysis));
+    assert_eq!(launch("ud/Q"), Some(DisableReason::UserDisabled));
+    assert_eq!(launch("r1/Q"), None);
+    for tr in Tr::ALL {
+        for an in An::ALL {
+            for pin in ["r0/Q", "b0/Y", "o0", "hr/Q", "ud/Q", "o3"] {
+                assert_eq!(arrival(&a, pin, tr, an), None, "{pin}");
+            }
+        }
+        close(
+            arrival(&a, "r1/Q", tr, An::Late).expect("twin"),
+            0.352,
+            "r1/Q",
+        );
+        for pin in ["r0/Q", "r1/Q", "hr/Q"] {
+            let [late, early] = slew(&a, pin, tr);
+            close(late, 0.132, pin);
+            close(early, 0.132, pin);
+        }
+        let [late, _] = slew(&a, "ud/Q", tr);
+        assert!(!late.is_finite(), "ud/Q transition {late}");
+    }
+    for o in ["o0", "o2", "o3"] {
+        assert!(a.setup_slack_for(o).is_none(), "{o}");
+    }
+    assert!(a.setup_slack_for("o1").is_some());
+    let l = &a.corners[0].limits;
+    let limit = |pin: &str| {
+        l.rows_of(LimitKind::MaxTransition)
+            .find(|r| r.node == node(&a, pin))
+            .map(|r| r.limit)
+    };
+    close(limit("r1/Q").expect("r1/Q row"), 0.12, "r1/Q clock limit");
+    close(limit("r0/Q").expect("r0/Q row"), 0.5, "r0/Q design limit");
+    close(limit("hr/Q").expect("hr/Q row"), 0.5, "hr/Q design limit");
+    assert_eq!(limit("ud/Q"), None);
+    assert!(l.untimed_pins >= 1, "{}", l.untimed_pins);
 }

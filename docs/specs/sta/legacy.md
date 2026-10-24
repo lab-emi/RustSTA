@@ -217,3 +217,27 @@ counts the pins in `ideal_clock_pins`, and a warning `T0146` per corner names th
 design rule with an ideal clock is `partial` or `unchecked`, never `met`. The network includes
 the pins behind clock buffers, inverters and gaters and the data pins that the clock reaches, as
 observed of a reference timing tool. Their pulse checks follow STA-REQ-0815.
+
+## Superseded RC driver resistance (replaced in version 0.4 by STA-REQ-0726, 0727)
+
+The rule below estimated the Thevenin resistance of the RC driver from the central delay
+sensitivity over 1 % of the total load and had no lumped regime: a pi load of any nonzero
+resistance went through the charge solve, whose fitted waveform transition lies 3 to 5 % below the
+table transition of a nearly lumped load (6.8 ps setup on a GF180 slow-corner clock net against
+a reference timing tool). STA-REQ-0726 takes the forward sensitivity over 1 fF at the total load,
+STA-REQ-0727 adds the lumped regime. `rusteda_compute::rc::gate_detail` (shared crate) keeps this
+estimate and its tests cite STA-REQ-0721.
+
+**STA-REQ-0721**: Fit a finite-ramp Thevenin driver to NLDM's lower and
+output-delay trip-point times. Its explicit resistance proxy is the local
+NLDM delay/load sensitivity multiplied by -ln(1-output_threshold); this is an
+estimate from the available timing tables, not a measured transistor DC value.
+For each candidate Ceff in [Cnear,Ctotal], fit the source duration to the lower
+and delay trip-point interval of the single-capacitance response. Match charge
+at the end of that active source ramp:
+Ceff*Vnominal(T) = Cnear*Vroot(T) + Cfar*Vfar(T).
+Evaluate the two-pole pi response analytically, bracket the load root and verify
+the final charge residual (relative 1e-8). Maximum counts: 64 load bisections,
+56 bracketed duration iterations, 48 inner single-pole solves and 80 two-pole crossings.
+Cell delay uses NLDM at Ceff; slew is the actual pi root's threshold span,
+including the nonlinear tail. Apply this to CK->Q too. This is not CCS.

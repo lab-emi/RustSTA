@@ -75,6 +75,9 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   under either scope (`completeness.drv_clock_scope_pins`, note `T0147`). The envelope reports
   `scope.drv_rules`; the `sta.rbin` scope and bit 2 of the `limits` table's corner rules record
   it.
+- **`rusteda_compute::rc::gate_detail_with_resistance`** (shared compute crate): the bounded
+  charge solve and waveform of `rc::gate_detail` for a caller-supplied Thevenin resistance;
+  `rc::gate_detail` keeps its estimate and results bit for bit.
 - **`T0140`** warns when an import drops the `parasitics` table because the netlist changed
   (RCLI-REQ-0076).
 - **Extracted parasitics per corner (`STA-REQ-0820`, RCLI-REQ-0075):** `rusteda import` takes
@@ -102,6 +105,18 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   no longer change (`STA-REQ-0714`); the clock latency below such a gate was 1.5 to 7.4 ps off on
   the probes, optimistic for hold. A loop that these arcs would close is cut and warned with
   `T0149`.
+- **RC driver resistance and lumped pi loads (`STA-REQ-0726`, replaces `STA-REQ-0721`;
+  `STA-REQ-0727`):** the Thevenin resistance of a cell output that drives an extracted pi load is
+  the forward delay sensitivity of the table over 1 fF above the total load (it was the central
+  sensitivity over 1 % of the total load), and a pi whose resistance is below one thousandth of
+  that resistance is a lumped load: the delay and the transition are the table values at the
+  total capacitance. The fitted waveform transition of a nearly lumped load lay 3 to 5 % below the
+  table transition: on a GF180 slow-corner clock net (pi resistance 16.9 Ohm, switch at 17.8 Ohm)
+  the clock buffer transition was 14.5 ps low and endpoint slacks were 6.8 ps (setup) and 5.3 ps
+  (hold) off the reference; a table breakpoint within 1 fF above the total load changed the
+  resistance by up to 10 % (0.85 to 1.1 ps transitions at a sky130 clock gate and flop outputs).
+  The extracted endpoint slacks of the routed fixtures agree with the reference within 0.33 ps at
+  every corner, native and reference-extracted parasitics, both PDKs.
 - **Unate arcs contradicted by constants (`STA-REQ-0159`, replaces `STA-REQ-0152`):** a declared
   `positive_unate` (`negative_unate`) arc whose residual function is negative (positive) unate in
   its input is disabled: an `XOR2` next to a tie keeps only the arc of the right sense (it timed
@@ -166,6 +181,12 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   now lower a corner through one function (`STA-REQ-0806`).
 - A design rule checked on some pins while others have no limit is `partial`, not `met`
   (`STA-REQ-0813`).
+- A clock-to-output arc into a flop or latch output held by `set_case_analysis` launched its
+  arrival whenever a clock reached the clock pin, so the held output stayed in the clock's domain
+  and took the clock's `max_transition` limit (eight extra violators on a synthesized core with
+  register outputs under case analysis); a disabled launch now launches no arrival
+  (`STA-REQ-0164`), and one that `set_disable_timing` disables (`-from CK -to Q`) no longer
+  launches either (`STA-REQ-0156`). Arcs that logic values disable still carry their transition.
 
 ## [0.3.0] and earlier development previews
 

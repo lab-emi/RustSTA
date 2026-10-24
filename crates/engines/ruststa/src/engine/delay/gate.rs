@@ -42,7 +42,8 @@ impl GateDelay for TimingLib {
 impl TimingLib {
     /// Evaluates the delay and output slew of `arc` for output transition `out`, input slew
     /// `slew` (ns), output `load`, and an optional third-axis argument `axis3` (`STA-REQ-0108`,
-    /// `STA-REQ-0109`, `STA-REQ-0113`, `STA-REQ-0114`).
+    /// `STA-REQ-0109`, `STA-REQ-0113`, `STA-REQ-0114`); a pi load goes through the driver rule of
+    /// [`super::driver::pi_response`] (`STA-REQ-0726`, `STA-REQ-0727`).
     #[inline]
     #[must_use]
     pub fn arc_delay_3d(
@@ -62,7 +63,7 @@ impl TimingLib {
                     self.lut_bank.eval(pa.slew[out.index()], x),
                 )
             };
-            return match rusteda_compute::rc::gate(
+            return match super::driver::pi_response(
                 rusteda_compute::rc::Pi {
                     near: c_near,
                     far: c_far,
@@ -108,7 +109,7 @@ impl TimingLib {
                     self.lut_bank.eval_tracked(pa.slew[out.index()], x, tracker),
                 )
             };
-            return match rusteda_compute::rc::gate(
+            return match super::driver::pi_response(
                 rusteda_compute::rc::Pi {
                     near: c_near,
                     far: c_far,

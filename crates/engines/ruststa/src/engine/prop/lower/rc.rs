@@ -109,7 +109,8 @@ pub(super) fn prepare(
 /// bound `an` under the extracted wire model `wire` (`STA-REQ-0723`). `lumped_load` is the load
 /// of the arc's destination when its net has no extracted driver load. The only evaluation of an
 /// extracted arc: the waveform preparation of the propagation and the transitions of the design
-/// rules (`STA-REQ-0809`) both use it.
+/// rules (`STA-REQ-0809`) both use it. A cell arc into a pi load follows the driver rule of
+/// `STA-REQ-0726` and `STA-REQ-0727`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn arc_value(
     luts: &CompiledLutBank<'_>,
@@ -144,7 +145,7 @@ pub(crate) fn arc_value(
         )
     };
     if let Some(DriverLoad::Pi { c_near, c_far, r }) = load {
-        let (d, q, _) = rc::gate(
+        let (d, q, _) = crate::engine::delay::driver::pi_response(
             Pi {
                 near: c_near,
                 far: c_far,

@@ -150,8 +150,15 @@ pub fn build_start_rows<D: Derate>(
     }
 
     // 5. Seed sequential `CK -> Q` and latch `G -> Q` launch arcs (`STA-REQ-0217`, `STA-REQ-0222`).
+    // A disabled launch launches no arrival, also where a clock reaches its clock pin: an output
+    // pin held by a constant or case analysis (`STA-REQ-0164`), a false `when` (`STA-REQ-0155`),
+    // `set_disable_timing` (`STA-REQ-0156`). The launches that logic values disable carry their
+    // transition as slew-only arcs (`STA-REQ-0117`); a user-disabled one carries nothing.
     let mut launch_slews: FxHashMap<NodeId, [f64; 4]> = FxHashMap::default();
-    for l in graph.launches() {
+    for (li, l) in graph.launches().iter().enumerate() {
+        if graph.is_launch_disabled(li) {
+            continue;
+        }
         let cell_row = netview.frozen().instances[l.inst as usize].cell as usize;
         let global_arc = cell_arcs[cell_row][l.lib_arc.index()];
 

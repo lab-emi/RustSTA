@@ -37,6 +37,18 @@ RUSTSTA_RC_WIRE_WORKSPACE=work/wire-oracle \
 RUST_TEST_THREADS=2 cargo test -p rusteda-compute --test rc_transient -- --ignored
 ```
 
+The engine's driver rule (STA-REQ-0726, STA-REQ-0727) has its own external cases in
+`crates/engines/ruststa/tests/rc_driver_spice.rs`: two pi loads near a table breakpoint with the
+forward 1 fF resistance (crossings, transition and end-of-ramp charge within the same 1e-6 ns and
+1e-8 pF tolerances) and two pi loads below one thousandth of the driver resistance, where the
+simulated pi and its lumped total give driver waveforms within 1e-4 of the transition while the
+fitted waveform transition differs from the table transition by more than 1 %:
+
+```sh
+RUSTSTA_NGSPICE=/path/to/ngspice RUSTSTA_RC_DRIVER_WORKSPACE=work/engine-driver-oracle \
+RUST_TEST_THREADS=2 cargo test -p ruststa --test rc_driver_spice -- --ignored
+```
+
 Run binaries with an OS memory ceiling and timeout, as in the repository's
 engineering rules. Both evidence directories must be fresh. Native core crates
 have no simulator or Python runtime dependency.
