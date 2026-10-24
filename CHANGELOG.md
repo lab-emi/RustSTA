@@ -115,8 +115,11 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   the clock buffer transition was 14.5 ps low and endpoint slacks were 6.8 ps (setup) and 5.3 ps
   (hold) off the reference; a table breakpoint within 1 fF above the total load changed the
   resistance by up to 10 % (0.85 to 1.1 ps transitions at a sky130 clock gate and flop outputs).
-  The extracted endpoint slacks of the routed fixtures agree with the reference within 0.33 ps at
-  every corner, native and reference-extracted parasitics, both PDKs.
+  On the routed and hold-closed physical-design workspaces the extracted endpoint slacks agree
+  with the reference within 0.33 ps at every corner, with native and reference-extracted
+  parasitics, on both PDKs (the differential fixture within 0.55 ps). Above about 100 Ohm a
+  residual of the reference's effective capacitance remains (up to 3 % of the transition on the
+  probe grid), where its driver transition is not a continuous function of the wire resistance.
 - **Unate arcs contradicted by constants (`STA-REQ-0159`, replaces `STA-REQ-0152`):** a declared
   `positive_unate` (`negative_unate`) arc whose residual function is negative (positive) unate in
   its input is disabled: an `XOR2` next to a tie keeps only the arc of the right sense (it timed
