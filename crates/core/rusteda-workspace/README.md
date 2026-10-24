@@ -185,7 +185,7 @@ in the contract's order: `schema`, `ok`, `command`, `workspace`, `base_rev`, `re
 `error`, `next_actions`. `scope`, `completeness` and `metrics` are JSON objects, set with
 `set_scope`, `set_completeness` and `set_metrics`; no value of the envelope may hold an object
 with two equal keys; and every diagnostic code is a `DiagCode`, a letter of the contract's
-areas (`ACDLSTVW`) and four digits, so every diagnostic line parses.
+areas (`ABCDGLSTVW`) and four digits, so every diagnostic line parses.
 
 Nested values are kept as `RawJson` text, so key order survives without `serde_json`'s
 `preserve_order` where the text is made in order: a struct keeps its field order

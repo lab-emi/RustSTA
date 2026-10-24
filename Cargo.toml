@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*/*", "xtask"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
@@ -37,6 +37,7 @@ rustc-hash = "=2.1.2"
 bytemuck = { version = "=1.25.2", features = ["derive"] }
 memmap2 = "=0.9.11"
 xxhash-rust = { version = "=0.8.19", default-features = false, features = ["xxh3"] }
+smallvec = { version = "=1.16.2", default-features = false }
 # The CUDA driver and NVRTC libraries are loaded at run time: builds need no CUDA toolkit.
 cudarc = { version = "=0.19.10", default-features = false, features = ["std", "driver", "nvrtc", "fallback-dynamic-loading", "cuda-version-from-build-system", "fallback-latest"] }
 

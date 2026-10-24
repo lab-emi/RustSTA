@@ -156,7 +156,7 @@ pub(crate) fn run_show(
         }
     }
     // A timing table that does not state its design-rule status did not check design rules:
-    // its counts are unknown, never zero (RCLI-REQ-0021, AGENTS rule 4.2).
+    // its counts are unknown, never zero (RCLI-REQ-0023, AGENTS rule 4.2).
     if let Some(sta) = meta.summary.get("sta")
         && !sta.contains_key("drv_status")
     {

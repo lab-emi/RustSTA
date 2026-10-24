@@ -25,12 +25,13 @@ fn measurements(text: &str) -> BTreeMap<String, f64> {
 
 // STA-REQ-0724: the external simulator independently solves capacitor current ODEs.
 #[test]
-#[ignore = "requires RUSTSTA_NGSPICE and RUSTSTA_RC_ORACLE_WORKSPACE, with OS caps"]
-fn ngspice_charge_and_thresholds() {
-    let tool =
-        PathBuf::from(std::env::var("RUSTSTA_NGSPICE").expect("external simulator required"));
+#[ignore = "requires RUSTEDA_SPICE_SIMULATOR and RUSTEDA_RC_ORACLE_WORKSPACE, with OS caps"]
+fn simulator_charge_and_thresholds() {
+    let tool = PathBuf::from(
+        std::env::var("RUSTEDA_SPICE_SIMULATOR").expect("external simulator required"),
+    );
     let root = PathBuf::from(
-        std::env::var("RUSTSTA_RC_ORACLE_WORKSPACE").expect("evidence workspace required"),
+        std::env::var("RUSTEDA_RC_ORACLE_WORKSPACE").expect("evidence workspace required"),
     );
     fs::create_dir(&root).unwrap();
     for (i, (res, derate, low, high)) in [
@@ -100,11 +101,11 @@ fn ngspice_charge_and_thresholds() {
 
 // STA-REQ-0722: ideal-source single-pole step/ramp response, independent transient oracle.
 #[test]
-#[ignore = "requires RUSTSTA_NGSPICE and a fresh RUSTSTA_RC_WIRE_WORKSPACE, with OS caps"]
-fn ngspice_wire_thresholds() {
-    let tool = std::env::var("RUSTSTA_NGSPICE").expect("external simulator required");
+#[ignore = "requires RUSTEDA_SPICE_SIMULATOR and a fresh RUSTEDA_RC_WIRE_WORKSPACE, with OS caps"]
+fn simulator_wire_thresholds() {
+    let tool = std::env::var("RUSTEDA_SPICE_SIMULATOR").expect("external simulator required");
     let root = PathBuf::from(
-        std::env::var("RUSTSTA_RC_WIRE_WORKSPACE").expect("evidence workspace required"),
+        std::env::var("RUSTEDA_RC_WIRE_WORKSPACE").expect("evidence workspace required"),
     );
     fs::create_dir(&root).unwrap();
     for (i, (tau, s, primary, derate, low, high)) in [

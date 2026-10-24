@@ -3,7 +3,7 @@
 
 # Install from source
 
-RustSTA 0.4.0 is a development preview, built from this repository. It is not
+RustSTA 0.4.1 is a development preview, built from this repository. It is not
 published on crates.io. Linux is the CI baseline; other platforms have no CI
 verification claim.
 

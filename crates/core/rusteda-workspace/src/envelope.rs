@@ -275,8 +275,8 @@ pub struct DiagLocation {
 }
 
 /// A diagnostic code: one letter of the contract's areas and four digits (WS-REQ-0094). The
-/// letter names the area: A application, C check, D sdc, L liberty, S synth, T timing,
-/// V verilog, W workspace. A `DiagCode` holds a valid code only, so every [`Diagnostic`] has
+/// letter names the area: A application, B blif, C check, D sdc, G aiger, L liberty, S synth,
+/// T timing, V verilog, W workspace (WS-REQ-0190). A `DiagCode` holds a valid code only, so every [`Diagnostic`] has
 /// one, and its text line is one the shared diagnostic reader parses.
 ///
 /// ```
@@ -293,7 +293,7 @@ pub struct DiagCode([u8; 5]);
 
 impl DiagCode {
     /// The area letters of the contract (§7).
-    pub const LETTERS: &'static str = "ACDLSTVW";
+    pub const LETTERS: &'static str = "ABCDGLSTVW";
 
     const fn check(text: &[u8]) -> Option<DiagCode> {
         if text.len() != 5 {
@@ -329,7 +329,7 @@ impl DiagCode {
     pub const fn of(text: &'static str) -> DiagCode {
         match DiagCode::check(text.as_bytes()) {
             Some(code) => code,
-            None => panic!("a diagnostic code is a letter of ACDLSTVW and four digits"),
+            None => panic!("a diagnostic code is a letter of ABCDGLSTVW and four digits"),
         }
     }
 

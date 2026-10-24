@@ -62,6 +62,7 @@
 //! The module uses only its parent module's reader and writer through `super::` paths, so that
 //! it moves with them unchanged.
 
+mod freeze_writer;
 mod read;
 mod scan;
 #[cfg(test)]
@@ -80,6 +81,8 @@ use rusteda_core::netlist::{
 use super::diag::Diagnostic;
 use super::span::{SourceMap, Span};
 use super::write::{NlDir, NlInstance, NlModule, NlPort, NlRef};
+
+pub use freeze_writer::{FrozenBuildLimits, to_frozen_netlist};
 
 pub use read::read_structural;
 

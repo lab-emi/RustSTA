@@ -7,6 +7,7 @@
 mod export;
 mod import;
 mod import_lib;
+mod import_logic;
 mod import_netlist;
 mod import_rtl;
 mod import_sdc;
@@ -165,7 +166,7 @@ pub struct ImportArgs {
     /// Corner name for the preceding `--lib` (default `"default"`).
     #[arg(long = "corner", action = clap::ArgAction::Append, value_name = "NAME")]
     pub corners: Vec<String>,
-    /// Verilog/SystemVerilog RTL source files.
+    /// RTL source files: Verilog/SystemVerilog, or BLIF (`.blif`) or AIGER (`.aag`, `.aig`).
     #[arg(long = "rtl", num_args = 1.., action = clap::ArgAction::Append, value_name = "FILE")]
     pub rtl: Vec<PathBuf>,
     /// Top module name for `--rtl`.

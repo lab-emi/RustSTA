@@ -40,6 +40,7 @@ fn sources() -> Vec<(String, String)> {
 #[test]
 fn every_rust_file_has_the_license_header() {
     for (path, text) in sources() {
+        // REUSE-IgnoreStart
         assert!(
             text.starts_with(
                 "// SPDX-License-Identifier: Apache-2.0\n\
@@ -47,6 +48,7 @@ fn every_rust_file_has_the_license_header() {
             ),
             "{path}"
         );
+        // REUSE-IgnoreEnd
     }
 }
 

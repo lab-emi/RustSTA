@@ -36,6 +36,10 @@ pub struct RtlManifest {
     pub files: Vec<RtlFileEntry>,
     /// Whether predefined macros (`SYNTHESIS`) are enabled (`!--no-predefined-macros`).
     pub predefined_macros: bool,
+    /// `blif` or `aiger` for a snapshot of those formats; absent for SystemVerilog
+    /// (RCLI-REQ-0022).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
 }
 
 /// Options for `rusteda import --rtl` (RCLI-REQ-0014).
@@ -233,6 +237,10 @@ pub(crate) fn import_rtl(
     metrics: &mut JsonMap,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<(), Error> {
+    // BLIF and AIGER files (RCLI-REQ-0021).
+    if let Some(format) = crate::import_logic::format_of(&args.files)? {
+        return crate::import_logic::import_logic(txn, args, format, metrics, diags);
+    }
     let top = args.top.trim();
     if top.is_empty() {
         return Err(Error::usage("--top module name must not be empty"));
@@ -469,6 +477,7 @@ pub(crate) fn import_rtl(
         params: params_map,
         files: manifest_files,
         predefined_macros: !args.no_predefined_macros,
+        format: None,
     };
     let mut manifest_json = serde_json::to_string_pretty(&rtl_manifest)
         .map_err(|e| Error::internal(format!("serializing rtl.json: {e}")))?;

@@ -56,6 +56,22 @@ their first use; cells in order of first use; instances, connections and assignm
 order. Consequently, `to_gate_netlist` of a module and `read_structural` of its written text freeze
 to identical tables (VERILOG-REQ-0301).
 
+`to_frozen_netlist` may construct those canonical tables directly for explicitly declared,
+plain-name writer modules. Every section must equal `to_gate_netlist(...).freeze()`, including
+string and connection order. `FrozenBuildLimits` bounds net, instance, connection, string,
+table-byte and auxiliary-storage counts before allocation. It validates the complete frozen
+result. Unusual names, implicit nets, whole-vector connections and unsupported layouts return
+to the general converter for its existing semantics and diagnostics; no partial tables escape.
+
+The ordinary writer and export directly from frozen tables may format instance text in
+parallel. Batches contain at most 8,192 instances, divided into chunks of 512. Each chunk has
+a 2 MiB byte cap; at most 16 chunks are live, and an oversized chunk uses the serial writer.
+The frozen exporter charges cached pin names and temporary text against its auxiliary limit.
+Chunks are written in source order. One and sixteen workers must emit identical bytes for
+ports, escaped names, instances, connections and assignments. Frozen export continues to
+stream from validated mapped tables without constructing a mutable gate graph or a complete
+output string.
+
 **VERILOG-REQ-0318** Port, net and instance names are stored in `GateNetlist` as single-segment
 escaped hierarchical names (`rusteda_core::names::escape_segment`: `\` becomes `\\` and `/` becomes
 `\/`), taking an escaped Verilog identifier without its leading backslash and terminating white

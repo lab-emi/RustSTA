@@ -231,7 +231,13 @@ impl Cursor {
             b'"' => Tok::Str(self.string()?),
             _ => {
                 let rest = &self.bytes()[self.pos..];
-                match OPERATORS.iter().find(|op| rest.starts_with(op.as_bytes())) {
+                // A comment is whitespace, including immediately after a case
+                // label or ternary colon. Do not consume its first slash as
+                // part of the distribution-weight operator `:/`.
+                let colon_comment = rest.starts_with(b"://") || rest.starts_with(b":/*");
+                match OPERATORS.iter().find(|op| {
+                    rest.starts_with(op.as_bytes()) && !(colon_comment && op.as_bytes() == b":/")
+                }) {
                     Some(op) => {
                         self.pos += op.len();
                         Tok::Op(op)
@@ -687,6 +693,27 @@ mod tests {
         assert!(c.next_raw().is_err());
         let mut c = Cursor::new(Arc::from("/* x"), FileId(0), None);
         assert!(c.next_raw().is_err());
+    }
+
+    // VERILOG-REQ-0001, VERILOG-REQ-0002
+    #[test]
+    fn colon_does_not_consume_an_adjacent_comment() {
+        assert_eq!(
+            lex_all("1:// line\n x :/* block */ y :/2 :=3 ::tail"),
+            vec![
+                Tok::Dec("1".into()),
+                Tok::Op(":"),
+                Tok::Ident("x".into()),
+                Tok::Op(":"),
+                Tok::Ident("y".into()),
+                Tok::Op(":/"),
+                Tok::Dec("2".into()),
+                Tok::Op(":="),
+                Tok::Dec("3".into()),
+                Tok::Op("::"),
+                Tok::Ident("tail".into()),
+            ]
+        );
     }
 
     #[test]

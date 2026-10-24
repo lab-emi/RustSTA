@@ -122,6 +122,7 @@ nav:
           - Library storage: specs/workspace/rlib.md
           - Shared timing reader: specs/workspace/sta.md
           - RustEDA CLI: specs/rusteda-cli/README.md
+          - Detailed parasitic import: specs/rusteda-cli/spef.md
           - Core structures: specs/core/README.md
           - Netlist model: specs/core/netlist.md
           - Compute backends: specs/compute/README.md
@@ -131,6 +132,8 @@ nav:
           - Structural Verilog: specs/verilog/netlist.md
           - Liberty: specs/liberty/liberty.md
           - SDC: specs/sdc/sdc.md
+          - AIGER: specs/aiger/README.md
+          - BLIF: specs/blif/README.md
   - Evidence:
       - Verification scope: verification/index.md
       - Dual-PDK verification: verification/pdk.md

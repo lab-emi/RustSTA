@@ -18,7 +18,7 @@ protocol, the library cache and the `rusteda.v1` JSON envelope and text-mode ren
 | [Determinism](#determinism) | WS-REQ-0100 |
 | [Compiled Liberty libraries (`rlib.md`)](rlib.md) | WS-REQ-0110 to 0117 |
 | [Netlist tables (`netlist.md`)](netlist.md) | WS-REQ-0120 to 0125 |
-| [Timing table: read-only view and builder (`sta.md`)](sta.md) | WS-REQ-0126 to 0136 |
+| [Timing table: read-only view and builder (`sta.md`)](sta.md) | WS-REQ-0126 to 0137 |
 
 ## Workspace layout and files
 
@@ -174,7 +174,7 @@ protocol, the library cache and the `rusteda.v1` JSON envelope and text-mode ren
 
 **WS-REQ-0093** Error codes and exit codes: USAGE, INPUT_REJECTED, NOT_A_WORKSPACE, WORKSPACE_EXISTS, UNKNOWN_REVISION, MISSING_TABLE, UNKNOWN_HANDLE, SCHEMA_TOO_NEW, IO_ERROR, BACKEND_UNAVAILABLE exit 1; REVISION_CONFLICT 4; INTERNAL, CORRUPT_TABLE 2; CANCELLED 130; negative verdict 3 and inconclusive 5 with `ok: true`.
 
-**WS-REQ-0094** A diagnostic is {severity, code, location {file, line, col} or null, message, help}; its code is a `DiagCode`, a letter of `ACDLSTVW` and four digits, checked when it is made (at compile time for a constant, `INTERNAL` for text), also when a diagnostic is read back.
+**WS-REQ-0094** A diagnostic is {severity, code, location {file, line, col} or null, message, help}; its code is a `DiagCode`, a letter of `ABCDGLSTVW` (WS-REQ-0190) and four digits, checked when it is made (at compile time for a constant, `INTERNAL` for text), also when a diagnostic is read back.
 
 **WS-REQ-0095** Text mode: a mutation starts with `rev<N>  <command>  (base rev<M>)`, follow-ups are `next: <command>` lines, diagnostics go to stderr as `<severity>[<code>]: <location>: <text>` plus `  help: ...`.
 
@@ -185,3 +185,5 @@ protocol, the library cache and the `rusteda.v1` JSON envelope and text-mode ren
 ## Determinism
 
 **WS-REQ-0100** Identical inputs give byte-identical rbin files, `manifest.json` and `meta.json` (except `created_unix_ms`).
+
+**WS-REQ-0190** The area letters of diagnostic codes (WS-REQ-0094) include `B` for the BLIF reader (BLIF-REQ-0062) and `G` for the AIGER reader (AIGER-REQ-0032), so that their messages keep their codes in envelopes: `DiagCode::LETTERS` is `ABCDGLSTVW`.

@@ -396,6 +396,13 @@ pub(crate) fn import_netlist(
         drop(text);
         fast
     } else {
+        // Whole-file token/AST expansion is unsuitable for multi-million-cell
+        // flat inputs. Keep unsupported large syntax explicit and bounded.
+        if text.len() > 64 * 1024 * 1024 {
+            let msg = "large flat netlist uses syntax unsupported by the bounded streaming importer (64 MiB AST fallback budget)";
+            diags.push(Diagnostic::new(Severity::Error, DiagCode::of(C_UNSUP), msg));
+            return Err(Error::input_rejected(msg));
+        }
         let g = read_netlist_ast(&text, &source_str, &catalog, diags)?;
         drop(text);
         g.freeze()
