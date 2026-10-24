@@ -2,6 +2,9 @@
 // SPDX-FileCopyrightText: 2026 RustEDA contributors
 
 //! Fast streaming reader for single-module flat netlists (`RCLI-REQ-0019`).
+//! Expression scratch is capped at MAX_RANGE_WIDTH *4 B, nesting at 64.
+//! A C910 import keeps ~1.3 GiB source, <2 GiB frozen tables and bounded
+//! name/connection indices; no whole-file tokens/AST or graph paths are built.
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -11,6 +14,7 @@ use rusteda_core::netlist::{
     AssignRec, CONST0, CONST1, FrozenNetlist, InstRec, MAX_RANGE_WIDTH, NetRec, PinDir, PortDir,
     PortRec, SCALAR,
 };
+use rusteda_formats::verilog::number::{Bit4, Literal};
 use rusteda_formats::verilog::token::KEYWORDS;
 
 use super::{CellCatalog, CellInfo, range_width};
@@ -253,80 +257,6 @@ impl<'a> Cur<'a> {
             .filter(|&v| v != i32::MIN)
     }
 
-    /// A sized based constant `<size>'<base><digits>` (bases `b`, `o`, `d`, `h`) without x/z
-    /// digits whose value fits its size, appended to `out` most significant bit first as
-    /// [`CONST0`]/[`CONST1`]: the bits that `Literal::bits` gives the extended reader. Any other
-    /// form (signed, spaced, x/z, truncated, sizes outside `1..=MAX_RANGE_WIDTH`) is `None`.
-    fn sized_constant(&mut self, out: &mut Vec<u32>) -> Option<()> {
-        self.skip_ws()?;
-        let b = self.bytes;
-        let mut p = self.pos;
-        let mut size: u64 = 0;
-        while let Some(&c) = b.get(p).filter(|c| c.is_ascii_digit()) {
-            size = size.checked_mul(10)?.checked_add(u64::from(c - b'0'))?;
-            p += 1;
-        }
-        if p == self.pos || b.get(p) != Some(&b'\'') {
-            return None;
-        }
-        if size == 0 || size > u64::from(MAX_RANGE_WIDTH) {
-            return None;
-        }
-        let base: u32 = match b.get(p + 1)? {
-            b'b' | b'B' => 2,
-            b'o' | b'O' => 8,
-            b'd' | b'D' => 10,
-            b'h' | b'H' => 16,
-            _ => return None,
-        };
-        p += 2;
-        let start = p;
-        while b
-            .get(p)
-            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'?' || *c == b'$')
-        {
-            p += 1;
-        }
-        let digits = &b[start..p];
-        if digits.first().is_none_or(|&c| c == b'_') {
-            return None;
-        }
-        // The value's bits, least significant first.
-        let mut natural: Vec<bool> = Vec::new();
-        if base == 10 {
-            let mut v: u128 = 0;
-            for &c in digits.iter().filter(|&&c| c != b'_') {
-                let d = char::from(c).to_digit(10)?;
-                v = v.checked_mul(10)?.checked_add(u128::from(d))?;
-            }
-            while v != 0 {
-                natural.push(v & 1 == 1);
-                v >>= 1;
-            }
-        } else {
-            let per = base.trailing_zeros();
-            for &c in digits.iter().rev().filter(|&&c| c != b'_') {
-                let d = char::from(c).to_digit(base)?;
-                for i in 0..per {
-                    natural.push((d >> i) & 1 == 1);
-                }
-            }
-        }
-        let significant = natural.iter().rposition(|&x| x).map_or(0, |i| i + 1);
-        if significant as u64 > size {
-            return None;
-        }
-        out.extend((0..size as usize).rev().map(|i| {
-            if natural.get(i).copied().unwrap_or(false) {
-                CONST1
-            } else {
-                CONST0
-            }
-        }));
-        self.pos = p;
-        Some(())
-    }
-
     fn opt_range(&mut self) -> Option<Option<(i32, i32)>> {
         if !self.eat(b'[')? {
             return Some(None);
@@ -357,6 +287,157 @@ fn pin_dir_code(dir: PinDir) -> u8 {
         PinDir::Output => 1,
         PinDir::Inout => 2,
         PinDir::Other => 3,
+    }
+}
+
+struct ExprReader<'a, 'b> {
+    syms: &'b mut SymStore,
+    nets: &'b mut Vec<FastNet>,
+    decls: &'b mut HashMap<&'a str, FastDecl>,
+    allow_implicit: bool,
+}
+
+impl<'a> ExprReader<'a, '_> {
+    /// Append bits in Verilog MSB-to-LSB order, as used by frozen bus tables.
+    fn append(&mut self, cur: &mut Cur<'a>, out: &mut Vec<u32>, depth: usize) -> Option<()> {
+        if depth >= 64 || out.len() >= MAX_RANGE_WIDTH as usize {
+            return None;
+        }
+        if cur.eat(b'{')? {
+            loop {
+                self.append(cur, out, depth + 1)?;
+                if cur.eat(b'}')? {
+                    return Some(());
+                }
+                if !cur.eat(b',')? {
+                    return None;
+                }
+            }
+        }
+        if cur.peek()?.is_ascii_digit() {
+            let mut width = 0u32;
+            while let Some(&ch) = cur.bytes.get(cur.pos) {
+                if ch.is_ascii_digit() {
+                    width = width.checked_mul(10)?.checked_add(u32::from(ch - b'0'))?;
+                } else if ch != b'_' {
+                    break;
+                }
+                cur.pos += 1;
+            }
+            if width == 0 || width > MAX_RANGE_WIDTH || !cur.eat(b'\'')? {
+                return None;
+            }
+            let base = cur.bytes.get(cur.pos)?.to_ascii_lowercase();
+            // Signed/unknown expressions use the diagnostic AST path. Decimal
+            // digits are bounded separately because conversion is quadratic.
+            if !matches!(base, b'b' | b'o' | b'h' | b'd') {
+                return None;
+            }
+            cur.pos += 1;
+            let start = cur.pos;
+            while let Some(ch) = cur.bytes.get(cur.pos) {
+                if !(ch.is_ascii_hexdigit() || *ch == b'_') {
+                    break;
+                }
+                cur.pos += 1;
+                if cur.pos - start > MAX_RANGE_WIDTH as usize {
+                    return None;
+                }
+            }
+            if base == b'd' && cur.pos - start > 32 {
+                return None;
+            }
+            if cur.pos == start || out.len().checked_add(width as usize)? > MAX_RANGE_WIDTH as usize
+            {
+                return None;
+            }
+            let literal = Literal {
+                size: Some(width),
+                plain: false,
+                signed: false,
+                base: char::from(base),
+                digits: cur.text[start..cur.pos]
+                    .chars()
+                    .filter(|&ch| ch != '_')
+                    .collect(),
+            };
+            for bit in literal.bits().ok()?.into_iter().rev() {
+                out.push(match bit {
+                    Bit4::Zero => CONST0,
+                    Bit4::One => CONST1,
+                    _ => return None,
+                });
+            }
+            return Some(());
+        }
+        let (start, end) = cur.ident()?;
+        let name = &cur.text[start..end];
+        let selected = if cur.eat(b'[')? {
+            let first = cur.int_literal()?;
+            let last = if cur.eat(b':')? {
+                cur.int_literal()?
+            } else {
+                first
+            };
+            if !cur.eat(b']')? {
+                return None;
+            }
+            Some((first, last))
+        } else {
+            None
+        };
+        match self.decls.get(name).copied() {
+            Some(FastDecl::Net {
+                range: Some((msb, lsb)),
+                first_net,
+                ..
+            }) => {
+                let (first, last) = selected.unwrap_or((msb, lsb));
+                let width = range_width(first, last);
+                if first < msb.min(lsb)
+                    || first > msb.max(lsb)
+                    || last < msb.min(lsb)
+                    || last > msb.max(lsb)
+                    || (first != last && (first > last) != (msb > lsb))
+                    || width > u64::from(MAX_RANGE_WIDTH)
+                    || out.len().checked_add(width as usize)? > MAX_RANGE_WIDTH as usize
+                {
+                    return None;
+                }
+                for k in 0..width {
+                    let index =
+                        i64::from(first) + if first > last { -(k as i64) } else { k as i64 };
+                    let offset = (i64::from(msb) - index).unsigned_abs();
+                    out.push(first_net.checked_add(u32::try_from(offset).ok()?)?);
+                }
+                Some(())
+            }
+            Some(FastDecl::Net {
+                range: None,
+                first_net,
+                ..
+            }) if selected.is_none() => {
+                out.push(first_net);
+                Some(())
+            }
+            None if self.allow_implicit && selected.is_none() => {
+                let symbol = self.syms.hierarchical(cur.text, start, end)?;
+                let first_net = u32::try_from(self.nets.len()).ok()?;
+                self.nets.push(FastNet(symbol, SCALAR));
+                self.decls.insert(
+                    name,
+                    FastDecl::Net {
+                        range: None,
+                        first_net,
+                        is_port: false,
+                        typed: true,
+                    },
+                );
+                out.push(first_net);
+                Some(())
+            }
+            _ => None,
+        }
     }
 }
 
@@ -571,118 +652,21 @@ pub(super) fn try_fast_flat<'a>(
     let mut assigns: Vec<AssignRec> = Vec::new();
     let mut seen_body = false;
 
-    // One operand, appended to `out` most significant bit first: a sized constant, or a net, a
-    // bit-select or a constant part-select of a declared net, in the bit order of the extended
-    // reader (a part-select runs from its left to its right index).
-    let operand = |cur: &mut Cur<'a>,
-                   syms: &mut SymStore,
-                   nets: &mut Vec<FastNet>,
-                   decls: &mut HashMap<&'a str, FastDecl>,
-                   allow_implicit: bool,
-                   out: &mut Vec<u32>|
-     -> Option<()> {
-        if cur.peek()?.is_ascii_digit() {
-            return cur.sized_constant(out);
-        }
-        let (ns, ne) = cur.ident()?;
-        let name = &text[ns..ne];
-        if cur.eat(b'[')? {
-            let left = cur.int_literal()?;
-            let right = if cur.eat(b':')? {
-                cur.int_literal()?
-            } else {
-                left
-            };
-            if !cur.eat(b']')? {
-                return None;
-            }
-            let FastDecl::Net {
-                range: Some((msb, lsb)),
-                first_net,
-                ..
-            } = *decls.get(name)?
-            else {
-                return None;
-            };
-            let (m, l) = (i64::from(msb), i64::from(lsb));
-            let (left, right) = (i64::from(left), i64::from(right));
-            let step = if left >= right { -1 } else { 1 };
-            let mut k = left;
-            loop {
-                if k < m.min(l) || k > m.max(l) {
-                    return None;
-                }
-                let off = if m >= l { m - k } else { k - m };
-                out.push(first_net + off as u32);
-                if k == right {
-                    break;
-                }
-                k += step;
-            }
-            return Some(());
-        }
-        match decls.get(name).copied() {
-            Some(FastDecl::Net {
-                range: Some((msb, lsb)),
-                first_net,
-                ..
-            }) => {
-                out.extend(first_net..first_net + range_width(msb, lsb) as u32);
-                Some(())
-            }
-            Some(FastDecl::Net {
-                range: None,
-                first_net,
-                ..
-            }) => {
-                out.push(first_net);
-                Some(())
-            }
-            Some(FastDecl::Instance) => None,
-            None if allow_implicit => {
-                let sym = syms.hierarchical(text, ns, ne)?;
-                let net_id = u32::try_from(nets.len()).ok()?;
-                nets.push(FastNet(sym, SCALAR));
-                decls.insert(
-                    name,
-                    FastDecl::Net {
-                        range: None,
-                        first_net: net_id,
-                        is_port: false,
-                        typed: true,
-                    },
-                );
-                out.push(net_id);
-                Some(())
-            }
-            None => None,
-        }
-    };
-    // An expression into `out`: one operand, or in an assignment (`concat`) a non-empty
-    // concatenation `{ a, b, ... }` of operands, `a` most significant.
     let resolve_expr = |cur: &mut Cur<'a>,
                         syms: &mut SymStore,
                         nets: &mut Vec<FastNet>,
                         decls: &mut HashMap<&'a str, FastDecl>,
                         allow_implicit: bool,
-                        concat: bool,
                         out: &mut Vec<u32>|
      -> Option<()> {
         out.clear();
-        if concat && cur.eat(b'{')? {
-            loop {
-                operand(cur, syms, nets, decls, allow_implicit, out)?;
-                if cur.eat(b',')? {
-                    continue;
-                }
-                if cur.eat(b'}')? {
-                    break;
-                }
-                return None;
-            }
-            return (!out.is_empty()).then_some(());
+        ExprReader {
+            syms,
+            nets,
+            decls,
+            allow_implicit,
         }
-        operand(cur, syms, nets, decls, allow_implicit, out)
+        .append(cur, out, 0)
     };
 
     let (mut lhs_buf, mut rhs_buf, mut conn_pins) = (Vec::new(), Vec::new(), Vec::new());
@@ -742,7 +726,6 @@ pub(super) fn try_fast_flat<'a>(
                     &mut nets,
                     &mut decls,
                     true,
-                    true,
                     &mut lhs_buf,
                 )?;
                 if !cur.eat(b'=')? {
@@ -754,7 +737,6 @@ pub(super) fn try_fast_flat<'a>(
                     &mut nets,
                     &mut decls,
                     false,
-                    true,
                     &mut rhs_buf,
                 )?;
                 if lhs_buf.len() != rhs_buf.len() {
@@ -828,7 +810,6 @@ pub(super) fn try_fast_flat<'a>(
                             &mut nets,
                             &mut decls,
                             true,
-                            false,
                             &mut rhs_buf,
                         )?;
                         if rhs_buf.len() != 1 || !cur.eat(b')')? {
@@ -969,4 +950,64 @@ pub(super) fn try_fast_flat<'a>(
         net_pin_start: Cow::Owned(net_pin_start),
         net_pins: Cow::Owned(net_pins),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn streamed_vectors_preserve_bit_order() {
+        for (text, first, expected) in [
+            (
+                "module top(input [7:0] a, output [7:0] y); assign y = {a[3:0], a[7:4]}; endmodule",
+                8,
+                vec![4, 5, 6, 7, 0, 1, 2, 3],
+            ),
+            (
+                "module top(input [0:7] a, output [7:0] y); assign y = {a[4:7], a[0:3]}; endmodule",
+                8,
+                vec![4, 5, 6, 7, 0, 1, 2, 3],
+            ),
+            (
+                "module top(input [7:0] a, output [7:0] y); assign {y[7:4], y[3:0]} = {2'h2, {a[3:2], 4'b0101}}; endmodule",
+                8,
+                vec![CONST1, CONST0, 4, 5, CONST0, CONST1, CONST0, CONST1],
+            ),
+            (
+                "module top(output [3:0] y); assign y = {1'd1, 3'o2}; endmodule",
+                0,
+                vec![CONST1, CONST0, CONST1, CONST0],
+            ),
+        ] {
+            let catalog = CellCatalog::default();
+            let fast = try_fast_flat(text, &catalog).expect("streamed vector import");
+            fast.validate().unwrap();
+            assert_eq!(
+                fast.assigns.iter().map(|a| a.lhs).collect::<Vec<_>>(),
+                (first..first + expected.len() as u32).collect::<Vec<_>>()
+            );
+            assert_eq!(
+                fast.assigns.iter().map(|a| a.rhs).collect::<Vec<_>>(),
+                expected,
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn streaming_expression_limits_and_unknowns_fall_back() {
+        let catalog = CellCatalog::default();
+        for rhs in ["a[0:3]", "4'bx001", "4'b000z", "4'b0001 | a", "1048577'b0"] {
+            let text =
+                format!("module top(input [3:0] a, output [3:0] y); assign y = {rhs}; endmodule");
+            assert!(try_fast_flat(&text, &catalog).is_none(), "{rhs}");
+        }
+        let text = format!(
+            "module top(input a, output y); assign y = {}a{}; endmodule",
+            "{".repeat(65),
+            "}".repeat(65)
+        );
+        assert!(try_fast_flat(&text, &catalog).is_none());
+    }
 }

@@ -3,6 +3,7 @@
 
 //! Structural netlist writer (VERILOG-REQ-0300, VERILOG-REQ-0302).
 
+use rayon::prelude::*;
 use std::fmt::Write as _;
 
 use crate::verilog::token::keyword;
@@ -71,12 +72,65 @@ pub fn ident(name: &str) -> String {
     }
 }
 
-fn reference(r: &NlRef) -> String {
+fn write_ident(out: &mut impl std::fmt::Write, name: &str) -> std::fmt::Result {
+    if is_simple_ident(name) {
+        out.write_str(name)
+    } else {
+        write!(out, "\\{name} ")
+    }
+}
+
+fn reference(out: &mut impl std::fmt::Write, r: &NlRef) -> std::fmt::Result {
     match r {
-        NlRef::Net(n) => ident(n),
-        NlRef::Bit(n, k) => format!("{}[{k}]", ident(n)),
-        NlRef::Const(false) => "1'b0".into(),
-        NlRef::Const(true) => "1'b1".into(),
+        NlRef::Net(n) => write_ident(out, n),
+        NlRef::Bit(n, k) => {
+            write_ident(out, n)?;
+            write!(out, "[{k}]")
+        }
+        NlRef::Const(false) => out.write_str("1'b0"),
+        NlRef::Const(true) => out.write_str("1'b1"),
+    }
+}
+
+fn instance(out: &mut impl std::fmt::Write, inst: &NlInstance) -> std::fmt::Result {
+    out.write_str("  ")?;
+    write_ident(out, &inst.cell)?;
+    out.write_char(' ')?;
+    write_ident(out, &inst.name)?;
+    out.write_str(" (")?;
+    for (i, (pin, r)) in inst.conns.iter().enumerate() {
+        if i != 0 {
+            out.write_str(", ")?;
+        }
+        out.write_char('.')?;
+        write_ident(out, pin)?;
+        out.write_char('(')?;
+        reference(out, r)?;
+        out.write_char(')')?;
+    }
+    out.write_str(");\n")
+}
+
+/// At most16 temporary chunks of2MiB; oversized chunks use the ordered serial writer.
+/// The final output already required by this API is O(the explicit netlist text), never paths.
+struct Chunk(String);
+impl std::fmt::Write for Chunk {
+    fn write_str(&mut self, value: &str) -> std::fmt::Result {
+        const LIMIT: usize = 2 * 1024 * 1024;
+        let needed = self
+            .0
+            .len()
+            .checked_add(value.len())
+            .ok_or(std::fmt::Error)?;
+        if needed > LIMIT {
+            return Err(std::fmt::Error);
+        }
+        if needed > self.0.capacity() {
+            let capacity = needed.next_power_of_two().min(LIMIT);
+            self.0.reserve_exact(capacity - self.0.len());
+        }
+        self.0.push_str(value);
+        Ok(())
     }
 }
 
@@ -103,16 +157,39 @@ pub fn write_netlist(m: &NlModule) -> String {
             .unwrap_or_default();
         let _ = writeln!(s, "  wire{range} {};", ident(w));
     }
-    for inst in &m.instances {
-        let _ = write!(s, "  {} {} (", ident(&inst.cell), ident(&inst.name));
-        for (i, (pin, r)) in inst.conns.iter().enumerate() {
-            let sep = if i + 1 == inst.conns.len() { "" } else { ", " };
-            let _ = write!(s, ".{}({}){sep}", ident(pin), reference(r));
+    for batch in m.instances.chunks(8192) {
+        if batch.len() >= 1024 && rayon::current_num_threads() > 1 {
+            let chunks: Vec<_> = batch
+                .par_chunks(512)
+                .map(|part| {
+                    let mut out = Chunk(String::with_capacity(65_536));
+                    for inst in part {
+                        instance(&mut out, inst).ok()?;
+                    }
+                    Some(out.0)
+                })
+                .collect();
+            for (part, chunk) in batch.chunks(512).zip(chunks) {
+                if let Some(chunk) = chunk {
+                    s.push_str(&chunk);
+                } else {
+                    for inst in part {
+                        let _ = instance(&mut s, inst);
+                    }
+                }
+            }
+        } else {
+            for inst in batch {
+                let _ = instance(&mut s, inst);
+            }
         }
-        let _ = writeln!(s, ");");
     }
     for (l, r) in &m.assigns {
-        let _ = writeln!(s, "  assign {} = {};", reference(l), reference(r));
+        let _ = s.write_str("  assign ");
+        let _ = reference(&mut s, l);
+        let _ = s.write_str(" = ");
+        let _ = reference(&mut s, r);
+        let _ = s.write_str(";\n");
     }
     let _ = writeln!(s, "endmodule");
     s
@@ -122,6 +199,36 @@ pub fn write_netlist(m: &NlModule) -> String {
 mod tests {
     use super::*;
     use crate::verilog::ast::{Item, ModuleItem, PortConn, PortList};
+
+    //2048 explicit cells/<2MiB input, <=32MiB bounded parallel text scratch.
+    #[test]
+    fn parallel_instance_text_matches_serial_and_chunk_limit_is_hard() {
+        let mut m = NlModule {
+            name: "module".into(),
+            ..Default::default()
+        };
+        for i in 0..2048 {
+            m.instances.push(NlInstance {
+                cell: "inv".into(),
+                name: format!("unit.{i}"),
+                conns: vec![
+                    ("A".into(), NlRef::Bit("bus.a".into(), i)),
+                    ("Y".into(), NlRef::Net(format!("net.{i}"))),
+                ],
+            });
+        }
+        let render = |threads| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap()
+                .install(|| write_netlist(&m))
+        };
+        assert_eq!(render(1), render(16));
+        let mut chunk = Chunk(String::new());
+        assert!(chunk.write_str(&"a".repeat(2 * 1024 * 1024 + 1)).is_err());
+        assert!(chunk.0.is_empty());
+    }
 
     // VERILOG-REQ-0300 to VERILOG-REQ-0302
     #[test]

@@ -20,6 +20,31 @@ package demo_pkg;
 endpackage
 "#;
 
+// VERILOG-REQ-0002, VERILOG-REQ-0100
+#[test]
+fn case_and_ternary_colons_allow_adjacent_comments() {
+    let src = r#"
+module comment_boundary(input [1:0] s, output reg [1:0] y, output z);
+always @* casez (s)
+  2'b0?:/* first branch */ y = 2'b01;
+  2'b10:// second branch
+    y = 2'b10;
+  default: y = 2'b11;
+endcase
+assign z = s[0] ? 1'b1:// ternary else
+  1'b0;
+endmodule
+"#;
+    let mut sm = SourceMap::new();
+    let (units, diags) = read_texts(
+        &mut sm,
+        &[("comment_boundary.sv", src)],
+        PpOptions::default(),
+    );
+    assert!(diags.is_empty(), "{diags:?}");
+    assert_eq!(units.len(), 1);
+}
+
 const TOP: &str = r#"
 `define FF(q, d, rst_val) \
   always_ff @(posedge clk_i or negedge rst_ni) \

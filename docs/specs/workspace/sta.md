@@ -205,7 +205,6 @@ written as `+0.0` and NaN as the quiet NaN `0x7ff8_0000_0000_0000`, and every ta
 passes the validation of WS-REQ-0128 and WS-REQ-0129 and reads back with the queries of
 WS-REQ-0131 to WS-REQ-0134.
 
-
 **WS-REQ-0137** The builder checks no design rule: it sets the summary values
 `max_trans_violating` and `max_cap_violating` to `null` and `drv_status` to `"unchecked"`, never
 to zero, and its `SUMMARY` rows hold no design-rule counts.

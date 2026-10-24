@@ -30,7 +30,13 @@
 
 **RCLI-REQ-0014** `rusteda import --rtl <FILE>... --top <NAME> [-D <NAME>[=<VAL>]]... [-I <DIR>]... [-P <NAME>=<VAL>]... [--no-predefined-macros]` resolves the `` `include `` closure of the given Verilog files hermetically (searching only the including file's directory and `-I` directories, with no CWD fallback and no external absolute or parent-escaping include paths), writes the snapshot files and `rtl.json` (`{top, defines, params, files: [{path, hash}], predefined_macros}`) into the `rtl` directory table, and reports preprocessor/expression errors as `V`-series diagnostics with `file:line:col` locations.
 
+**RCLI-REQ-0021** `rusteda import --rtl <FILE>... --top <NAME>` also takes BLIF files (`.blif`) and AIGER files (`.aag`, `.aig`), the format chosen by the extension, ignoring letter case. All files of one import have one format, and AIGER takes one file; otherwise, and when `-D`, `-I`, `-P` or `--no-predefined-macros` are given with BLIF or AIGER files, the import is a `USAGE` error. BLIF files are validated with `rusteda_formats::blif` with `--top` as the top model, and an AIGER file with `rusteda_formats::aiger`, without properties; reader errors reject the import (`INPUT_REJECTED`) with their `B`- and `G`-series diagnostics and locations, and reader warnings are kept as diagnostics. The files are stored in the `rtl` directory table as given, without include closure.
+
+**RCLI-REQ-0022** `rtl.json` records the format of a BLIF or AIGER snapshot in `format` (`"blif"` or `"aiger"`); for SystemVerilog the field is absent, and a manifest without it is SystemVerilog, so that manifests written before the field read unchanged.
+
 **RCLI-REQ-0019** `rusteda import --netlist <FILE>` reads a structural gate-level Verilog netlist, resolves every instantiated library cell and pin against the revision's libraries across all corners (rejecting unknown cells/pins and cross-corner pin-direction conflicts with `V`-series diagnostics and `file:line:col` locations), drops `pg_pin` connections and supply ports with one aggregated `V`-series warning, encodes the frozen netlist into `netlist.rbin` (`NETLIST` v1) with an empty upstream map, and records the source in `meta.json` `sources`.
+
+**RCLI-REQ-0024** `rusteda import --netlist <FILE>` reads a flat netlist with a bounded streaming reader when it can. A netlist that the streaming reader declines is read with the full Verilog reader only when the file is at most `--max-netlist-ast-mib <MIB>` mebibytes (default 64); a larger one is rejected before the full reader runs (`INPUT_REJECTED`, a `V0300` error that names the budget and the option), and HEAD does not move. The budget does not apply to a netlist that the streaming reader takes, and the option requires `--netlist`. The full reader holds the whole syntax tree in memory: its peak resident memory was measured at about 42 times the file size (1.07 GiB for a 26 MiB flat netlist, against 95 MiB with the streaming reader), so the default bounds it near 2.6 GiB. Estimate the memory before raising the budget.
 
 ## Queries, revert, export, and completions
 
@@ -44,8 +50,7 @@
 
 **RCLI-REQ-0020** `rusteda export -w <WS> [--rev <REV>] --netlist <FILE>` (default `HEAD`) thaws the revision's `netlist` table and writes a deterministic structural Verilog netlist (with escaped identifiers per IEEE 1364-2005 §3.7.1) to `<FILE>` without modifying the workspace or appending to `history.jsonl`.
 
-**RCLI-REQ-0021** `rusteda show` reports the design-rule counts of a timing table as recorded when
+**RCLI-REQ-0023** `rusteda show` reports the design-rule counts of a timing table as recorded when
 its summary states `drv_status`; a timing summary without `drv_status` comes from an analysis that
 did not check design rules, so `show` reports `drv_status: "unchecked"` and its
 `max_trans_violating` and `max_cap_violating` as `null`, never as zero.
-

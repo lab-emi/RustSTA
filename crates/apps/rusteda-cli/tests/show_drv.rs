@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 RustEDA contributors
 
 //! `rusteda show` reports the design-rule counts of a timing table that does not state its
-//! design-rule status as unchecked (RCLI-REQ-0021).
+//! design-rule status as unchecked (RCLI-REQ-0023).
 use rusteda_workspace::{Invocation, Upstream, Workspace};
 use serde_json::{Value, json};
 use std::process::{Command, Stdio};
@@ -16,7 +16,7 @@ fn show(ws: &str, rev: &str) -> Value {
     serde_json::from_slice(&out.stdout).unwrap_or_else(|_| panic!("{out:?}"))
 }
 
-// RCLI-REQ-0021: zeros of a table without `drv_status` are not measurements; a stated status
+// RCLI-REQ-0023: zeros of a table without `drv_status` are not measurements; a stated status
 // is reported as recorded.
 #[test]
 fn design_rule_counts_without_status_are_unchecked() {

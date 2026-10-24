@@ -11,6 +11,43 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 
 | Requirement | Specification | Cited by |
 |---|---|---|
+| AIGER-REQ-0001 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0002 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0010 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0011 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0012 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0013 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0020 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0021 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0022 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0023 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0024 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0030 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0031 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| AIGER-REQ-0032 | docs/specs/aiger/README.md | crates/formats/rusteda-formats/src/aiger/mod.rs<br>crates/formats/rusteda-formats/src/aiger/read.rs<br>crates/formats/rusteda-formats/tests/aiger_reader.rs |
+| BLIF-REQ-0001 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0002 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/flatten.rs<br>crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0003 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0010 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/lex.rs<br>crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0011 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0020 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0021 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0022 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/flatten.rs<br>crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0023 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0030 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0031 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0032 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0033 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0034 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/flatten.rs<br>crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0040 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/flatten.rs<br>crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0041 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/flatten.rs<br>crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0042 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/flatten.rs<br>crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0050 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0051 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0052 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/src/blif/parse.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0060 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/flatten.rs<br>crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0061 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
+| BLIF-REQ-0062 | docs/specs/blif/README.md | crates/formats/rusteda-formats/src/blif/mod.rs<br>crates/formats/rusteda-formats/tests/blif_reader.rs |
 | CLI-REQ-0001 | docs/specs/cli/README.md | crates/apps/ruststa-cli/src/lib.rs<br>crates/apps/ruststa-cli/tests/cli_contract.rs |
 | CLI-REQ-0002 | docs/specs/cli/README.md | crates/apps/ruststa-cli/tests/cli_contract.rs |
 | CLI-REQ-0003 | docs/specs/cli/README.md | crates/apps/ruststa-cli/tests/cli_contract.rs |
@@ -85,7 +122,7 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | CORE-REQ-0134 | docs/specs/core/netlist.md | crates/core/rusteda-core/src/netlist/frozen.rs<br>crates/core/rusteda-core/src/netlist/tests_frozen.rs |
 | CORE-REQ-0135 | docs/specs/core/netlist.md | crates/core/rusteda-core/src/netlist/frozen.rs<br>crates/core/rusteda-core/src/netlist/tests.rs<br>crates/core/rusteda-core/src/netlist/tests_frozen.rs<br>crates/core/rusteda-core/src/netlist/validate.rs |
 | CORE-REQ-0136 | docs/specs/core/netlist.md | crates/core/rusteda-core/src/netlist/frozen.rs<br>crates/core/rusteda-core/src/netlist/tests.rs<br>crates/core/rusteda-core/src/netlist/tests_frozen.rs |
-| CORE-REQ-0137 | docs/specs/core/netlist.md | crates/core/rusteda-core/src/netlist/frozen.rs<br>crates/core/rusteda-core/src/netlist/tests_frozen.rs<br>crates/core/rusteda-core/src/netlist/validate.rs |
+| CORE-REQ-0137 | docs/specs/core/netlist.md | crates/core/rusteda-core/src/netlist/frozen.rs<br>crates/core/rusteda-core/src/netlist/tests_frozen.rs<br>crates/core/rusteda-core/src/netlist/validate.rs<br>crates/formats/rusteda-formats/src/verilog/netlist/freeze_writer.rs |
 | CORE-REQ-0138 | docs/specs/core/netlist.md | crates/core/rusteda-core/src/netlist/frozen.rs<br>crates/core/rusteda-core/src/netlist/tests_frozen.rs |
 | JOB-REQ-0001 | docs/specs/core/README.md | crates/core/rusteda-core/src/job.rs |
 | JOB-REQ-0002 | docs/specs/core/README.md | crates/core/rusteda-core/src/job.rs |
@@ -185,7 +222,10 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | RCLI-REQ-0018 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/lib.rs<br>crates/apps/rusteda-cli/src/revert.rs<br>crates/apps/rusteda-cli/tests/cli_contract.rs |
 | RCLI-REQ-0019 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/import_netlist.rs<br>crates/apps/rusteda-cli/src/import_netlist/fast.rs<br>crates/apps/rusteda-cli/tests/import_netlist.rs |
 | RCLI-REQ-0020 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/export.rs<br>crates/apps/rusteda-cli/tests/export_netlist.rs |
-| RCLI-REQ-0021 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/query.rs<br>crates/apps/rusteda-cli/tests/show_drv.rs |
+| RCLI-REQ-0021 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/import_logic.rs<br>crates/apps/rusteda-cli/src/import_rtl.rs<br>crates/apps/rusteda-cli/tests/import_logic.rs |
+| RCLI-REQ-0022 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/import_logic.rs<br>crates/apps/rusteda-cli/src/import_rtl.rs<br>crates/apps/rusteda-cli/tests/import_logic.rs |
+| RCLI-REQ-0023 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/query.rs<br>crates/apps/rusteda-cli/tests/show_drv.rs |
+| RCLI-REQ-0024 | docs/specs/rusteda-cli/README.md | crates/apps/rusteda-cli/src/import.rs<br>crates/apps/rusteda-cli/src/import_netlist.rs<br>crates/apps/rusteda-cli/src/lib.rs<br>crates/apps/rusteda-cli/tests/import_netlist.rs |
 | RCLI-REQ-0070 | docs/specs/rusteda-cli/spef.md | crates/apps/rusteda-cli/src/import_spef.rs<br>crates/apps/rusteda-cli/tests/import_spef.rs<br>crates/apps/ruststa-cli/tests/signoff_cli.rs |
 | RCLI-REQ-0071 | docs/specs/rusteda-cli/spef.md | crates/apps/rusteda-cli/src/import_spef.rs<br>crates/formats/rusteda-formats/src/spef/tests.rs |
 | RCLI-REQ-0072 | docs/specs/rusteda-cli/spef.md | crates/apps/rusteda-cli/src/import_spef.rs<br>crates/formats/rusteda-formats/src/spef/tests.rs |
@@ -434,7 +474,7 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | STA-REQ-0831 | docs/specs/sta/limits.md | crates/apps/ruststa-cli/src/holdfix.rs<br>crates/apps/ruststa-cli/tests/signoff_cli.rs |
 | STA-REQ-0832 | docs/specs/sta/limits.md | crates/apps/ruststa-cli/src/holdfix.rs<br>crates/apps/ruststa-cli/tests/signoff_cli.rs |
 | VERILOG-REQ-0001 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/lex.rs<br>crates/formats/rusteda-formats/src/verilog/number.rs<br>crates/formats/rusteda-formats/src/verilog/token.rs |
-| VERILOG-REQ-0002 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/lex.rs<br>crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/span.rs |
+| VERILOG-REQ-0002 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/lex.rs<br>crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/span.rs<br>crates/formats/rusteda-formats/tests/verilog_parse_design.rs |
 | VERILOG-REQ-0100 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/ast.rs<br>crates/formats/rusteda-formats/src/verilog/ast/stmt.rs<br>crates/formats/rusteda-formats/src/verilog/parse/mod.rs<br>crates/formats/rusteda-formats/tests/verilog_parse_design.rs |
 | VERILOG-REQ-0101 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/parse/mod.rs |
 | VERILOG-REQ-0102 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/lex.rs<br>crates/formats/rusteda-formats/src/verilog/parse/stmt.rs<br>crates/formats/rusteda-formats/src/verilog/token.rs |
@@ -449,18 +489,18 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | VERILOG-REQ-0205 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/pp.rs |
 | VERILOG-REQ-0206 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/mod.rs<br>crates/formats/rusteda-formats/src/verilog/pp.rs |
 | VERILOG-REQ-0300 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/netlist/tests.rs<br>crates/formats/rusteda-formats/src/verilog/write.rs |
-| VERILOG-REQ-0301 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/netlist/tests.rs<br>crates/formats/rusteda-formats/src/verilog/write.rs |
+| VERILOG-REQ-0301 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/netlist/freeze_writer.rs<br>crates/formats/rusteda-formats/src/verilog/netlist/tests.rs<br>crates/formats/rusteda-formats/src/verilog/write.rs |
 | VERILOG-REQ-0302 | docs/specs/verilog/verilog.md | crates/formats/rusteda-formats/src/verilog/write.rs |
 | VERILOG-REQ-0310 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
 | VERILOG-REQ-0311 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
 | VERILOG-REQ-0312 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
 | VERILOG-REQ-0313 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
 | VERILOG-REQ-0314 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
-| VERILOG-REQ-0315 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
+| VERILOG-REQ-0315 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/netlist/freeze_writer.rs |
 | VERILOG-REQ-0316 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
-| VERILOG-REQ-0317 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
+| VERILOG-REQ-0317 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/netlist/freeze_writer.rs |
 | VERILOG-REQ-0318 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
-| VERILOG-REQ-0319 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs |
+| VERILOG-REQ-0319 | docs/specs/verilog/netlist.md | crates/formats/rusteda-formats/src/verilog/netlist.rs<br>crates/formats/rusteda-formats/src/verilog/netlist/freeze_writer.rs |
 | WS-REQ-0001 | docs/specs/workspace/README.md | crates/apps/rusteda-cli/src/init.rs<br>crates/core/rusteda-workspace/src/workspace.rs<br>crates/core/rusteda-workspace/tests/workspace.rs |
 | WS-REQ-0002 | docs/specs/workspace/README.md | crates/core/rusteda-workspace/src/workspace.rs<br>crates/core/rusteda-workspace/tests/workspace.rs |
 | WS-REQ-0003 | docs/specs/workspace/README.md | crates/core/rusteda-workspace/src/workspace.rs<br>crates/core/rusteda-workspace/tests/workspace.rs |
@@ -560,19 +600,22 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | WS-REQ-0135 | docs/specs/workspace/sta.md | crates/core/rusteda-workspace/src/sta.rs<br>crates/core/rusteda-workspace/src/sta/build.rs<br>crates/core/rusteda-workspace/src/sta/layout.rs<br>crates/core/rusteda-workspace/src/sta/tests.rs<br>crates/core/rusteda-workspace/tests/sta.rs |
 | WS-REQ-0136 | docs/specs/workspace/sta.md | crates/core/rusteda-workspace/src/sta.rs<br>crates/core/rusteda-workspace/src/sta/tests.rs |
 | WS-REQ-0137 | docs/specs/workspace/sta.md | crates/core/rusteda-workspace/src/sta/build.rs |
+| WS-REQ-0190 | docs/specs/workspace/README.md | crates/apps/rusteda-cli/tests/import_logic.rs<br>crates/core/rusteda-workspace/src/envelope.rs<br>crates/core/rusteda-workspace/src/envelope_tests.rs |
 
 | Prefix | Requirements | Without a citing test or source |
 |---|---|---|
+| AIGER | 14 | 0 |
+| BLIF | 23 | 0 |
 | CLI | 18 | 0 |
 | COMPUTE | 32 | 0 |
 | CORE | 26 | 0 |
 | JOB | 7 | 0 |
 | LIBERTY | 49 | 0 |
 | PROTO | 23 | 0 |
-| RCLI | 27 | 0 |
+| RCLI | 30 | 0 |
 | SDC | 56 | 0 |
 | STA | 184 | 0 |
 | VERILOG | 28 | 0 |
-| WS | 99 | 0 |
+| WS | 100 | 0 |
 
-549 requirements, 0 without a citing test or source.
+590 requirements, 0 without a citing test or source.

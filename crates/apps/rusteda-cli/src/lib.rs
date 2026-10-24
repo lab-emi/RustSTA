@@ -7,6 +7,7 @@
 mod export;
 mod import;
 mod import_lib;
+mod import_logic;
 mod import_netlist;
 mod import_rtl;
 mod import_sdc;
@@ -165,7 +166,7 @@ pub struct ImportArgs {
     /// Corner name for the preceding `--lib` (default `"default"`).
     #[arg(long = "corner", action = clap::ArgAction::Append, value_name = "NAME")]
     pub corners: Vec<String>,
-    /// Verilog/SystemVerilog RTL source files.
+    /// RTL source files: Verilog/SystemVerilog, or BLIF (`.blif`) or AIGER (`.aag`, `.aig`).
     #[arg(long = "rtl", num_args = 1.., action = clap::ArgAction::Append, value_name = "FILE")]
     pub rtl: Vec<PathBuf>,
     /// Top module name for `--rtl`.
@@ -186,6 +187,10 @@ pub struct ImportArgs {
     /// Structural gate-level Verilog netlist file.
     #[arg(long = "netlist", value_name = "FILE")]
     pub netlist: Option<PathBuf>,
+    /// Largest `--netlist` file, in MiB, that the full Verilog reader reads when the streaming
+    /// reader declines it (RCLI-REQ-0024).
+    #[arg(long, default_value_t = 64, requires = "netlist", value_name = "MIB")]
+    pub max_netlist_ast_mib: u64,
     /// Synopsys Design Constraints (SDC) files.
     #[arg(long = "sdc", num_args = 1.., action = clap::ArgAction::Append, value_name = "FILE")]
     pub sdc: Vec<PathBuf>,
@@ -772,6 +777,7 @@ pub fn run(args: Vec<OsString>) -> ExitCode {
                 libs,
                 rtl: rtl_args,
                 netlist: imp.netlist.clone(),
+                max_netlist_ast_mib: imp.max_netlist_ast_mib,
                 sdc_files: imp.sdc.clone(),
                 sdc_env: imp.sdc_env.clone(),
                 spefs: imp

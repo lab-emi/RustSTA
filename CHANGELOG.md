@@ -5,6 +5,47 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-24
+
+Shared crates converged with those of the suite's logic synthesis tool: both repositories vendor
+the same 209 shared files with the same `verification/shared.sha256`, and `cargo xtask shared
+diff` finds no difference. The timing engine is unchanged: on the routed dual-library fixture,
+its probes and the sixteen-netlist corpus, every committed table (`netlist`, `constraints`,
+`parasitics`, `sta`, `limits`) equals that of 0.4.0 byte for byte, and so does every command
+output apart from the tool version, the time stamps and the program path.
+
+### Added
+- **BLIF and AIGER readers:** `rusteda_formats::blif` and `rusteda_formats::aiger`
+  (`docs/specs/blif/`, `docs/specs/aiger/`); `rusteda import --rtl` also takes `.blif`, `.aag` and
+  `.aig` files and records their format in `rtl.json` (RCLI-REQ-0021, RCLI-REQ-0022). Their
+  diagnostics keep their letters: `DiagCode::LETTERS` is `ABCDGLSTVW` (WS-REQ-0190).
+- **Streaming netlist export:** `rusteda export --netlist` writes from the validated frozen
+  netlist tables with bounded memory (`EXPORT_BUDGET`) and parallel formatting in source order,
+  without building a mutable netlist; the text is the same as before. The writer can also build
+  frozen tables directly (`verilog::netlist::to_frozen_netlist`, `FrozenBuildLimits`).
+- **Bounded netlist import:** a netlist that the streaming reader cannot take is read by the full
+  reader only up to `rusteda import --max-netlist-ast-mib` (default 64 MiB, RCLI-REQ-0024); a
+  larger one is rejected (`V0300`, naming the budget and the option) instead of being expanded
+  without a bound as in 0.4.0. To read such a file as 0.4.0 did, give a larger budget after
+  estimating the full reader's memory for it.
+
+### Changed
+- The fast flat netlist reader is the synthesis tool's: nested concatenations, at most
+  `MAX_RANGE_WIDTH` bits and 64 nesting levels. A part-select against the declared direction and
+  a decimal constant of more than 32 digits take the full reader instead, with the same result
+  within its budget (see **Bounded netlist import**); above the budget the import is rejected.
+- The requirement of `rusteda show` for summaries without `drv_status` is RCLI-REQ-0023 (it was
+  numbered RCLI-REQ-0021 in 0.4.0, a number the shared specification already gave to BLIF and
+  AIGER import).
+- The external-simulator oracle tests of `rusteda-compute` (ignored by default) read
+  `RUSTEDA_SPICE_SIMULATOR`, `RUSTEDA_RC_ORACLE_WORKSPACE` and `RUSTEDA_RC_WIRE_WORKSPACE`
+  instead of variables named after this repository.
+- `cargo xtask shared` also covers `docs/specs/blif` and `docs/specs/aiger`.
+
+### Fixed
+- The Verilog lexer read a `:` followed directly by a comment (`2'b01:// x`) as the operator
+  `:/`; a comment is whitespace after a case label or a ternary colon.
+
 ## [0.4.0] - 2026-10-23
 
 ### Added

@@ -3,24 +3,35 @@
 
 //! Workspace table export (`rusteda export --netlist`; RCLI-REQ-0001, RCLI-REQ-0008, RCLI-REQ-0020).
 
+#[cfg(test)]
 use std::collections::HashMap;
+#[cfg(test)]
 use std::fmt::Write as _;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::{BufWriter, Write as _};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(test)]
 use rusteda_core::names::unescape;
+#[cfg(test)]
 use rusteda_core::netlist::{Conn, GateNetlist, NetId, PortDir};
+#[cfg(test)]
 use rusteda_formats::verilog::netlist::from_gate_netlist;
+#[cfg(test)]
 use rusteda_formats::verilog::write::{ident, write_netlist};
 use rusteda_workspace::text::next_line;
 use rusteda_workspace::{Envelope, Error, JsonObject, Workspace, netlist};
 
 use crate::OutputOutcome;
 
+mod frozen;
+
 /// Formats a [`GateNetlist`] as structural Verilog text, using [`from_gate_netlist`] and
 /// [`write_netlist`] when the module uses `[w-1:0]` input/output ports and wires, and falling back
 /// to direct `ident`-escaped rendering when the netlist has `inout` ports or general `[msb:lsb]`
 /// bus ranges (`RCLI-REQ-0020`).
+#[cfg(test)]
 fn format_gate_netlist(g: &GateNetlist) -> Result<String, Error> {
     if let Ok(m) = from_gate_netlist(g) {
         return Ok(write_netlist(&m));
@@ -190,15 +201,57 @@ pub(crate) fn run_export(
 ) -> Result<OutputOutcome, Error> {
     let rev = ws.resolve_query(rev_spec)?;
     let revision = ws.revision(rev)?;
-    let g = netlist::thaw_rev(&revision)?;
-    let text = format_gate_netlist(&g)?;
+    let limits = frozen::Limits::default();
+    let table_path = revision.table_path(netlist::TABLE_NAME)?;
+    if fs::metadata(&table_path)
+        .map_err(|e| Error::io(&table_path, e))?
+        .len()
+        > limits.max_table_bytes
+    {
+        return Err(Error::input_rejected(
+            "EXPORT_BUDGET: netlist table exceeds the export byte limit",
+        ));
+    }
+    let rbin = netlist::open_rev(&revision)?;
+    let f = netlist::decode(&rbin)?;
+    let plan = frozen::Plan::new(&f, limits)?;
 
     if let Some(parent) = out_file.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
         }
     }
-    fs::write(out_file, text.as_bytes()).map_err(|e| Error::io(out_file, e))?;
+    let parent = out_file
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let pending = parent.join(format!(
+        ".rusteda-export-{}-{nonce}.tmp",
+        std::process::id()
+    ));
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&pending)
+        .map_err(|e| Error::io(&pending, e))?;
+    let mut writer = BufWriter::with_capacity(1024 * 1024, file);
+    let written = plan
+        .write(&mut writer)
+        .and_then(|()| writer.flush())
+        .and_then(|()| writer.get_ref().sync_all());
+    drop(writer);
+    if let Err(e) = written {
+        let _ = fs::remove_file(&pending);
+        return Err(Error::io(out_file, e));
+    }
+    if let Err(e) = fs::rename(&pending, out_file) {
+        let _ = fs::remove_file(&pending);
+        return Err(Error::io(out_file, e));
+    }
 
     let out_str = out_file.display().to_string();
     let mut env = Envelope::new("rusteda export");
@@ -206,9 +259,9 @@ pub(crate) fn run_export(
     env.rev = Some(rev);
 
     let mut metrics = JsonObject::new();
-    metrics.insert("instances", &g.instance_count())?;
-    metrics.insert("nets", &g.net_count())?;
-    metrics.insert("ports", &g.ports().len())?;
+    metrics.insert("instances", &f.instances.len())?;
+    metrics.insert("nets", &f.nets.len())?;
+    metrics.insert("ports", &f.ports.len())?;
     env.set_metrics(metrics)?;
 
     env.set("table", &netlist::TABLE_NAME)?;

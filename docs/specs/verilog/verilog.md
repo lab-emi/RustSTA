@@ -131,4 +131,3 @@ and `assign` statements whose right-hand side is a net, a bit of a net, or the c
 
 See [netlist.md](netlist.md) for the structural netlist reader and `GateNetlist` conversion
 (`VERILOG-REQ-0310` to `VERILOG-REQ-0319`).
-

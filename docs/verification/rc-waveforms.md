@@ -31,9 +31,9 @@ They require an explicit simulator path and evidence directory; an absent tool
 cannot produce a pass. External cases, logs and measurements remain local.
 
 ```sh
-RUSTSTA_NGSPICE=/path/to/ngspice \
-RUSTSTA_RC_ORACLE_WORKSPACE=work/driver-oracle \
-RUSTSTA_RC_WIRE_WORKSPACE=work/wire-oracle \
+RUSTEDA_SPICE_SIMULATOR=/path/to/ngspice \
+RUSTEDA_RC_ORACLE_WORKSPACE=work/driver-oracle \
+RUSTEDA_RC_WIRE_WORKSPACE=work/wire-oracle \
 RUST_TEST_THREADS=2 cargo test -p rusteda-compute --test rc_transient -- --ignored
 ```
 

@@ -410,12 +410,14 @@ fn diagnostic_json() {
     assert_eq!(Severity::parse("fatal"), None);
 }
 
-// WS-REQ-0094 (review CR2-7): a diagnostic code is a letter of the contract's areas and
-// four digits; nothing else becomes a DiagCode, so no envelope or text line carries one.
+// WS-REQ-0094 (review CR2-7), WS-REQ-0190: a diagnostic code is a letter of the contract's
+// areas (BLIF and AIGER readers included) and four digits; nothing else becomes a DiagCode, so
+// no envelope or text line carries one.
 #[test]
 fn diagnostic_codes_are_checked() {
+    assert_eq!(DiagCode::LETTERS, "ABCDGLSTVW");
     for good in [
-        "A0003", "C0001", "D0002", "L0003", "S0004", "T0007", "V0100", "W0101",
+        "A0003", "B0001", "C0001", "D0002", "G0010", "L0003", "S0004", "T0007", "V0100", "W0101",
     ] {
         let code = DiagCode::parse(good).unwrap();
         assert_eq!(code.as_str(), good);

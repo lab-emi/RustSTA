@@ -270,4 +270,3 @@ and the minimum period at the pin. They add no timing arc, so the arcs of a pin 
 `timing` groups (LIBERTY-REQ-0019). A negative or non-finite value is a pin limit problem (`L0204`,
 LIBERTY-REQ-0057) and is not kept. The compiled library carries them from format version 4
 (WS-REQ-0117) [@liberty2017].
-

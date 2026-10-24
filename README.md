@@ -32,7 +32,7 @@ workspaces. Part of the **RustEDA** family.
 - **Choose how to compute:** deterministic pure Rust CPU propagation in f64; optional native CUDA with CPU differential checks.
 - **Keep the evidence:** independent checker and full-rerun modes, analytic fixtures, incremental consistency tests, and pinned Sky130/GF180 libraries.
 
-> **Development preview:** version 0.4.0 is unreleased and is not on crates.io.
+> **Development preview:** version 0.4.1 is unreleased and is not on crates.io.
 > Build from source. Linux is the CI baseline. Read the
 > [analysis scope](docs/reference/scope.md) and [verification limits](docs/verification/index.md)
 > before interpreting a timing result.
@@ -56,7 +56,7 @@ export PATH="$PWD/target/release:$PATH"
 
 ```console
 $ ruststa --version
-ruststa 0.4.0 (backends: cpu)
+ruststa 0.4.1 (backends: cpu)
 ```
 
 From the repository root, analyze the bundled eight-cell chain in a fresh workspace:
