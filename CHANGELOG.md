@@ -5,6 +5,64 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-24
+
+Extracted nets whose RC network is not a tree. Version 0.4.2 refused the whole timing run on two
+reference-extracted routed designs of the suite (a sky130 ALU: a sink via with no resistor path to
+the rest of its net; a gf180 register file: two parallel resistors on one pin). Both are now
+timed, and their endpoints agree with the reference timing tool within 0.62 and 0.67 ps at three
+corners. Every net that is a tree is timed bit for bit as before: on 44 routed cases (the 32 cases
+of 0.4.2's comparison, six of the dual-library fixture and six further extractions of the final
+layouts of the two designs) every command output and every committed table equals that of 0.4.2
+after normalizing the version.
+
+### Changed
+- **Resistor loops (STA-REQ-0730):** a net with resistor loops (after zero-resistance
+  contraction; two parallel resistors are a loop) is solved on its nodal conductance system
+  instead of being rejected. The first moments solve `G tau = C` exactly in f64 (spanning tree
+  passes, the Woodbury identity and a Cholesky factor of the `k x k` loop resistance matrix, a
+  Kirchhoff residual check with refinement), and the driving-point pi takes the admittance
+  coefficients `sum C`, `sum C*tau`, `sum C*tau^2`. Scratch and work are bounded by
+  `--max-state-gib`; no loop or path is enumerated. Note `T0152` counts the loops per corner.
+  Against an external nodal simulator the moments agree to 3e-15 and the modelled sink arrivals
+  of planted loops to 0.08 ps; against transistor-level transients of both default PDKs'
+  `buf_1` the wire delays agree within 0.2 ps, where the reference timing tool, which times a
+  loop as a tree without some of its resistors, is 4 to 29 ps off.
+- **Components without a resistor path to the driver (STA-REQ-0731):** such a part of a net is
+  joined to the driver with zero resistance instead of rejecting the net. Its capacitance loads
+  the driver, its sinks get no wire delay (a lower bound), and warning `T0151` per corner counts
+  the nets, components, nodes, pins and capacitance and names the first net and its members. The
+  reference timing tool also gives such sinks no wire delay but drops the component's
+  capacitance from the driver's load.
+- **Binding (STA-REQ-0732, replaces STA-REQ-0703):** the binding no longer rejects cycles and
+  disconnected RC nodes; complete annotation, one driver and the connection checks are
+  unchanged.
+- A resistor whose two ends are one zero-resistance node carries no current and is ignored
+  (counted in `T0152`); 0.4.2 rejected it as a loop.
+
+### Added
+- `Spef::topology` (`RcTopology`) with the counts behind `T0151` and `T0152`.
+- `tests/rc_mesh_spice.rs` (ignored by default): operating points and transients of an external
+  nodal simulator on five planted networks with and without loops.
+- The incremental-versus-full and CPU-versus-CUDA tests of extracted RC also run networks with
+  loops and with unconnected parts.
+
+### Performance
+- End-to-end `ruststa run` (three corners, two threads, median of seven sequential runs on a
+  shared machine) is unchanged on tree-only designs (0.178 s vs 0.180 s on a GF180 transmitter,
+  0.488 s vs 0.479 s on a GF180 register file, 0.390 s vs 0.410 s on a sky130 multiplier); peak
+  memory is unchanged (within 0.6 %). A net with `k` loops adds `8 (k^2 + k + 5 n)` bytes of
+  scratch while it is reduced.
+
+### Known differences
+- On networks with resistor loops the reference timing tool's delays differ from the solved
+  network (and from the circuit) by up to 29 ps on the planted probes; on the extracted nets
+  seen so far the only loops are parallel resistors of about 0.1 Ohm, where both agree to
+  0.0001 ps.
+- The reference timing tool removes the capacitance of a component without a resistor path from
+  its driver's load; RustSTA keeps it, so the driver's delay can be larger by the effect of that
+  capacitance.
+
 ## [0.4.2] - 2026-10-24
 
 Effective capacitance and wire response of extracted RC nets. On the final layouts of eight

@@ -1,9 +1,9 @@
 [[suite]]
 name = "sta-extracted-rc"
-requirement = ["STA-REQ-0700", "STA-REQ-0701", "STA-REQ-0702", "STA-REQ-0703", "STA-REQ-0704", "STA-REQ-0705", "STA-REQ-0706", "STA-REQ-0707", "STA-REQ-0708", "STA-REQ-0710", "STA-REQ-0711", "STA-REQ-0712", "STA-REQ-0713"]
+requirement = ["STA-REQ-0700", "STA-REQ-0701", "STA-REQ-0702", "STA-REQ-0703", "STA-REQ-0704", "STA-REQ-0705", "STA-REQ-0706", "STA-REQ-0707", "STA-REQ-0708", "STA-REQ-0710", "STA-REQ-0711", "STA-REQ-0712", "STA-REQ-0713", "STA-REQ-0730", "STA-REQ-0731", "STA-REQ-0732"]
 test = "crates/engines/ruststa/tests/extracted.rs"
 cases = "verification/fixtures/synthetic/spef"
-description = "Bounded detailed parasitics, typed-input validation, loads, zero resistance, full versus incremental ECO checks and propagated primary clocks. External acceptance uses the bounded nodal first-moment and dual-library harness documented with parasitic timing."
+description = "Bounded detailed parasitics, typed-input validation, loads, zero resistance, resistor loops, components without a resistor path to the driver, full versus incremental ECO checks and propagated primary clocks. External acceptance uses the bounded nodal first-moment and dual-library harness documented with parasitic timing."
 
 [[suite]]
 name = "rc-waveforms"

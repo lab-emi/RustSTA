@@ -763,14 +763,11 @@ fn setup_corner<'l>(
                 "an explicit wire model cannot override extracted parasitics",
             ));
         }
-        wire_model = ResolvedWireModel::Extracted(Spef::bind(
-            &input.data,
-            netview,
-            lib,
-            &load_overrides,
-            options.max_state_bytes,
-        )?);
+        let max = options.max_state_bytes;
+        let bound = Spef::bind(&input.data, netview, lib, &load_overrides, max)?;
         diags.clear();
+        diags.extend(bound.topology().diagnostics(corner_name));
+        wire_model = ResolvedWireModel::Extracted(bound);
         if input.data.coupling_records > 0 {
             diags.push(Diag::warning(
                 "T0074",

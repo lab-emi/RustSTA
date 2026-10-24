@@ -3,8 +3,11 @@
 
 //! Physical RC binding, Elmore moments and passive pi loads (STA-REQ-0702 to STA-REQ-0706).
 //! Bounded waveform lowering adds charge-matched loads and threshold/slew response.
-//! Grounded coupling only; no CCS or crosstalk claim.
+//! Grounded coupling only; no CCS or crosstalk claim. Resistor loops are solved on the nodal
+//! conductance system (STA-REQ-0730); components without a resistive path to the driver join it
+//! (STA-REQ-0731).
 
+mod mesh;
 mod tree;
 
 use super::load::{NetLoadOverrides, map_netlist_cell_pins};
@@ -33,6 +36,74 @@ pub struct Spef {
     pi_loads: Vec<[DriverLoad; 4]>,
     primary: Vec<bool>,
     thresholds: crate::engine::input::libview::CornerThresholds,
+    topology: RcTopology,
+}
+
+/// The extracted networks of one binding that are not plain trees (STA-REQ-0730,
+/// STA-REQ-0731).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RcTopology {
+    /// Nets with at least one resistor loop, and their independent loops.
+    pub mesh_nets: usize,
+    pub loops: usize,
+    /// Resistors whose two ends are one zero-resistance node; they carry no current.
+    pub shorted_resistors: usize,
+    /// The first net with a loop, in source order.
+    pub first_mesh: Option<String>,
+    /// Nets with components joined to their driver, the components, their RC nodes and the
+    /// netlist pins among them.
+    pub detached_nets: usize,
+    pub detached_components: usize,
+    pub detached_nodes: usize,
+    pub detached_pins: usize,
+    /// Extracted (ground and grounded coupling) capacitance of the joined components, pF.
+    pub detached_wire_pf: f64,
+    /// The first net with a joined component and the members of its first component.
+    pub first_detached: Option<String>,
+}
+
+/// Members of joined components named in [`RcTopology::first_detached`].
+const NAMED_MEMBERS: usize = 8;
+
+impl RcTopology {
+    /// The diagnostics of this binding at `corner`: warning `T0151` for joined components and
+    /// note `T0152` for solved loops and shorted resistors, each aggregated with a count and
+    /// the first net (Rule 7.1).
+    pub fn diagnostics(&self, corner: &str) -> Vec<Diag> {
+        let mut out = Vec::new();
+        if self.detached_components > 0 {
+            out.push(Diag::warning(
+                "T0151",
+                format!(
+                    "corner {corner}: {} RC component(s) ({} node(s), {} pin(s), {:.6e} pF \
+                     extracted capacitance) in {} net(s) have no resistor path to their driver; \
+                     joined to the driver with zero resistance: their capacitance loads the \
+                     driver and their sinks get zero wire delay (a lower bound); first: {}",
+                    self.detached_components,
+                    self.detached_nodes,
+                    self.detached_pins,
+                    self.detached_wire_pf,
+                    self.detached_nets,
+                    self.first_detached.as_deref().unwrap_or("-"),
+                ),
+            ));
+        }
+        if self.mesh_nets > 0 || self.shorted_resistors > 0 {
+            out.push(Diag::note(
+                "T0152",
+                format!(
+                    "corner {corner}: {} independent resistor loop(s) in {} net(s) solved on \
+                     the nodal conductance system (first: {}); {} resistor(s) shorted by zero \
+                     resistance carry no current",
+                    self.loops,
+                    self.mesh_nets,
+                    self.first_mesh.as_deref().unwrap_or("-"),
+                    self.shorted_resistors,
+                ),
+            ));
+        }
+        out
+    }
 }
 
 pub(super) fn error(message: impl Into<String>) -> Diag {
@@ -71,7 +142,7 @@ fn canonical(raw: &str, source: &format::Spef, pin: bool) -> String {
 }
 
 impl Spef {
-    /// Bind and validate the entire extraction; missing annotation is an error.
+    /// Bind and validate the entire extraction; missing annotation is an error (STA-REQ-0732).
     pub fn bind(
         source: &format::Spef,
         view: &NetlistView<'_>,
@@ -125,6 +196,13 @@ impl Spef {
             pi_loads: vec![[DriverLoad::Lumped { c: 0.0 }; 4]; view.num_nets()],
             primary: vec![false; view.num_nets()],
             thresholds: lib.thresholds,
+            topology: RcTopology::default(),
+        };
+        // Scratch of one net's loop solve comes out of the state budget left after the
+        // estimate; its work is bounded like the waveform preparation (STA-REQ-0730).
+        let budget = tree::Budget {
+            bytes: max_state_bytes - estimate,
+            work: max_state_bytes.saturating_mul(8),
         };
         let mut annotated = BTreeSet::new();
         let pin_map = map_netlist_cell_pins(view.frozen(), lib);
@@ -219,7 +297,56 @@ impl Spef {
                     }
                 }
             }
-            let reduced = tree::reduce(net, root, &caps)?;
+            let reduced = tree::reduce(net, root, &caps, budget)?;
+            let topology = &mut result.topology;
+            if reduced.loops > 0 {
+                topology.mesh_nets += 1;
+                topology.loops += reduced.loops;
+                topology.first_mesh.get_or_insert_with(|| name.clone());
+            }
+            topology.shorted_resistors += reduced.shorted;
+            if !reduced.detached.is_empty() {
+                let pins: BTreeMap<u32, NodeId> =
+                    connections.iter().map(|&(id, node)| (node, id)).collect();
+                topology.detached_nets += 1;
+                topology.detached_components += reduced.detached.len();
+                for component in &reduced.detached {
+                    topology.detached_nodes += component.len();
+                    for &node in component {
+                        topology.detached_wire_pf += net.nodes[node as usize].cap_pf;
+                        topology.detached_pins += usize::from(pins.contains_key(&node));
+                    }
+                }
+                if topology.first_detached.is_none() {
+                    let mut named = 0;
+                    let mut groups = Vec::new();
+                    for component in &reduced.detached {
+                        let mut members = Vec::new();
+                        for &node in component {
+                            if named == NAMED_MEMBERS {
+                                break;
+                            }
+                            named += 1;
+                            members.push(match pins.get(&node) {
+                                Some(&id) => format!("pin {}", view.node_name(id)),
+                                None => format!("node {}", net.nodes[node as usize].name),
+                            });
+                        }
+                        if !members.is_empty() {
+                            groups.push(format!("{{{}}}", members.join(", ")));
+                        }
+                    }
+                    let total: usize = reduced.detached.iter().map(Vec::len).sum();
+                    if total > named {
+                        groups.push(format!("{} more node(s)", total - named));
+                    }
+                    topology.first_detached = Some(format!(
+                        "net {name} ({} component(s)): {}",
+                        reduced.detached.len(),
+                        groups.join(" ")
+                    ));
+                }
+            }
             let delays = reduced.delays;
             result.pi_loads[row.index()] = reduced.pi.map(|p| DriverLoad::Pi {
                 c_near: p.near,
@@ -246,6 +373,13 @@ impl Spef {
             }
         }
         Ok(result)
+    }
+}
+
+impl Spef {
+    /// The non-tree networks of this binding (STA-REQ-0730, STA-REQ-0731).
+    pub fn topology(&self) -> &RcTopology {
+        &self.topology
     }
 }
 

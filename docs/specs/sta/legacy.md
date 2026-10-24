@@ -218,6 +218,20 @@ design rule with an ideal clock is `partial` or `unchecked`, never `met`. The ne
 the pins behind clock buffers, inverters and gaters and the data pins that the clock reaches, as
 observed of a reference timing tool. Their pulse checks follow STA-REQ-0815.
 
+## Superseded RC binding (replaced in version 0.4.3 by STA-REQ-0732)
+
+The rule below rejected every net whose RC network, after zero-resistance contraction, had a
+resistor loop or a node without a resistor path to the driver. Real extractions have both (two
+parallel resistors on one pin, a via of a sink pin left unconnected), and the nets could not be
+timed at all. STA-REQ-0732 binds them; STA-REQ-0730 solves the loops and STA-REQ-0731 joins the
+unconnected components to the driver. The other parts of the rule are unchanged.
+
+**STA-REQ-0703**: Bind every SPEF connection to the imported design and verify
+  its direction and net. Require complete annotation of driven, loaded signal
+  nets and exactly one driver. Reject cycles and disconnected RC nodes, with
+  zero-resistance edges contracted before tree checks. Never substitute ideal
+  or estimated wires for missing extracted data.
+
 ## Superseded RC driver resistance (replaced in version 0.4 by STA-REQ-0726, 0727)
 
 The rule below estimated the Thevenin resistance of the RC driver from the central delay

@@ -410,7 +410,7 @@ checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
 
 [[package]]
 name = "rusteda-cli"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "clap",
  "clap_complete",
@@ -426,7 +426,7 @@ dependencies = [
 
 [[package]]
 name = "rusteda-compute"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "bytemuck",
  "cudarc",
@@ -436,7 +436,7 @@ dependencies = [
 
 [[package]]
 name = "rusteda-core"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "bytemuck",
  "rustc-hash",
@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "rusteda-formats"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "flate2",
  "rayon",
@@ -457,7 +457,7 @@ dependencies = [
 
 [[package]]
 name = "rusteda-workspace"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "bytemuck",
  "memmap2",
@@ -483,7 +483,7 @@ dependencies = [
 
 [[package]]
 name = "ruststa"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "bytemuck",
  "rayon",
@@ -501,7 +501,7 @@ dependencies = [
 
 [[package]]
 name = "ruststa-check"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "rusteda-core",
  "rusteda-formats",
@@ -512,7 +512,7 @@ dependencies = [
 
 [[package]]
 name = "ruststa-cli"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "bytemuck",
  "clap",
@@ -533,7 +533,7 @@ dependencies = [
 
 [[package]]
 name = "ruststa-fixtures"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "rusteda-core",
  "rusteda-formats",
@@ -699,7 +699,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "ruststa-fixtures",
 ]

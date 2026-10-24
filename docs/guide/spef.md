@@ -50,9 +50,12 @@ names are resolved against the netlist. Names, directions and all required
 connections must agree.
 
 Reduced nets, inductance, value triplets, included pin capacitances and unknown
-semantic attributes are explicit errors. RC meshes and disconnected nodes are
-rejected by the timing consumer; zero-resistance edges are contracted before
-checking the tree. Symlinks, FIFOs and devices are not accepted as source files.
+semantic attributes are explicit errors. The timing consumer contracts
+zero-resistance edges, solves resistor loops (parallel resistors included) on the
+nodal conductance system and notes them (`T0152`), and joins a part of a net
+that has no resistor path to its driver to the driver with zero resistance:
+its capacitance stays on the net, its sinks get no wire delay, and warning
+`T0151` names the net and the part. Symlinks, FIFOs and devices are not accepted as source files.
 
 The default budgets are:
 

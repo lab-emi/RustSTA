@@ -78,6 +78,53 @@ Run binaries with an OS memory ceiling and timeout, as in the repository's
 engineering rules. Both evidence directories must be fresh. Native core crates
 have no simulator or Python runtime dependency.
 
+## Networks that are not trees (0.4.3)
+
+Extractions of routed designs contain RC networks that are not trees: two parallel resistors on
+one pin, and the via node of a sink pin that no resistor connects to the rest of the net. Version
+0.4.3 times them (STA-REQ-0730 to STA-REQ-0732) instead of rejecting the net.
+
+`crates/engines/ruststa/tests/rc_mesh_spice.rs` binds five planted networks behind a buffer (a
+tree, a loop between two branches, a loop through the driver node, a parallel resistor and a
+ladder with two loops) and lets Ngspice solve them. Two operating points of the resistor network
+with injected currents give every node's first and second moments; the bound sink moments and
+the driving-point pi agree with them to a relative 3e-15. A transient of the finite-ramp
+Thevenin driver into the full network agrees with the pi and single-pole model within 0.08 ps
+(1.6e-4 of the sink arrival) on every network, as on the tree; the same networks without their
+loop-closing resistors have first moments 19 to 87 % away.
+
+```sh
+RUSTSTA_NGSPICE=/path/to/ngspice RUSTSTA_RC_MESH_WORKSPACE=work/engine-mesh-oracle \
+RUST_TEST_THREADS=2 cargo test -p ruststa --test rc_mesh_spice -- --ignored
+```
+
+The same planted networks behind `buf_1` of both default PDKs at tt were also simulated at
+transistor level (Ngspice 45.2 with the PDK device models; the sinks carry their Liberty pin
+capacitance) and timed by RustSTA and by OpenSTA 3.1.0 from the same Liberty, SDC and SPEF. The
+cell characterization differs from the simulator by a constant per PDK (about -14 ps for sky130,
++91 ps for gf180) that cancels in the wire delay (sink arrival minus driver pin arrival) and in
+the change that a loop makes to an arrival:
+
+| Network | Wire delay error, RustSTA (sky130 / gf180) | Wire delay error, OpenSTA 3.1.0 |
+| --- | --- | --- |
+| tree | 0.26 / 0.16 ps | 0.25 / 0.16 ps |
+| loop between branches | 0.19 / 0.12 ps | 13.1 / 14.7 ps |
+| loop through the driver | 0.19 / 0.12 ps | 4.7 / 5.1 ps |
+| parallel resistor | 0.14 / 0.09 ps | 4.0 / 4.6 ps |
+| ladder with two loops | 0.12 / 0.07 ps | 26.5 / 29.0 ps |
+
+OpenSTA 3.1.0 gives a network with a loop the delays of a tree without some of its resistors: the
+parallel resistor and the loop through the driver leave its delays unchanged, and the loop
+between branches raises the delays it should lower. The specification, checked against the
+circuit, defines the behavior; the difference is a measured comparison (Rule 8.4). On the two extracted nets that 0.4.2 refused (a routed sky130 ALU whose
+input net has a sink via without a resistor path, and a routed gf180 register file whose address
+net has two parallel 0.12 Ohm resistors) the two tools agree to 0.0001 ps on every sink's arrival
+and transition at three corners, and the whole designs stay within the 1 ps endpoint gate (0.62
+and 0.67 ps). For the unconnected sink both give zero wire delay; the suite's own extraction of the
+same net gives it 0.83 ps, which bounds what the missing resistance hides there. OpenSTA 3.1.0
+removes such a component's capacitance, including the sink's pin capacitance, from the driver's
+load; STA-REQ-0731 keeps it.
+
 ## Dual-library endpoint gate
 
 The bounded `verification/rc_waveforms.py` runner imports each real routed

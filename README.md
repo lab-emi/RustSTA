@@ -165,10 +165,12 @@ imports a bounded detailed RC extraction for a previously imported netlist and
 corner. It can also be combined with `--lib`, `--netlist` and `--sdc` in one
 transaction. Run the usual `ruststa run` and `ruststa check --method full` on the
 returned revisions. The scope reports `spef_rc`, `spef` and
-`nldm_ceff_ramp`; missing extraction, meshes and a different corner are errors.
+`nldm_ceff_ramp`; missing extraction and a different corner are errors. Resistor
+loops are solved on the nodal conductance system, and a part of a net without a
+resistor path to its driver joins the driver with warning `T0151`.
 
 Plain text and gzip are accepted under the same encoded/decoded byte cap. CRC
-errors, missing annotation, unsupported RC meshes and budget overruns fail
+errors, missing annotation and budget overruns fail
 explicitly without committing a partial revision. This uses moment-matched pi loads, charge-matched effective capacitance,
 a finite-ramp Thevenin driver and RC threshold/slew propagation, with
 factor-one grounded coupling. Explicit propagated primary clocks are supported; crosstalk and CCS current tables are not. The independent checker currently reports extracted RC as

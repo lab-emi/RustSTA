@@ -10,8 +10,10 @@
   revision transactions.
 - **Detailed parasitics:** bounded plain/gzip SPEF import into `PARASIT v2`,
   one explicit extraction per corner, unit/name mapping, complete net/pin annotation,
-  zero-resistance contraction and RC-tree first moments. Coupling is grounded
-  at factor 1; unsupported meshes and missing annotation are errors.
+  zero-resistance contraction, RC-tree first moments and nodal solutions of
+  resistor loops; a part of a net without a resistor path to its driver joins
+  the driver with warning `T0151`. Coupling is grounded at factor 1; missing
+  annotation is an error.
 - **Liberty timing & wire-load model:** 1D/2D/3D NLDM delay, transition, and constraint tables,
   per-table index overrides, `Table::mid_slew`, rise/fall and min/max pin capacitance ranges,
   driver output-pin capacitance, `three_state` functions and enable/disable arcs, `when` Boolean
@@ -82,7 +84,8 @@ Phase 2b (see [`docs/roadmap.md`](../roadmap.md)):
 - **Extracted model limits:** detailed SPEF uses a moment-matched pi,
   charge-matched effective load, finite-ramp Thevenin driver and one-pole
   receiver threshold/slew model. Driver resistance is an NLDM sensitivity proxy;
-  coupling is grounded. This is not CCS, transistor characterization or crosstalk. General RC meshes and balanced/worst-case
+  coupling is grounded. This is not CCS, transistor characterization or crosstalk. Resistor loops enter
+  through exact first moments and admittance coefficients, as trees do. Balanced/worst-case
   estimated tree wire-load modes remain unsupported. The independent checker
   returns undecided for extracted RC/propagated clocks; full consistency and
   external comparisons are separate evidence.
