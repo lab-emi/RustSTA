@@ -63,7 +63,7 @@ impl EndpointStatus {
 }
 
 /// Aggregated setup, hold, recovery, and removal slacks of one endpoint [`NodeId`]
-/// (`STA-REQ-0211`–`STA-REQ-0214`, `STA-REQ-0225`, `STA-REQ-0313`).
+/// (`STA-REQ-0229`–`STA-REQ-0214`, `STA-REQ-0225`, `STA-REQ-0313`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct EndpointRecord {
     /// Endpoint node in the timing graph.

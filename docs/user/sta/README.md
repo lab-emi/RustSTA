@@ -232,7 +232,18 @@ to a fixpoint (`STA-REQ-0150`–`0157`):
    cell or pin arcs (`DisabledReason::UserExplicit`).
 3. **Unate sense refinement:** when a `non_unate` arc's cell function simplifies under the constant
    side-inputs to purely positive-unate or negative-unate in the arc's input pin, its effective
-   timing sense is refined accordingly (`STA-REQ-0154`).
+   timing sense is refined accordingly (`STA-REQ-0153`); a unate arc whose sense the simplified
+   function contradicts (an `XOR2` arc of the wrong sense next to a tie) is disabled
+   (`STA-REQ-0159`).
+4. **Transitions ignore logic values:** the arcs disabled by constants, case analysis and `when`
+   still carry their output transitions (not arrivals) into their destination pins, tie outputs
+   start at transition 0, and the clock-to-output arcs of unclocked sequential cells carry the
+   transition of their clock pin (`STA-REQ-0116`). Arcs disabled by `set_disable_timing` or
+   cycle breaking carry nothing.
+5. **Latches with a constant enable:** an enable held active makes the latch transparent (late
+   arrivals pass `D -> Q` in their own tags, no hold path passes), held inactive opaque
+   (`STA-REQ-0161`). The `D -> Q` arc keeps the sense of its library arc, also when the latch
+   group stores the inverted data pin (note `T0150`, `STA-REQ-0230`).
 
 ## 5. Clocks, sequential elements, and timing checks
 
@@ -245,7 +256,7 @@ Full specification: [`docs/specs/sta/checks.md`](../../specs/sta/checks.md).
 (`set_clock_transition`), and uncertainty (`set_clock_uncertainty`, with `-from`/`-to` overriding
 per-clock values). When launch and capture clocks have commensurate periods `P_L` and `P_C`, setup
 and hold relations are evaluated over the least common multiple window `L = lcm(P_L, P_C)` (up to
-1,024 edges; `STA-REQ-0211`, `0212`):
+1,024 edges; `STA-REQ-0229`, `0212`):
 
 - **Default setupcapture edge:** for each launch edge at time `t_L`, the closest strictly later
   capture edge `t_C > t_L`.

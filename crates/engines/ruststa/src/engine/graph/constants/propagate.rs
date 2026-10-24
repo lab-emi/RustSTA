@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! Fixed point of the constant propagation (owner: E7; `STA-REQ-0151`, `STA-REQ-0154`).
+//! Fixed point of the constant propagation (owner: E7; `STA-REQ-0151`, `STA-REQ-0161`).
 
 use std::collections::VecDeque;
 

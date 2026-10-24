@@ -274,7 +274,7 @@ pub fn evaluate_all_checks<C: Cppr>(
                             let s_setup = lib.eval_check_tracked(
                                 cell_check,
                                 data_tr,
-                                win.close_slew_late,
+                                win.close_slew_early,
                                 slew_l,
                                 0.0,
                                 range_tracker,
@@ -355,9 +355,9 @@ pub fn evaluate_all_checks<C: Cppr>(
                     else {
                         continue;
                     };
-                    let ck_slew_late = clock_model
-                        .arrival(capture_clock, e_c, ch.clock_pin, ch.edge, An::Late)
-                        .map_or(ck_arr.slew, |a| a.slew);
+                    // The related pin transition is the one of the capture clock path, the
+                    // early analysis of a setup-family check (`STA-REQ-0229`).
+                    let ck_slew = ck_arr.slew;
                     for (tid, tag) in tags.iter() {
                         let (d_s, _) = rel_table.get_or_compute(
                             constraints,
@@ -401,7 +401,7 @@ pub fn evaluate_all_checks<C: Cppr>(
                             let s_setup = lib.eval_check_tracked(
                                 cell_check,
                                 data_tr,
-                                ck_slew_late,
+                                ck_slew,
                                 slew_l,
                                 0.0,
                                 range_tracker,
@@ -443,9 +443,9 @@ pub fn evaluate_all_checks<C: Cppr>(
                     else {
                         continue;
                     };
-                    let ck_slew_early = clock_model
-                        .arrival(capture_clock, e_c, ch.clock_pin, ch.edge, An::Early)
-                        .map_or(ck_arr.slew, |a| a.slew);
+                    // The related pin transition is the one of the capture clock path, the
+                    // late analysis of a hold-family check (`STA-REQ-0229`).
+                    let ck_slew = ck_arr.slew;
                     for (tid, tag) in tags.iter() {
                         let (_, d_h) = rel_table.get_or_compute(
                             constraints,
@@ -489,7 +489,7 @@ pub fn evaluate_all_checks<C: Cppr>(
                             let s_hold = lib.eval_check_tracked(
                                 cell_check,
                                 data_tr,
-                                ck_slew_early,
+                                ck_slew,
                                 slew_e,
                                 0.0,
                                 range_tracker,

@@ -53,7 +53,7 @@ pub struct LatchWindow {
     /// Clock slew at the closing edge in `An::Early` (ns).
     pub close_slew_early: f64,
     /// Clock slew at the closing edge in `An::Late` (ns), used as `related_pin_transition` of the
-    /// latch setup check table (`STA-REQ-0211`).
+    /// latch setup check table (`STA-REQ-0229`).
     pub close_slew_late: f64,
     /// Optional `set_max_time_borrow` limit `B_max` (ns).
     pub max_borrow: Option<f64>,
@@ -381,7 +381,7 @@ pub fn build_latch_tag_maps<C: Cppr>(
                         shift,
                         open: [CLOSED_WINDOW_OPEN, open_late],
                         close: [f64::INFINITY, close_late],
-                        close_slew: [0.0, win.close_slew_late],
+                        close_slew: [0.0, win.close_slew_early],
                         limit: [f64::INFINITY, limit_late],
                     });
                 }
@@ -404,6 +404,26 @@ pub fn build_latch_tag_maps<C: Cppr>(
                 }],
             );
         }
+    }
+
+    // A latch that a constant active enable holds transparent passes the late arrivals of every
+    // tag through `D -> Q` and no early one: no hold path passes a latch (`STA-REQ-0161`).
+    for &ai in graph.transparent_latch_arcs() {
+        if graph.is_arc_disabled(ai as usize) {
+            continue;
+        }
+        let recs = (0..tags.len() as u32)
+            .map(|t| TagMapRec {
+                src_tag: t,
+                dst_tag: t,
+                shift: 0.0,
+                open: [CLOSED_WINDOW_OPEN, f64::NEG_INFINITY],
+                close: [f64::INFINITY, f64::INFINITY],
+                close_slew: [0.0, 0.0],
+                limit: [f64::INFINITY, f64::INFINITY],
+            })
+            .collect();
+        tag_maps.insert(ai, recs);
     }
 
     Ok(tag_maps)

@@ -16,6 +16,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
 mod rc;
+mod slew_only;
+mod start_builder;
+
+pub use start_builder::GraphStartBuilder;
 
 pub(crate) use rc::arc_value;
 
@@ -32,8 +36,8 @@ use rusteda_core::liberty::Direction;
 use crate::engine::delay::gate::GateDelay;
 use crate::engine::delay::load::NetLoads;
 use crate::engine::delay::wire::{DriverLoad, WireModel};
-use crate::engine::graph::{ArcKind, ArcSense, TimingGraph};
-use crate::engine::input::libview::{Sense, TimingLib};
+use crate::engine::graph::{ArcKind, ArcSense, GraphArc, TimingGraph};
+use crate::engine::input::libview::TimingLib;
 use crate::engine::input::{NetTarget, NetlistView, NodeKind};
 use crate::engine::types::{An, LibArc, NetRow, NodeId, Tr};
 
@@ -153,141 +157,15 @@ impl ArcTagMaps {
     }
 }
 
-/// Builder for [`StartRows`] keyed by [`TimingGraph`] [`NodeId`]s, automatically translating each
-/// [`NodeId`] to its level-ordered topological rank (`graph.topo_rank(node)`, `STA-REQ-0401`,
-/// `COMPUTE-REQ-0015`).
-#[derive(Debug, Clone)]
-pub struct GraphStartBuilder {
-    ntags: u32,
-    rows: BTreeMap<u32, (Vec<f64>, [f64; 4])>,
-}
-
-impl GraphStartBuilder {
-    /// Creates a [`GraphStartBuilder`] for `ntags` propagation tags (`ntags >= 1`).
-    #[must_use]
-    pub fn new(ntags: u32) -> Self {
-        let ntags = ntags.max(1);
-        Self {
-            ntags,
-            rows: BTreeMap::new(),
-        }
-    }
-
-    /// Number of tags.
-    #[inline]
-    #[must_use]
-    pub fn ntags(&self) -> u32 {
-        self.ntags
-    }
-
-    fn entry(&mut self, pos: u32) -> &mut (Vec<f64>, [f64; 4]) {
-        let w = self.ntags as usize * 4;
-        self.rows.entry(pos).or_insert_with(|| {
-            let arr = (0..w).map(|i| absent(i % 2)).collect();
-            let slew = [absent(0), absent(1), absent(0), absent(1)];
-            (arr, slew)
-        })
-    }
-
-    /// Overwrites the `[early, late]` arrival and transition on `node` for `tag` and `tr`.
-    pub fn set_tagged(
-        &mut self,
-        graph: &TimingGraph,
-        node: NodeId,
-        tag: u32,
-        tr: Tr,
-        arr: [f64; 2],
-        slew: [f64; 2],
-    ) {
-        let pos = graph.topo_rank(node);
-        let (a, s) = self.entry(pos);
-        let ti = tr.index();
-        let base = (tag as usize * 2 + ti) * 2;
-        a[base] = canon_zero(arr[0]);
-        a[base + 1] = canon_zero(arr[1]);
-        s[ti * 2] = canon_zero(slew[0].max(0.0));
-        s[ti * 2 + 1] = canon_zero(slew[1].max(0.0));
-    }
-
-    /// Merges a single `(tag, tr, an)` arrival and transition into `node` (`min` for `An::Early`,
-    /// `max` for `An::Late`; `STA-REQ-0115`, `STA-REQ-0201`).
-    pub fn merge_bound(
-        &mut self,
-        graph: &TimingGraph,
-        node: NodeId,
-        tag: u32,
-        tr: Tr,
-        an: An,
-        arr: f64,
-        slew: f64,
-    ) {
-        let pos = graph.topo_rank(node);
-        let (a, s) = self.entry(pos);
-        let ti = tr.index();
-        let ai = an.index();
-        let idx = (tag as usize * 2 + ti) * 2 + ai;
-        let s_idx = ti * 2 + ai;
-        let arr = canon_zero(arr);
-        let slew = canon_zero(slew.max(0.0));
-        match an {
-            An::Early => {
-                a[idx] = canon_zero(a[idx].min(arr));
-                s[s_idx] = canon_zero(s[s_idx].min(slew));
-            }
-            An::Late => {
-                a[idx] = canon_zero(a[idx].max(arr));
-                s[s_idx] = canon_zero(s[s_idx].max(slew));
-            }
-        }
-    }
-
-    /// Sets untagged `[early, late]` transition on `node` for transition `tr` while leaving its
-    /// arrivals untouched (`STA-REQ-0115`).
-    pub fn set_untagged_slew(&mut self, graph: &TimingGraph, node: NodeId, tr: Tr, slew: [f64; 2]) {
-        let pos = graph.topo_rank(node);
-        let (_, s) = self.entry(pos);
-        let ti = tr.index();
-        s[ti * 2] = canon_zero(slew[0].max(0.0));
-        s[ti * 2 + 1] = canon_zero(slew[1].max(0.0));
-    }
-
-    /// Merges an untagged transition `slew` on `node` for `(tr, an)` (`STA-REQ-0115`).
-    pub fn merge_untagged_slew(
-        &mut self,
-        graph: &TimingGraph,
-        node: NodeId,
-        tr: Tr,
-        an: An,
-        slew: f64,
-    ) {
-        let pos = graph.topo_rank(node);
-        let (_, s) = self.entry(pos);
-        let s_idx = tr.index() * 2 + an.index();
-        let slew = canon_zero(slew.max(0.0));
-        match an {
-            An::Early => s[s_idx] = canon_zero(s[s_idx].min(slew)),
-            An::Late => s[s_idx] = canon_zero(s[s_idx].max(slew)),
-        }
-    }
-
-    /// Finalizes the [`StartRows`] sorted by level-ordered node index (`0..graph.num_nodes()`).
-    #[must_use]
-    pub fn build(self) -> StartRows {
-        let mut out = StartRows::default();
-        for (pos, (arr, slew)) in self.rows {
-            out.push(pos, &arr, &slew);
-        }
-        out
-    }
-}
-
 /// Lowered timing problem of one corner, ready for `rusteda_compute::timing` (`STA-REQ-0401`,
 /// `COMPUTE-REQ-0011` to `COMPUTE-REQ-0015`).
 #[derive(Debug, Clone)]
 pub struct LoweredCorner<'a> {
     /// Level-ordered CSR graph and tag-map tables.
     pub csr: LevelizedTimingCsr<'static>,
-    /// Maps each CSR incoming arc index (`0..csr.arcs()`) back to its [`TimingGraph`] arc index.
+    /// Maps each CSR incoming arc index (`0..csr.arcs()`) back to its [`TimingGraph`] arc index;
+    /// an arc that carries only the transition of a launch arc `li` disabled by logic values maps
+    /// to `graph.arcs().len() + li` ([`Self::csr_raw_arc`], `STA-REQ-0116`).
     pub csr_arc_to_graph_arc: Vec<u32>,
     /// Maps each [`TimingGraph`] arc index (`0..graph.num_arcs()`) to its CSR incoming arc index,
     /// or [`NONE`] when the arc is disabled.
@@ -304,6 +182,11 @@ pub struct LoweredCorner<'a> {
     pub wires: Vec<WireRec>,
     /// CPU-prepared f64 RC arc values, shared by all propagation backends.
     pub arc_values: Vec<ArcValues>,
+    /// The tag map of the incoming arcs that carry only their output transition (an empty record
+    /// range, so that no arrival passes them), or [`NONE`] without any such arc: the arcs and
+    /// launches that logic values disable, and the library transitions that a sense refinement
+    /// removed from an enabled arc (`STA-REQ-0116`).
+    pub slew_only_map: u32,
     /// Wall-clock seconds spent lowering into the compute ABI.
     pub lower_s: f64,
 }
@@ -343,7 +226,23 @@ impl<'a> LoweredCorner<'a> {
         let mut luts = lib.lut_bank.as_compiled();
         let order = graph.order();
 
-        for &raw_node in order {
+        let class_for = |luts: &mut CompiledLutBank<'_>,
+                         inst: u32,
+                         local_arc: LibArc,
+                         sense: Option<ArcSense>| {
+            slew_only::class_for(netview, lib, &cell_arcs, luts, inst, local_arc, sense)
+        };
+        let mut slew_only = slew_only::slew_only_arcs(netview, graph, lib, &cell_arcs, &mut luts);
+        slew_only.sort_unstable();
+        let slew_only_map = if slew_only.is_empty() {
+            NONE
+        } else {
+            map_ptr.push(maps.len() as u32);
+            0
+        };
+        let mut next_slew_only = 0usize;
+
+        for (pos, &raw_node) in order.iter().enumerate() {
             let node_load = match netview.node_net(raw_node) {
                 NetTarget::Net(net_row) => canon_totals
                     .get(net_row.index())
@@ -353,9 +252,29 @@ impl<'a> LoweredCorner<'a> {
             load.push(node_load);
 
             in_ptr.push(in_arcs.len() as u32);
+            // The arcs that carry only a transition into this node, merged by source rank after
+            // the enabled arcs of the same source (the CSR lists sources in rank order).
+            let extra_end = next_slew_only
+                + slew_only[next_slew_only..]
+                    .iter()
+                    .take_while(|e| e.0 == pos as u32)
+                    .count();
+            let mut extras = slew_only[next_slew_only..extra_end].iter().peekable();
+            next_slew_only = extra_end;
             for &ai in graph.incoming(raw_node) {
                 let g_arc = &g_arcs[ai as usize];
                 let src = graph.topo_rank(g_arc.src);
+                while let Some(&&(_, e_src, e_ref, e_class)) = extras.peek()
+                    && e_src < src
+                {
+                    in_arcs.push(InArc {
+                        src: e_src,
+                        class: e_class,
+                        map: slew_only_map,
+                    });
+                    csr_arc_to_graph_arc.push(e_ref);
+                    extras.next();
+                }
                 let class = match g_arc.kind {
                     ArcKind::Net { .. } => lib.wire_class,
                     _ => {
@@ -363,27 +282,7 @@ impl<'a> LoweredCorner<'a> {
                             .kind
                             .inst_and_lib_arc()
                             .expect("non-net arc has inst and lib_arc");
-                        let cell_row = netview.frozen().instances[inst as usize].cell as usize;
-                        let global_arc = cell_arcs[cell_row][local_arc.index()];
-                        let base_class = global_arc.0;
-                        let desired_sense = match g_arc.sense {
-                            ArcSense::PositiveUnate => Sense::Positive,
-                            ArcSense::NegativeUnate => Sense::Negative,
-                            ArcSense::NonUnate => Sense::Non,
-                        };
-                        let lib_prop = lib.arc(global_arc);
-                        if lib_prop.sense == desired_sense {
-                            base_class
-                        } else {
-                            let mut refined_prop = lib_prop.clone();
-                            refined_prop.sense = desired_sense;
-                            let mut refined_class = lib.lut_bank.classes[base_class as usize];
-                            refined_class.flags = refined_prop.transition_flags();
-                            let classes = luts.classes.to_mut();
-                            let idx = classes.len() as u32;
-                            classes.push(refined_class);
-                            idx
-                        }
+                        class_for(&mut luts, inst, local_arc, Some(g_arc.sense))
                     }
                 };
                 let map = if let Some(recs) = tag_maps.get(ai)
@@ -400,6 +299,14 @@ impl<'a> LoweredCorner<'a> {
                 in_arcs.push(InArc { src, class, map });
                 csr_arc_to_graph_arc.push(ai);
                 graph_arc_to_csr_arc[ai as usize] = csr_idx;
+            }
+            for &(_, e_src, e_ref, e_class) in extras {
+                in_arcs.push(InArc {
+                    src: e_src,
+                    class: e_class,
+                    map: slew_only_map,
+                });
+                csr_arc_to_graph_arc.push(e_ref);
             }
         }
         in_ptr.push(in_arcs.len() as u32);
@@ -432,8 +339,40 @@ impl<'a> LoweredCorner<'a> {
             starts,
             wires: Vec::new(),
             arc_values: Vec::new(),
+            slew_only_map,
             lower_s,
         })
+    }
+
+    /// True when CSR incoming arc `k` carries only its output transition (`STA-REQ-0116`).
+    #[inline]
+    #[must_use]
+    pub fn is_slew_only(&self, k: usize) -> bool {
+        self.slew_only_map != NONE && self.csr.in_arcs[k].map == self.slew_only_map
+    }
+
+    /// The timing graph arc of CSR incoming arc `k`; for an arc carrying the transition of a
+    /// launch arc disabled by logic values, the clock-to-output arc as a cell arc
+    /// (`STA-REQ-0116`).
+    #[must_use]
+    pub fn csr_raw_arc(&self, graph: &TimingGraph, k: usize) -> GraphArc {
+        let r = self.csr_arc_to_graph_arc[k] as usize;
+        match graph.arcs().get(r) {
+            Some(a) => *a,
+            None => {
+                let l = graph.launches()[r - graph.arcs().len()];
+                GraphArc {
+                    src: l.clock_pin,
+                    dst: l.out_pin,
+                    sense: l.sense,
+                    kind: ArcKind::Comb {
+                        inst: l.inst,
+                        lib_arc: l.lib_arc,
+                        outs: [true, true],
+                    },
+                }
+            }
+        }
     }
 
     /// Prepare bounded RC waveform values after the start transitions are final.

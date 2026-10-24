@@ -28,7 +28,7 @@ under the constant inputs.
 
 ## Arc disabling and sense refinement
 
-**STA-REQ-0152** Disabling combinational arcs controlled by constants
+**STA-REQ-0159** Disabling combinational arcs controlled by constants (replaces STA-REQ-0152)
 ([`const_tielo_and2`](../../../verification/analytic/sta/const_tielo_and2/DERIVATION.md))
 [@liberty2017; @bhasker2009static, ch. 3]. For a combinational arc from input pin `p` to output pin
 `y` with boolean output expression `f`:
@@ -37,10 +37,15 @@ under the constant inputs.
 - more generally, after substituting all constant input pins of the cell into `f`, if the cofactors
   of the residual function with respect to `p` are identically equal (`f|_{p=0} == f|_{p=1}` for
   every assignment to the remaining `X` inputs), the output is independent of `p` and the arc
-  `p -> y` is disabled.
+  `p -> y` is disabled;
+- an arc declared `positive_unate` whose residual function is negative unate in `p` (STA-REQ-0153),
+  or declared `negative_unate` whose residual function is positive unate, cannot switch `y` and is
+  disabled. For example `XOR2` (`Y = A ^ B`) with separate positive and negative unate arcs from
+  `A` and `B = 1` keeps only the negative unate arc `A -> Y`.
 The disable reason is `case_analysis` if any constant input of the cell was seeded or derived from
-`set_case_analysis` / `set_logic_*`, and `constant` otherwise. Disabled arcs propagate neither
-arrivals nor pin transitions (STA-REQ-0108).
+`set_case_analysis` / `set_logic_*`, and `constant` otherwise. Disabled arcs propagate no arrival;
+an arc that only logic values disable still carries its output transition into `y`
+(STA-REQ-0116).
 
 **STA-REQ-0153** Unate sense refinement under constant inputs
 ([`const_xor_tiehi`](../../../verification/analytic/sta/const_xor_tiehi/DERIVATION.md))
@@ -57,7 +62,7 @@ output expression `f`, its effective timing sense is refined from the residual f
 For example, `XOR2` (`Y = A ^ B`) with `B = 1` refines `A -> Y` to `negative_unate`, and with
 `B = 0` refines `A -> Y` to `positive_unate`.
 
-**STA-REQ-0154** Sequential pins held constant
+**STA-REQ-0161** Sequential pins held constant (replaces STA-REQ-0154)
 ([`const_flop_d`](../../../verification/analytic/sta/const_flop_d/DERIVATION.md))
 [@bhasker2009static, ch. 7; @sdc2016]. When a sequential data pin (`D`) or asynchronous control pin
 (`RN`, `SN`) is at constant `0` or `1`, it carries no signal transition, so no setup, hold,
@@ -65,8 +70,15 @@ recovery or removal check is timed at that pin (its endpoint status is `no_data_
 STA-REQ-0226). The cell's `CK -> Q` edge arc still launches both output transitions if `CK` is in a
 clock network, because the stored state is not treated as constant across clock cycles unless `clear`
 or `preset` is held active. When a sequential clock pin (`CK`, `CKN`) or latch enable pin (`G`) is
-at constant `0` or `1`, the clock network does not propagate through it, its edge arcs do not
-launch, and checks referencing that clock pin have status `unclocked`.
+at constant `0` or `1`, the clock network does not propagate through it, its edge arcs launch no
+arrival (their transitions still enter the output pin, STA-REQ-0116), and checks referencing that
+clock pin have status `unclocked`. A latch whose enable expression (the `enable` of its `latch`
+group) the constants make:
+- active (`1`) is transparent: its `D -> Q` arc is a combinational arc that passes the late
+  arrivals at `D` into `Q` in their own launch tags, with the arc's delay at the transition of
+  `D`, and no early arrival (no hold path passes a latch); the outputs below are timed as data of
+  those tags;
+- inactive (`0`) is opaque: its `D -> Q` arc passes no arrival and carries its transition only.
 
 **STA-REQ-0155** Multiplexer select constants and conditional (`when`) arcs
 ([`const_mux_select`](../../../verification/analytic/sta/const_mux_select/DERIVATION.md))
@@ -97,7 +109,7 @@ arrival because all upstream data arcs were disabled by constants, case analysis
 constants, the tie cells and case analysis (STA-REQ-0150 to STA-REQ-0157) to the timing graph
 before arrival times propagate; there is no analysis path that skips them. The fixed point of
 STA-REQ-0151 is computed with a worklist, so its work is linear in the pins of the netlist. Sense
-refinement and cofactor disabling (STA-REQ-0152, STA-REQ-0153) apply to cells with at least one
+refinement and cofactor disabling (STA-REQ-0159, STA-REQ-0153) apply to cells with at least one
 constant input; without one, the library's arcs and senses stand. `set_case_analysis rising` or
 `falling` leaves the pin at `X` and both transitions are timed: each such pin gets warning `T0040`
 in the analysis, so the constraint is never dropped silently.

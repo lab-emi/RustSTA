@@ -106,6 +106,11 @@ pub struct ConstPropResult {
     pub disabled_launch_arcs: BTreeMap<(usize, usize), DisableReason>,
     /// Disabled sequential check arcs `(inst_idx, check_arc_idx) -> DisableReason`.
     pub disabled_check_arcs: BTreeMap<(usize, usize), DisableReason>,
+    /// Outputs of constant cells (tie cells): their transition is 0 (`STA-REQ-0116`).
+    pub tie_outputs: Vec<usize>,
+    /// Latches whose enable pin is constant, `(inst_idx, latch_idx) -> active`: an active enable
+    /// holds the latch transparent, an inactive one opaque (`STA-REQ-0161`).
+    pub constant_enable_latches: BTreeMap<(usize, usize), bool>,
 }
 
 /// Runs Kleene ternary constant propagation, applies `set_disable_timing`, disables non-toggling
@@ -119,6 +124,7 @@ pub fn propagate_constants(
     let n_nodes = design.nodes.len();
     let mut pin_vals = vec![LogicVal::X; n_nodes];
     let mut pinned_by_sdc = vec![false; n_nodes];
+    let mut tie_outputs = Vec::new();
 
     // 1. Seed constants from structural `1'b0` / `1'b1` ties and constant cells (`TIELO`/`TIEHI`).
     for (ni, node) in design.nodes.iter().enumerate() {
@@ -143,6 +149,7 @@ pub fn propagate_constants(
                     && let Some(&out_node) = inst.pin_nodes.get(pname)
                 {
                     pin_vals[out_node] = v;
+                    tie_outputs.push(out_node);
                 }
             }
         }
@@ -211,7 +218,7 @@ pub fn propagate_constants(
             }
         }
 
-        // Propagate across pure combinational cells (never across sequential cells, STA-REQ-0152).
+        // Propagate across pure combinational cells (never across sequential cells, STA-REQ-0159).
         for (inst_idx, inst) in design.instances.iter().enumerate() {
             let Some(cdef) = lib.cells.get(&inst.cell_type) else {
                 continue;
@@ -281,6 +288,7 @@ pub fn propagate_constants(
 
     // 5. Evaluate `when` conditions, disable non-toggling arcs, and refine unateness (`STA-REQ-0153`, `0154`).
     let mut refined_comb_sense: BTreeMap<(usize, usize), TimingSense> = BTreeMap::new();
+    let mut constant_enable_latches: BTreeMap<(usize, usize), bool> = BTreeMap::new();
 
     for (inst_idx, inst) in design.instances.iter().enumerate() {
         let Some(cdef) = lib.cells.get(&inst.cell_type) else {
@@ -324,8 +332,20 @@ pub fn propagate_constants(
                         disabled_comb_arcs.insert((inst_idx, ca_idx), DisableReason::CaseAnalysis);
                         continue;
                     }
-                    if let Some(s) = sense_opt {
-                        refined_comb_sense.insert((inst_idx, ca_idx), s);
+                    // A non-unate arc takes the sense of the residual function; a unate arc
+                    // whose sense the residual function contradicts cannot switch the output
+                    // (`STA-REQ-0153`, `STA-REQ-0159`).
+                    match (&ca.sense, sense_opt) {
+                        (TimingSense::NonUnate, Some(s)) => {
+                            refined_comb_sense.insert((inst_idx, ca_idx), s);
+                        }
+                        (TimingSense::PositiveUnate, Some(TimingSense::NegativeUnate))
+                        | (TimingSense::NegativeUnate, Some(TimingSense::PositiveUnate)) => {
+                            disabled_comb_arcs
+                                .insert((inst_idx, ca_idx), DisableReason::CaseAnalysis);
+                            continue;
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -352,6 +372,15 @@ pub fn propagate_constants(
             }
         }
 
+        for (l_idx, latch) in cdef.latches.iter().enumerate() {
+            if let Some(&g) = inst.pin_nodes.get(&latch.enable_pin)
+                && let Some(level) = pin_vals[g].to_bool()
+            {
+                let active = level == (latch.active_level == super::lib_model::Trans::Rise);
+                constant_enable_latches.insert((inst_idx, l_idx), active);
+            }
+        }
+
         for (chk_idx, chk) in cdef.check_arcs.iter().enumerate() {
             if disabled_check_arcs.contains_key(&(inst_idx, chk_idx)) {
                 continue;
@@ -370,6 +399,8 @@ pub fn propagate_constants(
         refined_comb_sense,
         disabled_launch_arcs,
         disabled_check_arcs,
+        tie_outputs,
+        constant_enable_latches,
     }
 }
 

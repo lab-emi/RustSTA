@@ -30,9 +30,11 @@ pulse checks are part of the scope (`scope.pulse_rules`: `groups` `worst` or
 `last`, `pins` `all` or `clock-ends`), and so is the clock limit scope of the
 design rules (`scope.drv_rules.clock_limits`: `paths` or `domain`; the clock network pins
 on which the two differ are counted in `completeness.drv_clock_scope_pins`). The drivers
-of constant nets, which are not checked for capacitance and fanout, and the pins
-checked with a static transition are counted in `completeness.drv_constant_drivers`
-and `completeness.drv_static_transition_pins`; unconnected instance output pins,
+of constant nets, which are not checked for capacitance and fanout, and the pins that
+no transition reaches (netlist literals and their cones, checked with the static
+transition 0) are counted in `completeness.drv_constant_drivers` and
+`completeness.drv_static_transition_pins`; the pins of constant nets otherwise carry the
+transition of the delay calculation, which ignores logic values, and no arrival; unconnected instance output pins,
 which drive no net, are not checked and are counted in
 `completeness.drv_unconnected_output_pins`.
 

@@ -14,10 +14,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusteda_formats::liberty::{Direction, TimingSense};
 
 use super::Unsupported;
-use super::canon_sdc::{CanonSdc, ClockDef};
+use super::canon_sdc::CanonSdc;
 use super::constants::{ConstPropResult, LogicVal};
 use super::lib_model::{Analysis, CellDef, CombArc, CornerLib, LatchDef, Trans};
 use super::verilog::{FlatDesign, NodeKind};
+
+mod transitions;
 
 /// Launch tag `(clock_name, source_edge)` (STA-REQ-0217).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -520,187 +522,6 @@ impl<'a> TimingSolver<'a> {
         }
     }
 
-    /// Computes per-pin slews `slews[node][tr][an]` across the timing graph, including untagged
-    /// combinational inputs (`STA-REQ-0108`, `0109`, `0218`, `0222`).
-    fn propagate_slews(&mut self) {
-        // 1. Seed primary input ports.
-        for &port_node in &self.design.input_ports {
-            if self.consts.pin_vals[port_node] != LogicVal::X {
-                continue;
-            }
-            let port_name = &self.design.nodes[port_node].name;
-            // If this port is a clock source port, its slew comes from `set_clock_transition`.
-            let clk_on_port: Vec<&ClockDef> = self
-                .sdc
-                .clocks
-                .values()
-                .filter(|c| c.sources.contains(port_name))
-                .collect();
-            if !clk_on_port.is_empty() {
-                for tr in Trans::ALL {
-                    for an in Analysis::ALL {
-                        let s = clk_on_port.iter().map(|c| c.transition(tr, an)).fold(
-                            if an == Analysis::Late {
-                                f64::NEG_INFINITY
-                            } else {
-                                f64::INFINITY
-                            },
-                            |a, b| {
-                                if an == Analysis::Late {
-                                    a.max(b)
-                                } else {
-                                    a.min(b)
-                                }
-                            },
-                        );
-                        self.merge_slew(port_node, tr, an, s);
-                    }
-                }
-                continue;
-            }
-
-            // Otherwise, check `set_driving_cell` (STA-REQ-0218) or `set_input_transition`.
-            for tr in Trans::ALL {
-                for an in Analysis::ALL {
-                    let s = if let Some((_, drv_slew)) =
-                        self.driving_cell_delay_and_slew(port_node, port_name, tr, an)
-                    {
-                        drv_slew
-                    } else {
-                        self.sdc.input_transition(port_name, tr, an)
-                    };
-                    self.merge_slew(port_node, tr, an, s);
-                }
-            }
-        }
-
-        // 2. Seed sequential launch output pins (`CK -> Q` and latch `G -> Q`, STA-REQ-0222).
-        for (inst_idx, inst) in self.design.instances.iter().enumerate() {
-            let Some(cdef) = self.lib.cells.get(&inst.cell_type) else {
-                continue;
-            };
-            for (la_idx, la) in cdef.launch_arcs.iter().enumerate() {
-                if self
-                    .consts
-                    .disabled_launch_arcs
-                    .contains_key(&(inst_idx, la_idx))
-                {
-                    continue;
-                }
-                let (Some(&ck_node), Some(&q_node)) = (
-                    inst.pin_nodes.get(&la.clock_pin),
-                    inst.pin_nodes.get(&la.to_pin),
-                ) else {
-                    continue;
-                };
-                if self.consts.pin_vals[ck_node] != LogicVal::X
-                    || self.consts.pin_vals[q_node] != LogicVal::X
-                {
-                    continue;
-                }
-                let Some(waves) = self.clk_waves.get(&ck_node).cloned() else {
-                    continue;
-                };
-                for w in &waves {
-                    if w.pin_edge != la.clock_edge {
-                        continue;
-                    }
-                    let Some(clk_def) = self.sdc.clocks.get(&w.clock) else {
-                        continue;
-                    };
-                    for out_tr in Trans::ALL {
-                        for an in Analysis::ALL {
-                            let clk_slew = clk_def.transition(w.pin_edge, an);
-                            let c_load = self.node_load_pf(q_node, out_tr, an);
-                            if let Some((_, out_slew)) = la.eval(out_tr, clk_slew, c_load) {
-                                self.merge_slew(q_node, out_tr, an, out_slew);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Propagate slews in topological order across net arcs and combinational cell arcs.
-        // Note: per STA-REQ-0222, latch `Q` pin slews come solely from `G -> Q` launch arcs, NOT
-        // from `D -> Q` data arcs!
-        let topo = self.topo_order.clone();
-        for u in topo {
-            if self.consts.pin_vals[u] != LogicVal::X {
-                continue;
-            }
-            // Clock network pins have ideal clock slew from their clock definitions (STA-REQ-0200).
-            if let Some(waves) = self.clk_waves.get(&u).cloned() {
-                for w in &waves {
-                    if let Some(clk_def) = self.sdc.clocks.get(&w.clock) {
-                        for an in Analysis::ALL {
-                            let s = clk_def.transition(w.pin_edge, an);
-                            self.merge_slew(u, w.pin_edge, an, s);
-                        }
-                    }
-                }
-            }
-
-            let u_slews = self.slews[u];
-            // Net driver -> sink pins.
-            if let Some(net_idx) = self.design.nodes[u].net_idx {
-                let net = &self.design.nets[net_idx];
-                if net.drivers.contains(&u) {
-                    for &snk in &net.sinks {
-                        if self.consts.pin_vals[snk] == LogicVal::X {
-                            for tr in Trans::ALL {
-                                for an in Analysis::ALL {
-                                    if let Some(s) = u_slews[tr.idx()][an.idx()] {
-                                        self.merge_slew(snk, tr, an, s);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Combinational cell arcs from `u` (excluding latch `D -> Q`, STA-REQ-0222).
-            if let NodeKind::InstancePin { inst_idx, ref pin } = self.design.nodes[u].kind {
-                let inst = &self.design.instances[inst_idx];
-                let Some(cdef) = self.lib.cells.get(&inst.cell_type) else {
-                    continue;
-                };
-                for (ca_idx, ca) in cdef.comb_arcs.iter().enumerate() {
-                    if ca.from_pin != *pin
-                        || !self.is_comb_arc_enabled(inst_idx, ca_idx)
-                        || cdef.is_latch_dq(&ca.from_pin, &ca.to_pin)
-                    {
-                        continue;
-                    }
-                    let Some(&v) = inst.pin_nodes.get(&ca.to_pin) else {
-                        continue;
-                    };
-                    if self.consts.pin_vals[v] != LogicVal::X {
-                        continue;
-                    }
-                    let sense = self.effective_comb_sense(inst_idx, ca_idx, &ca.sense);
-                    for in_tr in Trans::ALL {
-                        for out_tr in Trans::ALL {
-                            if !ca.can_propagate(&sense, in_tr, out_tr) {
-                                continue;
-                            }
-                            for an in Analysis::ALL {
-                                let Some(s_in) = u_slews[in_tr.idx()][an.idx()] else {
-                                    continue;
-                                };
-                                let c_load = self.node_load_pf(v, out_tr, an);
-                                if let Some((_, out_slew)) = ca.eval(out_tr, s_in, c_load) {
-                                    self.merge_slew(v, out_tr, an, out_slew);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub(crate) fn merge_slew(&mut self, node_idx: usize, tr: Trans, an: Analysis, val: f64) {
         let slot = &mut self.slews[node_idx][tr.idx()][an.idx()];
         *slot = Some(match *slot {
@@ -914,13 +735,24 @@ impl<'a> TimingSolver<'a> {
                     if self.consts.pin_vals[v] != LogicVal::X {
                         continue;
                     }
-                    if let Some(latch) = cdef
+                    let mut late_only = false;
+                    if let Some((l_idx, latch)) = cdef
                         .latches
                         .iter()
-                        .find(|l| l.data_pin == ca.from_pin && l.q_pin == ca.to_pin)
+                        .enumerate()
+                        .find(|(_, l)| l.data_pin == ca.from_pin && l.q_pin == ca.to_pin)
                     {
-                        self.propagate_latch_dq(inst_idx, cdef, latch, ca, u, v)?;
-                        continue;
+                        // A latch that a constant active enable holds transparent passes the
+                        // late arrivals in their own tags; held opaque it passes none
+                        // (`STA-REQ-0161`).
+                        match self.consts.constant_enable_latches.get(&(inst_idx, l_idx)) {
+                            Some(true) => late_only = true,
+                            Some(false) => continue,
+                            None => {
+                                self.propagate_latch_dq(inst_idx, cdef, latch, ca, u, v)?;
+                                continue;
+                            }
+                        }
                     }
                     let sense = self.effective_comb_sense(inst_idx, ca_idx, &ca.sense);
                     let u_arrs = self.arrivals[u].clone();
@@ -930,6 +762,9 @@ impl<'a> TimingSolver<'a> {
                                 continue;
                             }
                             for an in Analysis::ALL {
+                                if late_only && an == Analysis::Early {
+                                    continue;
+                                }
                                 let Some(s_in) = self.slews[u][in_tr.idx()][an.idx()] else {
                                     continue;
                                 };

@@ -76,6 +76,20 @@ following conventions, while moving the superseded Phase 1 texts to
     with a constant input) to `positive_unate` or `negative_unate`, suppresses checks on constant
     sequential pins while preserving clocked `CK -> Q` launches, and records disabled-arc counts by
     reason.
+13. **Transitions ignore logic values; checks take the capture clock path's transition (version
+    0.4, `STA-REQ-0116`, `0159`, `0161`, `0229`, `0230`).** Black-box comparisons with a reference
+    timing tool on both default libraries (gates with constant side inputs next to their twins
+    whose constant input is a port with transition 0, case analysis on and off, clock muxes with a
+    tied select, latches with tied enables) showed that the reference's pin transitions do not
+    depend on logic values, while its arrivals do. RustSTA now merges into a pin's transition
+    every arc that only logic values disable (and the clock-to-output arcs of unclocked
+    sequential cells), with the arc's library sense; these arcs carry no arrival and no required
+    time. A unate arc whose sense the residual function contradicts is disabled; a latch whose
+    enable a constant holds active is transparent for late arrivals. Since a pin's early and late
+    transitions now differ wherever several arcs merge, the related pin transition of a check is
+    that of the capture clock path (early for setup and recovery, late for hold and removal),
+    which the same comparison confirmed; with a single arc into each clock pin the results are
+    those of the earlier rule.
 
 ## Consequences
 

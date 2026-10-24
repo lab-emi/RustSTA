@@ -418,7 +418,7 @@ fn worst_arr(res: &LoweredResult, graph: &TimingGraph, node: NodeId, an: An) -> 
     }
 }
 
-// STA-REQ-0150, STA-REQ-0151, STA-REQ-0152: Analytic case `const_tielo_and2`
+// STA-REQ-0150, STA-REQ-0151, STA-REQ-0159: Analytic case `const_tielo_and2`
 #[test]
 fn analytic_const_tielo_and2() {
     let exp = analytic_expected("const_tielo_and2");
@@ -698,7 +698,7 @@ endmodule
     assert_eq!(cp_w.disabled_arc_counts().constant, 1);
 }
 
-// STA-REQ-0154: Analytic case `const_flop_d` and sequential async clear/preset constants
+// STA-REQ-0161: Analytic case `const_flop_d` and sequential async clear/preset constants
 #[test]
 fn analytic_const_flop_d_and_sequential_async() {
     let exp = analytic_expected("const_flop_d");
@@ -1042,6 +1042,33 @@ fn full_analysis_slacks(
     pins.iter()
         .map(|p| (ea.setup_slack_for(p), ea.hold_slack_for(p)))
         .collect()
+}
+
+// STA-REQ-0116: analytic case `const_mux_select`: the transition of g/Y merges the arcs that the
+// tied select disables (A1 -> Y and S -> Y, with the tie transition 0) with the enabled A0 -> Y.
+#[test]
+fn analytic_const_mux_select_transitions() {
+    let exp = analytic_expected("const_mux_select");
+    let libs = [analytic_library()];
+    let verilog = "module m (input clk, input a, input b, output q);\n wire lo, qa, qb, nb, n1;\n \
+         TIELO t0 (.Y(lo));\n DFF ra (.D(a), .CK(clk), .Q(qa));\n DFF rb (.D(b), .CK(clk), .Q(qb));\n \
+         INV i (.A(qb), .Y(nb));\n MUX2 g (.A0(qa), .A1(nb), .S(lo), .Y(n1));\n \
+         DFF f (.D(n1), .CK(clk), .Q(q));\nendmodule\n";
+    let sdc = "create_clock -name clk -period 2 [get_ports clk]\n\
+               set_input_delay -clock clk 0.1 [get_ports {a b}]\n";
+    let frozen = parse_verilog(verilog, &libs[0]);
+    let ea = EngineAnalysis::analyze_single_corner(&frozen, &libs, sdc, &AnalysisOptions::ideal())
+        .expect("full analysis");
+    let y = ea.find_node("g/Y").expect("g/Y");
+    for (an, an_name) in [(An::Late, "late"), (An::Early, "early")] {
+        for (tr, tr_name) in [(Tr::Rise, "rise"), (Tr::Fall, "fall")] {
+            check_exp(
+                ea.corners[0].slew(y, tr, an),
+                &exp,
+                &format!("g/Y {an_name} {tr_name} transition"),
+            );
+        }
+    }
 }
 
 fn check_full(actual: (Option<f64>, Option<f64>), exp: &serde_json::Value, pin: &str) {

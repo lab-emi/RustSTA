@@ -61,7 +61,7 @@ pub(super) fn prepare(
         for k in lowered.csr.in_ptr[v] as usize..lowered.csr.in_ptr[v + 1] as usize {
             let in_arc = lowered.csr.in_arcs[k];
             let cls = lowered.luts.classes[in_arc.class as usize];
-            let raw = graph.arcs()[lowered.csr_arc_to_graph_arc[k] as usize];
+            let raw = lowered.csr_raw_arc(graph, k);
             debug_assert_eq!(raw.dst, node);
             for ti in 0..2 {
                 for to in 0..2 {
@@ -114,7 +114,7 @@ pub(super) fn prepare(
 pub(crate) fn arc_value(
     luts: &CompiledLutBank<'_>,
     cls: &rusteda_compute::timing::ArcClass,
-    raw: &crate::engine::graph::GraphArc,
+    raw: &GraphArc,
     view: &NetlistView<'_>,
     wire: &dyn WireModel,
     lib: &TimingLib,

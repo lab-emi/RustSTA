@@ -11,7 +11,7 @@ use crate::engine::prop::checks::SlackRecord;
 use crate::engine::prop::clocks::ClockModel;
 use crate::engine::store::{NO_PRED, PathPointKind, canon_f64};
 use crate::engine::types::TagId;
-use crate::engine::types::{NodeId, Tr};
+use crate::engine::types::{An, NodeId, Tr};
 
 pub(super) fn compute_check_intrinsic(
     analysis: &StoreInput<'_>,
@@ -43,7 +43,13 @@ pub(super) fn compute_check_intrinsic(
                 && let Some(cc) = tc.checks.get(ch.lib_arc.index())
             {
                 let an = rec.kind.data_bound();
-                let clk_slew = ca.slew(clk_pin, ch.edge, an);
+                // The related pin transition of the capture clock path: the opposite bound of
+                // the data (`STA-REQ-0229`).
+                let clk_an = match an {
+                    An::Late => An::Early,
+                    An::Early => An::Late,
+                };
+                let clk_slew = ca.slew(clk_pin, ch.edge, clk_an);
                 let data_slew = ca.slew(rec.endpoint, rec.data_tr, an);
                 return ca.lib.eval_check(
                     cc,

@@ -23,6 +23,9 @@ use crate::engine::input::{NetlistView, NodeKind};
 use crate::engine::types::{NetRow, NodeId, Tr};
 
 mod propagate;
+mod sequential;
+
+use sequential::{latch_enable, unclocked_launches};
 
 /// Canonical completeness record label for a [`DisableReason`] (`STA-REQ-0157`, `STA-REQ-0304`).
 pub const fn disable_reason_str(reason: DisableReason) -> &'static str {
@@ -235,7 +238,7 @@ pub fn eval_func_with_origin(func: &Func, env: &impl Fn(&str) -> PinConst) -> Pi
     PinConst::X
 }
 
-/// Outcome of cofactor analysis for a combinational arc `p -> y` (`STA-REQ-0151`, `STA-REQ-0152`).
+/// Outcome of cofactor analysis for a combinational arc `p -> y` (`STA-REQ-0151`, `STA-REQ-0159`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CofactorEffect {
     /// `f|_{p=0}` and `f|_{p=1}` are identically equal over all assignments of remaining `X`
@@ -372,7 +375,7 @@ impl DisabledArcCounts {
     }
 }
 
-/// Record of a combinational arc whose timing sense was refined from `non_unate` (`STA-REQ-0152`).
+/// Record of a combinational arc whose timing sense was refined from `non_unate` (`STA-REQ-0159`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RefinedArc {
     /// Index of the arc in [`TimingGraph::arcs`].
@@ -383,7 +386,7 @@ pub struct RefinedArc {
     pub new_sense: ArcSense,
 }
 
-/// Status of a timing check arc after constant propagation and arc disabling (`STA-REQ-0154`,
+/// Status of a timing check arc after constant propagation and arc disabling (`STA-REQ-0161`,
 /// `STA-REQ-0156`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CheckStatus {
@@ -421,11 +424,14 @@ pub struct ConstantPropagation {
     check_status: Vec<CheckStatus>,
     disabled_arc_counts: DisabledArcCounts,
     total_disabled_counts: DisabledArcCounts,
+    /// Instances of latch cells whose latch group stores the inverted data pin
+    /// (`data_in : "!D"`), in instance order (`STA-REQ-0230`).
+    inverted_data_latches: Vec<u32>,
 }
 
 impl ConstantPropagation {
     /// Propagates netlist constants only (`1'b0`, `1'b1`, `TIELO`, `TIEHI`, `assign`s) without
-    /// SDC constraints (`STA-REQ-0150` to `STA-REQ-0154`, `STA-REQ-0156`).
+    /// SDC constraints (`STA-REQ-0150` to `STA-REQ-0161`, `STA-REQ-0156`).
     pub fn apply_netlist_only(
         netview: &NetlistView<'_>,
         libs: &[Library],
@@ -452,8 +458,17 @@ impl ConstantPropagation {
         let transition_case = eng.seed_constants(constraints);
         eng.propagate_fixed_point(graph);
         let refined_arcs = eng.disable_and_refine_arcs(graph);
+        graph.set_tie_outputs(std::mem::take(&mut eng.tie_outputs));
         graph.relevelize();
+        // A launch arc whose clock pin no clock reaches launches no arrival; its transition still
+        // enters its output pin, so the levels order it (`STA-REQ-0116`).
+        let unclocked = unclocked_launches(graph, constraints);
+        if unclocked.iter().any(|&u| u) {
+            graph.set_unclocked_launches(unclocked);
+            graph.relevelize();
+        }
         let check_status = eng.classify_checks(graph);
+        let inverted_data_latches = eng.inverted_data_latches(graph);
 
         Self {
             node_consts: eng.node_consts,
@@ -467,6 +482,7 @@ impl ConstantPropagation {
                 graph.disabled_launches(),
                 graph.disabled_checks(),
             ]),
+            inverted_data_latches,
         }
     }
 
@@ -501,7 +517,7 @@ impl ConstantPropagation {
         self.transition_case.get(&node).copied()
     }
 
-    /// Combinational arcs whose sense was refined from `non_unate` (`STA-REQ-0152`).
+    /// Combinational arcs whose sense was refined from `non_unate` (`STA-REQ-0159`).
     pub fn refined_arcs(&self) -> &[RefinedArc] {
         &self.refined_arcs
     }
@@ -515,7 +531,7 @@ impl ConstantPropagation {
     }
 
     /// Refines `check_status(check_idx)` with propagated clock and data arrival availability
-    /// (`STA-REQ-0154`, `STA-REQ-0156`).
+    /// (`STA-REQ-0161`, `STA-REQ-0156`).
     pub fn classify_check_with_arrivals(
         &self,
         check_idx: usize,
@@ -544,23 +560,48 @@ impl ConstantPropagation {
     /// transitions that propagate, so each such pin gets warning `T0040` instead of being dropped
     /// silently.
     pub fn diagnostics(&self, netview: &NetlistView<'_>) -> Vec<Diag> {
-        self.transition_case
-            .iter()
-            .map(|(&node, tr)| {
-                let edge = match tr {
-                    Tr::Rise => "rising",
-                    Tr::Fall => "falling",
-                };
-                Diag::warning(
-                    "T0040",
-                    format!(
-                        "set_case_analysis {edge} on '{}' is not applied: both transitions are \
+        let mut out: Vec<Diag> = Vec::new();
+        if !self.inverted_data_latches.is_empty() {
+            let mut cells: Vec<&str> = self
+                .inverted_data_latches
+                .iter()
+                .map(|&i| netview.cell_name(netview.frozen().instances[i as usize].cell))
+                .collect();
+            cells.sort_unstable();
+            cells.dedup();
+            out.push(Diag::note(
+                "T0150",
+                format!(
+                    "{} latch instances of {} cells ({}) store the inverted data pin \
+                     (data_in \"!D\"); their D -> Q arcs are timed with the timing_sense of the \
+                     library arc (STA-REQ-0230)",
+                    self.inverted_data_latches.len(),
+                    cells.len(),
+                    cells.iter().take(5).copied().collect::<Vec<_>>().join(", ")
+                ),
+            ));
+        }
+        out.extend(self.transition_case.iter().map(|(&node, tr)| {
+            let edge = match tr {
+                Tr::Rise => "rising",
+                Tr::Fall => "falling",
+            };
+            Diag::warning(
+                "T0040",
+                format!(
+                    "set_case_analysis {edge} on '{}' is not applied: both transitions are \
                          timed (STA-REQ-0158)",
-                        netview.node_name_str(node)
-                    ),
-                )
-            })
-            .collect()
+                    netview.node_name_str(node)
+                ),
+            )
+        }));
+        out
+    }
+
+    /// The number of latch instances whose latch group stores the inverted data pin
+    /// (`STA-REQ-0230`).
+    pub fn inverted_data_latch_count(&self) -> usize {
+        self.inverted_data_latches.len()
     }
 }
 
@@ -643,6 +684,8 @@ struct PropEngine<'a> {
     node_consts: Vec<PinConst>,
     net_consts: Vec<PinConst>,
     explicit_case_node: Vec<bool>,
+    /// Outputs of tie cells, in node order (`STA-REQ-0116`).
+    tie_outputs: Vec<NodeId>,
 }
 
 impl<'a> PropEngine<'a> {
@@ -662,6 +705,7 @@ impl<'a> PropEngine<'a> {
             node_consts: vec![PinConst::X; n_nodes],
             net_consts: vec![PinConst::X; netview.num_nets()],
             explicit_case_node: vec![false; n_nodes],
+            tie_outputs: Vec::new(),
         }
     }
 
@@ -697,6 +741,8 @@ impl<'a> PropEngine<'a> {
                     && let Some(Func::Const(val)) = lp.function
                 {
                     self.node_consts[ictx.n_port_bits + pin_row] = PinConst::netlist(val);
+                    self.tie_outputs
+                        .push(NodeId((ictx.n_port_bits + pin_row) as u32));
                 }
             }
         }
@@ -758,13 +804,23 @@ impl<'a> PropEngine<'a> {
             }
 
             if let ArcKind::LatchData { setup_check, .. } = arc.kind {
-                if let Some(reason) = graph
+                // A latch whose enable logic values hold active is transparent: `D -> Q` becomes
+                // a combinational arc; held inactive it is opaque and the arc carries no arrival
+                // (`STA-REQ-0161`).
+                if let Some(reason) = self.node_consts[arc.dst.index()].disable_reason() {
+                    graph.disable_arc(arc_idx, reason);
+                } else if let Some(reason) = graph
                     .checks()
                     .get(setup_check as usize)
                     .and_then(|ch| self.node_consts[ch.clock_pin.index()].disable_reason())
-                    .or_else(|| self.node_consts[arc.dst.index()].disable_reason())
                 {
-                    graph.disable_arc(arc_idx, reason);
+                    let from_name = pin_pair(self.netview, arc.src, arc.dst)
+                        .map(|(_, cell, from_cp, _)| self.netview.cell_pin_name(cell, from_cp));
+                    if latch_enable(ictx.meta.cell, from_name, &pin_env) == LogicVal::One {
+                        graph.make_latch_transparent(arc_idx);
+                    } else {
+                        graph.disable_arc(arc_idx, reason);
+                    }
                 }
             } else if matches!(arc.kind, ArcKind::Comb { .. }) {
                 let Some((_, cell, from_cp, to_cp)) = pin_pair(self.netview, arc.src, arc.dst)
@@ -787,7 +843,7 @@ impl<'a> PropEngine<'a> {
                 }
                 // Without a constant input the library's arcs and senses stand: refinement and
                 // cofactor disabling apply to the residual function of constant inputs only
-                // (`STA-REQ-0152`, `STA-REQ-0153`).
+                // (`STA-REQ-0159`, `STA-REQ-0153`).
                 if let Some(ref func) = to_pin.function
                     && ictx.has_const_input(&self.node_consts)
                 {
@@ -800,13 +856,28 @@ impl<'a> PropEngine<'a> {
                         CofactorEffect::NegativeUnate => Some(ArcSense::NegativeUnate),
                         CofactorEffect::NonUnate => None,
                     };
-                    if let Some(ns) = new_sense.filter(|_| arc.sense == ArcSense::NonUnate) {
-                        graph.set_arc_sense(arc_idx, ns);
-                        refined_arcs.push(RefinedArc {
-                            arc_idx,
-                            old_sense: ArcSense::NonUnate,
-                            new_sense: ns,
-                        });
+                    match new_sense {
+                        Some(ns) if arc.sense == ArcSense::NonUnate => {
+                            graph.set_arc_sense(arc_idx, ns);
+                            refined_arcs.push(RefinedArc {
+                                arc_idx,
+                                old_sense: ArcSense::NonUnate,
+                                new_sense: ns,
+                            });
+                        }
+                        // A unate arc whose sense the residual function contradicts cannot
+                        // switch the output: it is disabled (`STA-REQ-0159`).
+                        Some(ns) if arc.sense != ns => {
+                            let netlist_env = |name: &str| pin_env(name).netlist_only();
+                            let netlist = analyze_arc_cofactors(func, from_name, &netlist_env);
+                            let origin = if effect_sense(netlist).is_some_and(|s| s != arc.sense) {
+                                ConstOrigin::Netlist
+                            } else {
+                                ConstOrigin::CaseAnalysis
+                            };
+                            graph.disable_arc(arc_idx, origin.disable_reason());
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -993,6 +1064,15 @@ fn apply_user_disabled(
         if matches_disabled_pair(netview, ch.clock_pin, ch.data_pin, true, specs) {
             graph.disable_check(ci, DisableReason::UserDisabled);
         }
+    }
+}
+
+/// The unate sense of a cofactor effect, `None` when it is independent or non-unate.
+fn effect_sense(effect: CofactorEffect) -> Option<ArcSense> {
+    match effect {
+        CofactorEffect::PositiveUnate => Some(ArcSense::PositiveUnate),
+        CofactorEffect::NegativeUnate => Some(ArcSense::NegativeUnate),
+        CofactorEffect::Independent(_) | CofactorEffect::NonUnate => None,
     }
 }
 

@@ -74,48 +74,14 @@ pub fn build_start_rows<D: Derate>(
     let cell_arcs = map_cell_arcs(netview, lib)?;
 
     // 1. Evaluate `set_driving_cell` specifications per port (`STA-REQ-0218`).
-    let mut driving_cells: FxHashMap<NodeId, [[Option<DriveCellEffect>; 2]; 2]> =
-        FxHashMap::default();
-    for (&port_node, specs) in &constraints.driving_cells {
-        if port_node.index() >= n_nodes {
-            continue;
-        }
-        let net_cap = node_net_cap(netview, &canon_totals, port_node);
-        let entry = driving_cells.entry(port_node).or_insert([[None; 2]; 2]);
-        for spec in specs {
-            let evaled = eval_driving_cell(spec, port_node, lib, derate, net_cap);
-            for tr in Tr::ALL {
-                if !edge_matches(spec.edge, tr) {
-                    continue;
-                }
-                for an in An::ALL {
-                    if !minmax_matches(spec.min_max, an) {
-                        continue;
-                    }
-                    if let Some(eff) = evaled[tr.index()][an.index()] {
-                        entry[tr.index()][an.index()] = Some(eff);
-                    }
-                }
-            }
-        }
-    }
+    let driving_cells =
+        driving_cell_effects(netview, graph, lib, constraints, &canon_totals, derate);
 
     // Helper returning `(incr_drive_delay_ns, port_slew_ns)` for `(node, tr, an)`.
     // `set_driving_cell` replaces `set_input_transition` for the transitions and bounds it covers
     // (`STA-REQ-0218`).
-    let resolve_port_drive = |node: NodeId, tr: Tr, an: An| -> (f64, f64) {
-        if let Some(eff) = driving_cells
-            .get(&node)
-            .and_then(|t| t[tr.index()][an.index()])
-        {
-            return (eff.incr_delay_ns, eff.slew_ns);
-        }
-        let slew = constraints
-            .input_transitions
-            .get(&node)
-            .and_then(|it| it.slew_ns[an.index()][tr.index()])
-            .unwrap_or(0.0);
-        (0.0, slew)
+    let resolve_port_drive = |node: NodeId, tr: Tr, an: An| {
+        resolve_port_drive(&driving_cells, constraints, node, tr, an)
     };
 
     // 2. Seed clock source nodes (`create_clock` used as data; `STA-REQ-0201`, `STA-REQ-0217`).
@@ -170,35 +136,15 @@ pub fn build_start_rows<D: Derate>(
         }
     }
 
-    // 4. Seed untagged slews on all non-clock, non-constant primary input/inout ports
-    // (`STA-REQ-0108`) so downstream combinational cones always have the port's transition time
-    // (from `set_driving_cell`, `set_input_transition`, or default `0.0`).
-    let mut clock_src_nodes: rustc_hash::FxHashSet<NodeId> = rustc_hash::FxHashSet::default();
-    for ck in &constraints.clocks {
-        for &src in &ck.sources {
-            clock_src_nodes.insert(src);
-        }
-    }
-    for i in 0..netview.num_port_bits().min(n_nodes) {
-        let node = NodeId(i as u32);
-        if clock_src_nodes.contains(&node) {
-            continue;
-        }
-        let is_in = matches!(
-            netview.node_kind(node),
-            crate::engine::input::NodeKind::PortBit {
-                dir: rusteda_core::liberty::Direction::Input
-                    | rusteda_core::liberty::Direction::Inout,
-                ..
-            }
-        );
-        if !is_in {
-            continue;
-        }
+    // 4. Seed untagged slews on all non-clock primary input/inout ports (`STA-REQ-0108`) so
+    // downstream combinational cones always have the port's transition time (from
+    // `set_driving_cell`, `set_input_transition`, or default `0.0`), and the transition 0 on the
+    // outputs of tie cells (`STA-REQ-0116`).
+    let skip = clock_source_nodes(constraints);
+    for (node, slew) in untagged_seeds(netview, graph, constraints, &driving_cells, &skip) {
         for tr in Tr::ALL {
             for an in An::ALL {
-                let (_, port_slew) = resolve_port_drive(node, tr, an);
-                builder.merge_untagged_slew(graph, node, tr, an, port_slew);
+                builder.merge_untagged_slew(graph, node, tr, an, slew[tr.index()][an.index()]);
             }
         }
     }
@@ -267,6 +213,123 @@ pub fn build_start_rows<D: Derate>(
         launch_slews,
         driving_cells,
     })
+}
+
+/// The `set_driving_cell` effects of every port with one, per `[tr][an]` (`STA-REQ-0218`).
+pub(crate) fn driving_cell_effects<D: Derate>(
+    netview: &NetlistView<'_>,
+    graph: &TimingGraph,
+    lib: &TimingLib,
+    constraints: &CompiledConstraints,
+    canon_totals: &[[[f64; 2]; 2]],
+    derate: &D,
+) -> FxHashMap<NodeId, [[Option<DriveCellEffect>; 2]; 2]> {
+    let n_nodes = graph.num_nodes();
+    let mut driving_cells: FxHashMap<NodeId, [[Option<DriveCellEffect>; 2]; 2]> =
+        FxHashMap::default();
+    for (&port_node, specs) in &constraints.driving_cells {
+        if port_node.index() >= n_nodes {
+            continue;
+        }
+        let net_cap = node_net_cap(netview, canon_totals, port_node);
+        let entry = driving_cells.entry(port_node).or_insert([[None; 2]; 2]);
+        for spec in specs {
+            let evaled = eval_driving_cell(spec, port_node, lib, derate, net_cap);
+            for tr in Tr::ALL {
+                if !edge_matches(spec.edge, tr) {
+                    continue;
+                }
+                for an in An::ALL {
+                    if !minmax_matches(spec.min_max, an) {
+                        continue;
+                    }
+                    if let Some(eff) = evaled[tr.index()][an.index()] {
+                        entry[tr.index()][an.index()] = Some(eff);
+                    }
+                }
+            }
+        }
+    }
+    driving_cells
+}
+
+/// `(incr_drive_delay_ns, port_slew_ns)` of port `node` for `(tr, an)`: `set_driving_cell`
+/// replaces `set_input_transition` for the transitions and bounds it covers (`STA-REQ-0218`).
+pub(crate) fn resolve_port_drive(
+    driving_cells: &FxHashMap<NodeId, [[Option<DriveCellEffect>; 2]; 2]>,
+    constraints: &CompiledConstraints,
+    node: NodeId,
+    tr: Tr,
+    an: An,
+) -> (f64, f64) {
+    if let Some(eff) = driving_cells
+        .get(&node)
+        .and_then(|t| t[tr.index()][an.index()])
+    {
+        return (eff.incr_delay_ns, eff.slew_ns);
+    }
+    let slew = constraints
+        .input_transitions
+        .get(&node)
+        .and_then(|it| it.slew_ns[an.index()][tr.index()])
+        .unwrap_or(0.0);
+    (0.0, slew)
+}
+
+/// The source nodes of every clock.
+pub(crate) fn clock_source_nodes(
+    constraints: &CompiledConstraints,
+) -> rustc_hash::FxHashSet<NodeId> {
+    constraints
+        .clocks
+        .iter()
+        .flat_map(|ck| ck.sources.iter().copied())
+        .collect()
+}
+
+/// The transitions `[tr][an]` that seed a propagation without an arrival of their own, in node
+/// order: every primary input or inout port outside `skip`, from its driving cell or input
+/// transition (default 0, `STA-REQ-0108`), and the outputs of tie cells, 0 (`STA-REQ-0116`).
+pub(crate) fn untagged_seeds(
+    netview: &NetlistView<'_>,
+    graph: &TimingGraph,
+    constraints: &CompiledConstraints,
+    driving_cells: &FxHashMap<NodeId, [[Option<DriveCellEffect>; 2]; 2]>,
+    skip: &rustc_hash::FxHashSet<NodeId>,
+) -> Vec<(NodeId, [[f64; 2]; 2])> {
+    let n_nodes = graph.num_nodes();
+    let mut out = Vec::new();
+    for i in 0..netview.num_port_bits().min(n_nodes) {
+        let node = NodeId(i as u32);
+        if skip.contains(&node) {
+            continue;
+        }
+        let is_in = matches!(
+            netview.node_kind(node),
+            crate::engine::input::NodeKind::PortBit {
+                dir: rusteda_core::liberty::Direction::Input
+                    | rusteda_core::liberty::Direction::Inout,
+                ..
+            }
+        );
+        if !is_in {
+            continue;
+        }
+        let mut slew = [[0.0; 2]; 2];
+        for tr in Tr::ALL {
+            for an in An::ALL {
+                slew[tr.index()][an.index()] =
+                    resolve_port_drive(driving_cells, constraints, node, tr, an).1;
+            }
+        }
+        out.push((node, slew));
+    }
+    for &node in graph.tie_outputs() {
+        if node.index() < n_nodes && !skip.contains(&node) {
+            out.push((node, [[0.0; 2]; 2]));
+        }
+    }
+    out
 }
 
 /// Evaluates a `set_driving_cell` specification across `[tr][an]` (`STA-REQ-0218`).

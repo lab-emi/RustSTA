@@ -1066,7 +1066,7 @@ fn analyze_one_corner(
     clock.finish();
 
     // 10. Discover clock-gating sites, evaluate all timing checks, and classify endpoints
-    // (`STA-REQ-0211`..`0226`).
+    // (`STA-REQ-0229`..`0226`).
     let clock = PhaseClock::start(ctx, "timing_checks");
     let gating_sites = discover_gating_sites(netview, graph, &lib, &clock_model);
     let check_records = evaluate_all_checks(

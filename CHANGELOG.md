@@ -76,6 +76,34 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   (`STA-REQ-0821`, `T0135`).
 
 ### Changed
+- **Transitions ignore logic values (`STA-REQ-0116`):** the transition of a pin merges every arc
+  that carries one: the enabled arcs, the arcs that constants, case analysis and false `when`
+  conditions disable (with their library sense), the transitions that a sense refinement removes,
+  the clock-to-output arcs of sequential cells that logic values disable or that no clock reaches,
+  and the `D -> Q` arc of a latch with a constant enable; tie outputs start at transition 0 and a
+  port held by case analysis keeps its input transition. These arcs carry no arrival and no
+  required time. Live pins behind gates with constant side inputs had optimistic transitions
+  (3 to 84 ps on a synthesized core with case analysis) and their delays and checks followed;
+  constant nets now have propagated transitions, and only literals and their cones keep the
+  static transition 0 (`STA-REQ-0809`). The propagation of a propagated clock merges the same
+  arcs, with the input ports and tie cells as transition sources. A loop that these arcs would
+  close is cut and warned with `T0149`.
+- **Unate arcs contradicted by constants (`STA-REQ-0159`, replaces `STA-REQ-0152`):** a declared
+  `positive_unate` (`negative_unate`) arc whose residual function is negative (positive) unate in
+  its input is disabled: an `XOR2` next to a tie keeps only the arc of the right sense (it timed
+  the wrong-sense arc as well, 28 to 756 ps pessimistic on the probes).
+- **Latches with a constant enable (`STA-REQ-0161`, replaces `STA-REQ-0154`):** a latch whose
+  enable a constant holds active is transparent (late arrivals pass `D -> Q` in their own tags, no
+  early arrival); held inactive it is opaque. It made the outputs behind it unconstrained and left
+  them out of the clock's design-rule limits.
+- **Related pin transition of checks (`STA-REQ-0229`, replaces `STA-REQ-0211`):** setup and
+  recovery checks (and the closing edge of a latch setup) take the early transition of the
+  capture clock pin, hold and removal checks the late one, the transitions of the capture clock
+  path; the earlier rule had them the other way round, which was invisible while each clock pin
+  had one arc.
+- **Inverted-data latches (`STA-REQ-0230`):** the `D -> Q` arc of a latch keeps the sense of its
+  library arc when the latch group stores the inverted data pin; note `T0150` counts such
+  instances and names their cells.
 - `min_pulse_width` and `minimum_period` groups are no longer counted as unanalyzed arcs.
 - The `CORNERS` record of the `limits` table (unreleased `LIMITS` v1) is 80 bytes and carries the
   constant-driver, static-transition, ideal-clock, untimed, clock-scope and unconnected-output pin

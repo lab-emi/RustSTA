@@ -130,24 +130,21 @@ table records it in bit 2 of the rules of each corner (STA-REQ-0806).
 **STA-REQ-0809** Constant nets, untimed pins and static transitions. A net whose logic value is
 constant (netlist literals and tie cells, `set_case_analysis` and `set_logic_*`, propagated
 through the cells, STA-REQ-0150) never switches: its driver is not checked for
-`max_capacitance` and `max_fanout`, and is counted in `constant_drivers`. A pin that the
-propagation leaves without a transition time (a pin of a constant net or of its cone, whose arcs
-the constants disable, or the output of a sequential cell that no clock reaches) is checked for
-`max_transition` with its static transition: the corner's delay calculation (the arc evaluation
-of the propagation, STA-REQ-0723, and of the launch of a clocked output, STA-REQ-0217, with the
-same wire model and loads) carried in topological order from the propagated transitions and from
-the outputs of tie cells (constant drivers without timing arcs, transition 0) through the arcs
-that only logic values disable (constants, case analysis, false `when` conditions) and the
-clock-to-output arcs; the transitions of pins with a propagated transition are not changed. A
-constant pin that no transition reaches this way (a pin tied to a netlist literal and its cone)
-has the transition 0. These pins are counted in `static_transition_pins`, and a note `T0143` per
-corner names both counts. Any other pin without a transition (reached only through an arc that
-`set_disable_timing` or loop breaking disables, or on an undriven net) is untimed: it is counted
-in `untimed_pins`, its limited transition check is unevaluated (STA-REQ-0813), and a warning
-`T0145` per corner names the count. The rules reproduce the pin sets and transitions of a
-reference timing tool, observed as a black box on tie cells, buffers and gates fed by ties with
-controlling and non-controlling constants, literals, case analysis, an unclocked and a tied-off
-flip-flop clock, with ideal wires and extracted parasitics, on both default libraries.
+`max_capacitance` and `max_fanout`, and is counted in `constant_drivers`. Its pins still have the
+transition that the propagation gives them, because the delay calculation ignores logic values
+(STA-REQ-0116): tie outputs 0, and every pin behind them through the arcs that logic values
+disable and through the clock-to-output arcs of sequential cells that no clock reaches; these
+transitions enter the live pins downstream as well. A pin that no transition reaches (a pin tied
+to a netlist literal and its cone) never switches: it is checked for `max_transition` with the
+static transition 0 and counted in `static_transition_pins`; a note `T0143` per corner names both
+counts. Any other pin without a transition (reached only through an arc that `set_disable_timing`
+or loop breaking disables, or on an undriven net) is untimed: it is counted in `untimed_pins`, its
+limited transition check is unevaluated (STA-REQ-0813), and a warning `T0145` per corner names the
+count. The rules reproduce the pin sets and transitions of a reference timing tool, observed as a
+black box on tie cells, buffers and gates fed by ties with controlling and non-controlling
+constants, gates with asymmetric arcs (`nand3`, `xor2`, `mux2`) behind ties and case analysis,
+literals, latches with a constant enable, an unclocked and a tied-off flip-flop clock, with ideal
+wires and extracted parasitics, on both default libraries.
 
 **STA-REQ-0819** Unconnected pins. The design rules check the pins of the netlist: the ports and
 the connected instance pins. A library pin of an instance that the netlist leaves unconnected (not

@@ -183,7 +183,7 @@ fn exceptions_change_the_checks_they_name() {
     }
 }
 
-// STA-REQ-0150, STA-REQ-0152, STA-REQ-0157, STA-REQ-0271: case analysis disables the arcs it
+// STA-REQ-0150, STA-REQ-0159, STA-REQ-0157, STA-REQ-0271: case analysis disables the arcs it
 // controls in `ruststa run` and leaves endpoints without data arrival; together with all
 // exceptions the independent checker still agrees.
 #[test]

@@ -153,17 +153,18 @@ fn close(a: f64, b: f64, what: &str) {
 
 // STA-REQ-0809: the drivers of constant nets (the tie outputs th/Z and tl/ZN, the buffers b0, b1
 // of the tie-high net, the gate g whose input A is the controlling 0, and the buffer l1 of the
-// literal 1'b1) are not checked for capacitance and fanout: 6 drivers, note T0143. The pins
-// without a propagated transition are checked with their static transition (16 pins):
+// literal 1'b1) are not checked for capacitance and fanout: 6 drivers, note T0143. The delay
+// calculation ignores logic values (STA-REQ-0116), so the propagation gives the constant nets
+// their transitions, without arrivals:
 // - th/Z and tl/ZN: tie outputs, 0; the pins of their nets (b0/A, b1/A, g/A) 0 by ideal wire;
 // - b0/Y = r0/D: rise 0.05 + 0.5 * 0 + 2 * 0.001 (r0/D) = 0.052, fall 0.042;
 // - b1/Y = y: the port load 0.01: rise 0.07, fall 0.06;
 // - g/Y = r1/D: the larger of the arc from A (s = 0: rise 0.06 + 0.002) and from B (the port
 //   transition 0.2: rise 0.07 + 0.1 + 0.002 = 0.172; fall 0.06 + 0.1 + 0.002 = 0.162);
-// - l1/A, l1/Y and r2/D: a literal and its cone, constant and reached by no transition: 0;
-// - r3/Q = q3: no clock reaches r3/CK (k is not a clock), so the clock-to-output arc is evaluated
-//   at the transition of k (0.3) into the port load 0.01: rise 0.08 + 0.15 + 0.02 = 0.25, fall
-//   0.24.
+// - r3/Q = q3: no clock reaches r3/CK (k is not a clock), so the clock-to-output arc carries the
+//   transition of k (0.3) into the port load 0.01: rise 0.08 + 0.15 + 0.02 = 0.25, fall 0.24.
+// Only the literal and its cone (l1/A, l1/Y and r2/D) are reached by no transition: they never
+// switch and are checked with the static transition 0 (3 pins).
 // With the design limit 0.001 every pin with a positive transition violates and the zero pins
 // meet it (slack 0.001). Nothing is untimed.
 #[test]
@@ -173,7 +174,7 @@ fn constant_nets_unclocked_outputs_and_literals() {
     let a = analyze(&frozen, &lib, SDC);
     let l = &a.corners[0].limits;
     assert_eq!(l.constant_drivers, 6);
-    assert_eq!(l.static_transition_pins, 16);
+    assert_eq!(l.static_transition_pins, 3);
     assert_eq!(l.untimed_pins, 0);
     assert_eq!(l.ideal_clock_pins, 0);
     let codes: Vec<&str> = a.diags.iter().map(|d| d.code.as_str()).collect();
@@ -246,7 +247,7 @@ fn constant_nets_unclocked_outputs_and_literals() {
             report.static_transition_pins,
             report.untimed_pins
         ),
-        (6, 16, 0)
+        (6, 3, 0)
     );
     let bytes = LimitsData::from_analysis(&a, 100)
         .to_bytes()
@@ -255,7 +256,7 @@ fn constant_nets_unclocked_outputs_and_literals() {
         .expect("table");
     assert_eq!(
         t.drv_pin_counts().expect("counts"),
-        vec![[6, 16, 0, 0, 0, 0]]
+        vec![[6, 3, 0, 0, 0, 0]]
     );
 }
 

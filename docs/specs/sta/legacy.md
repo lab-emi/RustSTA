@@ -99,3 +99,53 @@ the latch's launch edge, STA-REQ-0210) and `S` the setup-check slack against the
 (STA-REQ-0211), the slack is `O + lat_C - arr_late` when data arrives before the opening edge,
 0 when it arrives while the latch is open and before the required time of the closing edge
 (the borrowed time is checked downstream), and `S` (negative) when it arrives later.
+
+## Superseded constant and check rules (replaced in version 0.4 by STA-REQ-0116, 0159, 0161, 0229)
+
+The rules below are those of versions up to 0.4.0 before the transitions next to logic constants
+were aligned with the delay calculation of the pin (STA-REQ-0116). STA-REQ-0159 replaces
+STA-REQ-0152 (it adds the disabling of a unate arc that the residual function contradicts and lets
+arcs disabled by logic values carry their transitions), STA-REQ-0161 replaces STA-REQ-0154 (latches
+with a constant enable), and STA-REQ-0229 replaces STA-REQ-0211 (the related pin transition is the
+one of the capture clock path). The legacy engine keeps citing STA-REQ-0211.
+
+**STA-REQ-0152** Disabling combinational arcs controlled by constants
+([`const_tielo_and2`](../../../verification/analytic/sta/const_tielo_and2/DERIVATION.md))
+[@liberty2017; @bhasker2009static, ch. 3]. For a combinational arc from input pin `p` to output pin
+`y` with boolean output expression `f`:
+- if `p` itself is at constant `0` or `1`, or `y` evaluates to constant `0` or `1` under Kleene
+  evaluation, the arc `p -> y` is disabled;
+- more generally, after substituting all constant input pins of the cell into `f`, if the cofactors
+  of the residual function with respect to `p` are identically equal (`f|_{p=0} == f|_{p=1}` for
+  every assignment to the remaining `X` inputs), the output is independent of `p` and the arc
+  `p -> y` is disabled.
+The disable reason is `case_analysis` if any constant input of the cell was seeded or derived from
+`set_case_analysis` / `set_logic_*`, and `constant` otherwise. Disabled arcs propagate neither
+arrivals nor pin transitions (STA-REQ-0108).
+
+**STA-REQ-0154** Sequential pins held constant
+([`const_flop_d`](../../../verification/analytic/sta/const_flop_d/DERIVATION.md))
+[@bhasker2009static, ch. 7; @sdc2016]. When a sequential data pin (`D`) or asynchronous control pin
+(`RN`, `SN`) is at constant `0` or `1`, it carries no signal transition, so no setup, hold,
+recovery or removal check is timed at that pin (its endpoint status is `no_data_arrival`,
+STA-REQ-0226). The cell's `CK -> Q` edge arc still launches both output transitions if `CK` is in a
+clock network, because the stored state is not treated as constant across clock cycles unless `clear`
+or `preset` is held active. When a sequential clock pin (`CK`, `CKN`) or latch enable pin (`G`) is
+at constant `0` or `1`, the clock network does not propagate through it, its edge arcs do not
+launch, and checks referencing that clock pin have status `unclocked`.
+
+**STA-REQ-0211** Setup and hold checks. For a check arc between a constrained pin `D` and a related
+clock pin `CK` in the network of clock `C`, the capture edge is the source edge of `C` that makes
+the arc's active edge at `CK` (`*_rising`: a rise at `CK`; `*_falling`: a fall at `CK`). For each
+launch tag reaching `D` and each transition `x` of `D`:
+- setup time `s` = `rise_constraint` (`x` rise) or `fall_constraint` (`x` fall) of the `setup_*`
+  arc evaluated at `(related_pin_transition = slew_CK_late, constrained_pin_transition =
+  slew[D][x][late])`;
+  setup slack = `D_s + lat_C(early) - s - u_setup - arr[D][tag][x][late]`;
+- hold time `h` from the `hold_*` arc evaluated at `(related_pin_transition = slew_CK_early,
+  constrained_pin_transition = slew[D][x][early])`;
+  hold slack = `arr[D][tag][x][early] - (D_h + lat_C(late) + h + u_hold)`.
+Here `lat_C` is the capture clock latency (`-min` for setup, `-max` for hold) and `u` the clock
+uncertainty (`set_clock_uncertainty`) of the capture clock. A data transition whose constraint
+table is absent from the check arc is not checked.
+

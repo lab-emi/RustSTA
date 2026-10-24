@@ -137,6 +137,18 @@ pub fn build_model(
         }
     }
     let mut values = Vec::with_capacity(constraints.clocks.len());
+    // Transitions are a property of the pin, not of the clock: every clock's propagation also
+    // starts the transitions of the other input ports and of the tie cells, without arrivals, so
+    // that a clock pin's transition merges every arc into it as in the data propagation
+    // (`STA-REQ-0116`).
+    let driving_cells = crate::engine::prop::starts::driving_cell_effects(
+        view,
+        graph,
+        lib,
+        constraints,
+        &crate::engine::prop::starts::canonical_net_totals(view, loads),
+        &crate::engine::delay::derate::NoDerate,
+    );
     let mut lowered = LoweredCorner::lower(
         view,
         graph,
@@ -168,6 +180,20 @@ pub fn build_model(
             ));
         }
         let mut starts = GraphStartBuilder::new(2);
+        let own: rustc_hash::FxHashSet<NodeId> = clock.sources.iter().copied().collect();
+        for (node, slew) in crate::engine::prop::starts::untagged_seeds(
+            view,
+            graph,
+            constraints,
+            &driving_cells,
+            &own,
+        ) {
+            for tr in Tr::ALL {
+                for an in An::ALL {
+                    starts.merge_untagged_slew(graph, node, tr, an, slew[tr.index()][an.index()]);
+                }
+            }
+        }
         for &src in &clock.sources {
             if !matches!(view.node_kind(src), NodeKind::PortBit { .. })
                 || constraints.driving_cells.contains_key(&src)

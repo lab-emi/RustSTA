@@ -3,17 +3,16 @@
 
 //! Transitions of the pins that the propagation leaves without one (`STA-REQ-0809`).
 //!
-//! The propagation of a corner gives a transition time to every pin that a start reaches through
-//! enabled arcs. Pins on constant nets and in their cones have none: their arcs are disabled by
-//! the constants (`STA-REQ-0150`); nor do the outputs of sequential cells that no clock reaches.
-//! The design rule `max_transition` still checks them, with a static transition: the corner's
-//! delay calculation (the same arc evaluation as the propagation, `STA-REQ-0723`, and as the
-//! launch of a clocked output, `STA-REQ-0217`) carried from the propagated transitions and from
-//! the outputs of tie cells (constant drivers without timing arcs, transition 0) through the arcs
-//! that only the logic values disable (constant, case analysis, false `when`) and the
-//! clock-to-output arcs, in topological order. A constant pin that this does not reach (a pin
-//! tied to a netlist literal and its cone) never switches and has the transition 0. Any other pin
-//! without a transition (behind a disabled or loop-breaking arc only, or on an undriven net) is
+//! The delay calculation ignores logic values (`STA-REQ-0116`): the propagation of a corner
+//! carries transitions through the arcs that constants, case analysis and false `when`
+//! conditions disable and through the clock-to-output arcs of sequential cells that no clock
+//! reaches, from the tie outputs (transition 0) and the ports. The pins left without a
+//! transition are the netlist literals and their cones, the pins reached only through an arc
+//! that `set_disable_timing` or loop breaking disables, and the pins behind an arc that logic
+//! values disable but that would close a loop (`T0149`). This pass completes the last kind with
+//! the same arc evaluation (`STA-REQ-0723`, `STA-REQ-0217`) carried in topological order from
+//! the propagated transitions; a constant pin that it does not reach either (a literal and its
+//! cone) never switches and has the transition 0. Any other pin without a transition is
 //! untimed: its check is counted and not evaluated.
 //!
 //! The pass visits each node and arc once (`O(V + E)`, AGENTS rule 3.4) and keeps one entry per
