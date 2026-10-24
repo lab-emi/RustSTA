@@ -1141,5 +1141,12 @@ pub fn corner_limits_report(ca: &CornerAnalysis) -> CornerLimitsReport {
         pass_through_pulse_pins: ca.limits.pass_through_pulse_pins,
         pulse_groups: ca.limits.rules.groups.name().to_owned(),
         pulse_pins: ca.limits.rules.pins.name().to_owned(),
+        clock_limits: ca.limits.clock_limits.name().to_owned(),
+        constant_drivers: ca.limits.constant_drivers,
+        static_transition_pins: ca.limits.static_transition_pins,
+        ideal_clock_pins: ca.limits.ideal_clock_pins,
+        untimed_pins: ca.limits.untimed_pins,
+        clock_scope_pins: ca.limits.clock_scope_pins,
+        unconnected_output_pins: ca.limits.unconnected_output_pins,
     }
 }

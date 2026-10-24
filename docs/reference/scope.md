@@ -42,7 +42,11 @@
   ([limits](../specs/sta/limits.md)). The pulse rules are selectable: the largest constraint
   over a pin's conditional groups and attributes and every clocked pin (the defaults), or the
   last listed group and only the pins where a clock ends (`--pulse-groups last
-  --pulse-pins clock-ends`).
+  --pulse-pins clock-ends`). The drivers of constant nets are not checked for capacitance and
+  fanout, pins on constant nets and unclocked sequential outputs are checked with a static
+  transition, an ideal clock network is left out of the design rules (counted, the rules
+  `partial`), and a clock's limits map to its network and data pins (`--clock-limits paths`) or
+  to its whole domain (`--clock-limits domain`).
 
 ## Current limits
 

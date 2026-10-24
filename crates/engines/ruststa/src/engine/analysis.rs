@@ -33,7 +33,8 @@ use crate::engine::input::constr::{CompiledConstraints, CornerLibs, ExceptionKin
 use crate::engine::input::libview::TimingLib;
 use crate::engine::input::{NetTarget, NetlistView};
 use crate::engine::limits::{
-    CornerLimits, DEFAULT_MAX_LIMIT_ROWS, LimitInputs, PulseRules, check_corner_limits,
+    ClockLimitScope, CornerLimits, DEFAULT_MAX_LIMIT_ROWS, LimitInputs, PulseRules,
+    check_corner_limits, static_transitions,
 };
 use crate::engine::prop::checks::evaluate_all_checks;
 use crate::engine::prop::clocks::ClockModel;
@@ -99,6 +100,8 @@ pub struct AnalysisOptions {
     pub max_limit_rows: usize,
     /// The rules of the pulse checks (`STA-REQ-0816`, `STA-REQ-0817`).
     pub pulse_rules: PulseRules,
+    /// How the design-rule limits of a clock map to pins (`STA-REQ-0808`).
+    pub clock_limits: ClockLimitScope,
 }
 
 /// Default limit of the propagation state of one corner: 16 GiB (`STA-REQ-0024`).
@@ -119,6 +122,7 @@ impl Default for AnalysisOptions {
             max_state_bytes: DEFAULT_MAX_STATE_BYTES,
             max_limit_rows: DEFAULT_MAX_LIMIT_ROWS,
             pulse_rules: PulseRules::default(),
+            clock_limits: ClockLimitScope::default(),
         }
     }
 }
@@ -394,7 +398,7 @@ impl<'a> EngineAnalysis<'a> {
             lower::with_prewarm(options.backend, options.precision, || {
                 build_shared_and_libs(netlist, corners, timing_libs, &constraints, ctx)
             });
-        let (netview, graph, timing_libs, mut all_diags) = setup_res?;
+        let (netview, graph, timing_libs, constant, mut all_diags) = setup_res?;
         if let Err(err) = prewarm_res {
             return Err(vec![lower::compute_error_diag(&err)]);
         }
@@ -410,6 +414,7 @@ impl<'a> EngineAnalysis<'a> {
                 tlib,
                 &netview,
                 &graph,
+                &constant,
                 &constraints,
                 options,
                 ctx,
@@ -619,7 +624,16 @@ fn build_shared_and_libs<'a>(
     timing_libs: Option<Vec<TimingLib>>,
     constraints: &CompiledConstraints,
     ctx: Ctx<'_>,
-) -> Result<(NetlistView<'a>, TimingGraph, Vec<TimingLib>, Vec<Diag>), Vec<Diag>> {
+) -> Result<
+    (
+        NetlistView<'a>,
+        TimingGraph,
+        Vec<TimingLib>,
+        Vec<bool>,
+        Vec<Diag>,
+    ),
+    Vec<Diag>,
+> {
     let clock = PhaseClock::start(ctx, "compile_libraries");
     let timing_libs = match timing_libs {
         Some(libs) if libs.len() == corners.len() => libs,
@@ -648,6 +662,7 @@ fn build_shared_and_libs<'a>(
     let clock = PhaseClock::start(ctx, "constants");
     let consts =
         ConstantPropagation::apply(&netview, corners[0].libs, Some(constraints), &mut graph);
+    let constant = consts.constant_nodes();
     clock.finish();
 
     let mut diags = constraints.diags.clone();
@@ -685,7 +700,7 @@ fn build_shared_and_libs<'a>(
         }
     }
 
-    Ok((netview, graph, timing_libs, diags))
+    Ok((netview, graph, timing_libs, constant, diags))
 }
 
 /// The analysis of one corner up to its lowered problem: steps 1 to 7 of [`analyze_one_corner`].
@@ -929,6 +944,7 @@ fn analyze_one_corner(
     lib: TimingLib,
     netview: &NetlistView<'_>,
     graph: &TimingGraph,
+    constant: &[bool],
     constraints: &CompiledConstraints,
     options: &AnalysisOptions,
     ctx: Ctx<'_>,
@@ -1003,6 +1019,17 @@ fn analyze_one_corner(
     record.evaluated.push(propagated.stats.nodes_evaluated);
     let node_values = propagated.to_node_order(graph);
     clock.finish();
+    // Static transitions of the pins without a propagated one, for the design rules (STA-REQ-0809).
+    let statics = static_transitions(
+        graph,
+        netview,
+        &lib,
+        &lowered,
+        &wire_model,
+        &net_loads,
+        &node_values,
+        constant,
+    );
     if keep_lowered {
         record.lowered.push(into_owned_lowered(lowered));
     } else {
@@ -1027,6 +1054,9 @@ fn analyze_one_corner(
             node_values: &node_values,
             net_loads: &net_loads,
             pulse_rules: options.pulse_rules,
+            clock_limits: options.clock_limits,
+            constant,
+            statics: &statics,
         },
         options.max_limit_rows,
         corner_id.index() == 0,

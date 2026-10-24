@@ -59,12 +59,7 @@ fn temp_dir(tag: &str) -> PathBuf {
 }
 
 fn run_cmd(args: &[&str]) -> Output {
-    Command::new(bin())
-        .args(args)
-        .env_remove("NO_COLOR")
-        .stdin(Stdio::null())
-        .output()
-        .expect("spawn ruststa")
+    run_cmd_in(Path::new("."), args)
 }
 
 fn run_cmd_in(cwd: &Path, args: &[&str]) -> Output {
@@ -376,6 +371,7 @@ fn counter_flow_and_envelope_key_order() {
             "backend",
             "precision",
             "pulse_rules",
+            "drv_rules",
         ]
     );
 
@@ -394,6 +390,12 @@ fn counter_flow_and_envelope_key_order() {
             "unchecked_pulse_width_pins",
             "pass_through_pulse_pins",
             "unevaluated_limit_checks",
+            "drv_constant_drivers",
+            "drv_static_transition_pins",
+            "drv_ideal_clock_pins",
+            "drv_untimed_pins",
+            "drv_clock_scope_pins",
+            "drv_unconnected_output_pins",
             "drv_unlimited",
         ]
     );

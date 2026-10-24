@@ -845,3 +845,93 @@ fn path_to_an_endpoint_honours_the_corner() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// STA-REQ-0808, STA-REQ-0809, STA-REQ-0818, STA-REQ-0819: the envelope states the clock limit scope of the
+// design rules (`scope.drv_rules.clock_limits`) and counts the pins left out or checked by a
+// special rule. FF_NETLIST plus a buffer of the literal 1'b1 driving the port q3: u/Y is the
+// driver of a constant net (no capacitance or fanout check), and u/A, u/Y and q3 are checked with
+// the static transition 0 (a literal cone). Propagated, nothing is in an ideal clock network; the
+// -clock_path limit 0.15 applies to the clock pins with the transition 0.2 (clk, f1/CK, i1/A)
+// under `paths`, and nowhere under `domain` (warning T0144). Ideal, the five clock network pins
+// are left out (T0146) and their limited checks are unevaluated.
+#[test]
+fn envelope_counts_constant_and_ideal_clock_pins() {
+    let dir = temp_dir("drvrules");
+    let netlist = FF_NETLIST
+        .replace("output q2);", "output q2, output q3);")
+        .replace("endmodule", "BUF u (.A(1'b1), .Y(q3));\nendmodule");
+    let sdc = format!(
+        "{FF_SDC}set_propagated_clock [get_clocks c]\nset_input_transition 0.2 [get_ports clk]\n\
+         set_max_transition 0.15 -clock_path [get_clocks c]\n"
+    );
+    let _ws = common::netlist_workspace(&dir, LIB, "sig.lib", &netlist, &sdc);
+    let w = dir.join("ws").to_string_lossy().into_owned();
+    let (code, run) = run_json(&["run", "-w", &w, "--base-rev", "rev1"]);
+    assert_eq!(code, 0, "{run}");
+    assert_eq!(run["scope"]["drv_rules"]["clock_limits"], "paths");
+    let c = &run["completeness"];
+    assert_eq!(c["drv_constant_drivers"], 1, "{c}");
+    assert_eq!(c["drv_static_transition_pins"], 3, "{c}");
+    assert_eq!(c["drv_ideal_clock_pins"], 0, "{c}");
+    assert_eq!(c["drv_untimed_pins"], 0, "{c}");
+    // The five clock network pins have a -clock_path limit but no -data_path limit.
+    assert_eq!(c["drv_clock_scope_pins"], 5, "{c}");
+    assert_eq!(c["drv_unconnected_output_pins"], 0, "{c}");
+    let codes = |env: &Value| -> Vec<String> {
+        env["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["code"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert!(codes(&run).contains(&"T0143".to_owned()));
+    assert!(codes(&run).contains(&"T0147".to_owned()));
+    let (_, rep) = run_json(&[
+        "report",
+        "-w",
+        &w,
+        "--section",
+        "max_transition",
+        "--filter",
+        "violating",
+        "--limit",
+        "0",
+    ]);
+    let mut viol: Vec<&str> = rows(&rep, "max_transition")
+        .iter()
+        .map(|r| r["pin"].as_str().unwrap())
+        .collect();
+    viol.sort_unstable();
+    assert_eq!(viol, ["clk", "f1/CK", "i1/A"]);
+
+    let (code, dom) = run_json(&[
+        "run",
+        "-w",
+        &w,
+        "--base-rev",
+        "rev2",
+        "--clock-limits",
+        "domain",
+    ]);
+    assert_eq!(code, 0, "{dom}");
+    assert_eq!(dom["scope"]["drv_rules"]["clock_limits"], "domain");
+    assert!(codes(&dom).contains(&"T0144".to_owned()), "{dom}");
+    assert_eq!(dom["completeness"]["drv_clock_scope_pins"], 5, "{dom}");
+    assert_eq!(dom["metrics"]["max_transition_violating"], 0);
+
+    // The same constraints on an ideal clock.
+    let dir2 = temp_dir("drvideal");
+    let ideal = sdc.replace("set_propagated_clock [get_clocks c]\n", "");
+    let _ws2 = common::netlist_workspace(&dir2, LIB, "sig.lib", &netlist, &ideal);
+    let w2 = dir2.join("ws").to_string_lossy().into_owned();
+    let (code, run) = run_json(&["run", "-w", &w2, "--base-rev", "rev1"]);
+    assert_eq!(code, 0, "{run}");
+    let c = &run["completeness"];
+    assert_eq!(c["drv_ideal_clock_pins"], 5, "{c}");
+    assert!(c["unevaluated_limit_checks"].as_u64().unwrap() >= 5, "{c}");
+    assert!(codes(&run).contains(&"T0146".to_owned()));
+    assert_ne!(run["metrics"]["drv_status"], "met");
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&dir2);
+}

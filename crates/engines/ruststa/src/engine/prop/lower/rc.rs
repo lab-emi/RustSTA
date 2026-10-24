@@ -62,65 +62,32 @@ pub(super) fn prepare(
             let in_arc = lowered.csr.in_arcs[k];
             let cls = lowered.luts.classes[in_arc.class as usize];
             let raw = graph.arcs()[lowered.csr_arc_to_graph_arc[k] as usize];
+            debug_assert_eq!(raw.dst, node);
             for ti in 0..2 {
                 for to in 0..2 {
                     if !cls.allows(ti, to) {
                         continue;
                     }
-                    let t = lib.thresholds.rc(to == 1);
                     for an in 0..2 {
                         let s = slews[in_arc.src as usize][ti * 2 + an];
                         if s == absent(an) {
                             continue;
                         }
-                        let (d, q) = if let ArcKind::Net { net } = raw.kind {
-                            let tau = wire.elmore(raw.dst, Tr::ALL[to], An::ALL[an]).ok_or_else(
-                                || Diag::error("T0077", "extracted first moment absent"),
-                            )?;
+                        let (d, q, tau) = arc_value(
+                            &lowered.luts,
+                            &cls,
+                            &raw,
+                            view,
+                            wire,
+                            lib,
+                            lowered.load[v][to * 2 + an],
+                            s,
+                            to,
+                            an,
+                        )?;
+                        if let Some(tau) = tau {
                             lowered.wires[k].delay[to * 2 + an] = tau;
-                            rc::wire(tau, s, t, wire.primary_input(net))
-                                .map_err(|e| Diag::error("T0077", e.to_string()))?
-                        } else {
-                            let load = match view.node_net(node) {
-                                NetTarget::Net(net) => {
-                                    wire.physical_load(net, Tr::ALL[to], An::ALL[an])
-                                }
-                                _ => None,
-                            };
-                            let eval = |c| {
-                                let args = [s, c, c];
-                                (
-                                    lookup(
-                                        &lowered.luts.luts,
-                                        &lowered.luts.data,
-                                        cls.delay[to],
-                                        args,
-                                    ),
-                                    lookup(
-                                        &lowered.luts.luts,
-                                        &lowered.luts.data,
-                                        cls.slew[to],
-                                        args,
-                                    ),
-                                )
-                            };
-                            if let Some(DriverLoad::Pi { c_near, c_far, r }) = load {
-                                let (d, q, _) = rc::gate(
-                                    Pi {
-                                        near: c_near,
-                                        far: c_far,
-                                        resistance: r,
-                                    },
-                                    t,
-                                    eval,
-                                )
-                                .map_err(|e| Diag::error("T0077", e.to_string()))?;
-                                (d, q)
-                            } else {
-                                let (d, q) = eval(lowered.load[v][to * 2 + an]);
-                                (d, q.max(0.0))
-                            }
-                        };
+                        }
                         let j = (ti * 2 + to) * 2 + an;
                         lowered.arc_values[k].delay[j] = d;
                         lowered.arc_values[k].slew[j] = q;
@@ -135,4 +102,61 @@ pub(super) fn prepare(
     }
     lowered.lower_s += start.elapsed().as_secs_f64();
     Ok(())
+}
+
+/// The delay, the output transition and, for a net arc, the extracted first moment of the arc
+/// `raw` with the class `cls` for the input transition `s`, the output transition `to` and the
+/// bound `an` under the extracted wire model `wire` (`STA-REQ-0723`). `lumped_load` is the load
+/// of the arc's destination when its net has no extracted driver load. The only evaluation of an
+/// extracted arc: the waveform preparation of the propagation and the transitions of the design
+/// rules (`STA-REQ-0809`) both use it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn arc_value(
+    luts: &CompiledLutBank<'_>,
+    cls: &rusteda_compute::timing::ArcClass,
+    raw: &crate::engine::graph::GraphArc,
+    view: &NetlistView<'_>,
+    wire: &dyn WireModel,
+    lib: &TimingLib,
+    lumped_load: f64,
+    s: f64,
+    to: usize,
+    an: usize,
+) -> Result<(f64, f64, Option<f64>), Diag> {
+    let t = lib.thresholds.rc(to == 1);
+    if let ArcKind::Net { net } = raw.kind {
+        let tau = wire
+            .elmore(raw.dst, Tr::ALL[to], An::ALL[an])
+            .ok_or_else(|| Diag::error("T0077", "extracted first moment absent"))?;
+        let (d, q) = rc::wire(tau, s, t, wire.primary_input(net))
+            .map_err(|e| Diag::error("T0077", e.to_string()))?;
+        return Ok((d, q, Some(tau)));
+    }
+    let load = match view.node_net(raw.dst) {
+        NetTarget::Net(net) => wire.physical_load(net, Tr::ALL[to], An::ALL[an]),
+        _ => None,
+    };
+    let eval = |c| {
+        let args = [s, c, c];
+        (
+            lookup(&luts.luts, &luts.data, cls.delay[to], args),
+            lookup(&luts.luts, &luts.data, cls.slew[to], args),
+        )
+    };
+    if let Some(DriverLoad::Pi { c_near, c_far, r }) = load {
+        let (d, q, _) = rc::gate(
+            Pi {
+                near: c_near,
+                far: c_far,
+                resistance: r,
+            },
+            t,
+            eval,
+        )
+        .map_err(|e| Diag::error("T0077", e.to_string()))?;
+        Ok((d, q, None))
+    } else {
+        let (d, q) = eval(lumped_load);
+        Ok((d, q.max(0.0), None))
+    }
 }

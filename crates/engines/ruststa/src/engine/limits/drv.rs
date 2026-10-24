@@ -2,21 +2,27 @@
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
 //! Electrical design rules: `max_transition`, `max_capacitance` and `max_fanout`
-//! (`STA-REQ-0803` to `STA-REQ-0807`).
+//! (`STA-REQ-0803` to `STA-REQ-0809`, `STA-REQ-0818`, `STA-REQ-0819`).
 //!
 //! The limit of a check is the smallest of the limits that apply to it: the library limit of an
 //! instance pin (its own attribute, or the library default), and the constraint limits of the
 //! current design, of the port, and of each clock whose domain contains the pin. A constraint
 //! object holds one value per slot, and a later command on the same slot replaces an earlier one;
-//! a clock has one slot per path (clock network or data) and transition. The transition check
-//! covers every pin and port with a transition time; the capacitance and fanout checks cover
-//! every driver of a net (an input port or an output pin), with the capacitance of its net
-//! (pins, wire and port loads, the largest over transitions and bounds) and the sum of the
-//! `fanout_load` of its instance load pins and of `set_fanout_load` on its output ports.
+//! a clock has one slot per path (clock network or data) and transition, mapped to the pins by
+//! the clock limit scope (`STA-REQ-0808`). The transition check covers every pin and port: with
+//! its propagated transition, or with the static transition of a pin on a constant net or in its
+//! cone (`STA-REQ-0809`); a pin without either is untimed, counted and not evaluated. The
+//! capacitance and fanout checks cover every driver of a net (an input port or an output pin)
+//! whose net is not constant, with the capacitance of its net (pins, wire and port loads, the
+//! largest over transitions and bounds) and the sum of the `fanout_load` of its instance load
+//! pins and of `set_fanout_load` on its output ports. The pins of an ideal clock network are not
+//! checked (`STA-REQ-0818`), nor are the library pins that the netlist leaves unconnected, which
+//! are counted (`STA-REQ-0819`).
 
 use rustc_hash::FxHashMap;
 use rusteda_core::job::Diag;
 use rusteda_core::liberty::Direction;
+use rusteda_core::netlist::FrozenNetlist;
 use rusteda_formats::sdc::EdgeScope;
 
 use crate::engine::delay::load::map_netlist_cell_pins;
@@ -27,7 +33,8 @@ use crate::engine::prop::clocks::ClockModel;
 use crate::engine::prop::starts::canonical_net_totals;
 use crate::engine::types::{An, ClockId, NodeId, Tr};
 
-use super::{LimitInputs, LimitKind, LimitRow, LimitSource, RowCollector};
+use super::statics::StaticTransition;
+use super::{ClockLimitScope, LimitInputs, LimitKind, LimitRow, LimitSource, RowCollector};
 
 /// The constraint limits of one design rule kind (`STA-REQ-0805`).
 #[derive(Debug, Default)]
@@ -45,6 +52,9 @@ struct SdcRules {
     kinds: [RuleSlots; 3],
     /// `set_fanout_load` of output ports.
     fanout_load: FxHashMap<NodeId, f64>,
+    /// Clock commands with `-clock_path` only that the scope `domain` does not apply
+    /// (`STA-REQ-0808`).
+    clock_path_skipped: u64,
 }
 
 fn flag_diag(dc: &DrcConstraint, cmd: &str) -> Diag {
@@ -158,8 +168,8 @@ impl SdcRules {
             };
             let flags = clock_path || data_path || edge != EdgeScope::Both;
             let mut flag_warned = false;
-            let slots = &mut rules.kinds[kind.index()];
             for o in &dc.objects {
+                let slots = &mut rules.kinds[kind.index()];
                 match o {
                     ResolvedObj::Design(_) | ResolvedObj::Port(_) => {
                         if flags && !flag_warned {
@@ -183,11 +193,18 @@ impl SdcRules {
                         }
                     }
                     ResolvedObj::Clock(c) if kind != LimitKind::MaxFanout => {
+                        // The slots of the definitions (`STA-REQ-0805`): path 0 the clock
+                        // network, path 1 the data pins, both without either option. The scope
+                        // `domain` reads the data-path slot on the whole domain, so a
+                        // `-clock_path` limit alone applies nowhere there (`STA-REQ-0808`).
                         let paths: &[usize] = match (clock_path, data_path) {
                             (true, false) => &[0],
                             (false, true) => &[1],
                             _ => &[0, 1],
                         };
+                        if paths == [0] && inputs.clock_limits == ClockLimitScope::Domain {
+                            rules.clock_path_skipped += 1;
+                        }
                         let trs: &[usize] = match edge {
                             EdgeScope::Rise => &[0],
                             EdgeScope::Fall => &[1],
@@ -246,16 +263,21 @@ fn data_clocks(inputs: &LimitInputs<'_>, node: NodeId, out: &mut Vec<ClockId>) {
     }
 }
 
-/// The constraint limits of `kind` at `node` for transition `tr`.
+/// The constraint limits of `kind` at `node` for transition `tr`. Under the clock limit scope
+/// `domain` the data-path slot of a clock covers its clock network too (`STA-REQ-0808`).
+/// Returns true when the limit depends on the scope: `node` is on the clock network of a clock
+/// whose clock-path and data-path slots differ.
+#[allow(clippy::too_many_arguments)]
 fn sdc_candidates(
     rules: &SdcRules,
+    scope: ClockLimitScope,
     kind: LimitKind,
     node: NodeId,
     tr: Tr,
     clock_net: &[(ClockId, u8)],
     data: &[ClockId],
     out: &mut Vec<(f64, LimitSource)>,
-) {
+) -> bool {
     let slots = &rules.kinds[kind.index()];
     if let Some(v) = slots.design {
         out.push((v, LimitSource::SdcDesign));
@@ -263,29 +285,96 @@ fn sdc_candidates(
     if let Some(&v) = slots.ports.get(&node) {
         out.push((v, LimitSource::SdcPort));
     }
+    let mut scope_dependent = false;
     for (clock, s) in &slots.clocks {
         let on_clock = clock_net.iter().any(|(c, _)| c == clock);
-        let path = if on_clock {
-            Some(0)
-        } else if data.contains(clock) {
-            Some(1)
-        } else {
-            None
+        scope_dependent |= on_clock && s[0][tr.index()] != s[1][tr.index()];
+        let path = match scope {
+            ClockLimitScope::Paths if on_clock => Some(0),
+            _ if on_clock || data.contains(clock) => Some(1),
+            _ => None,
         };
         if let Some(v) = path.and_then(|p| s[p][tr.index()]) {
             out.push((v, LimitSource::SdcClock));
         }
     }
+    scope_dependent
+}
+
+/// The output and inout library pins of instances that the netlist leaves unconnected
+/// (`STA-REQ-0819`): their number and the names (`instance/pin`) of the first `samples`.
+fn unconnected_output_pins(frozen: &FrozenNetlist<'_>, samples: usize) -> (u64, Vec<String>) {
+    let mut count = 0u64;
+    let mut names = Vec::new();
+    let mut connected = Vec::new();
+    for (row, inst) in frozen.instances.iter().enumerate() {
+        let cell_pins = frozen.cell_pins(inst.cell);
+        connected.clear();
+        connected.resize(cell_pins.len(), false);
+        for p in frozen.instance_pins(row as u32) {
+            if let Some(c) = connected.get_mut(frozen.pin_cellpin[p] as usize) {
+                *c = true;
+            }
+        }
+        for (cp, &is_connected) in connected.iter().enumerate() {
+            let slot = cell_pins.start + cp;
+            // Cell pin direction codes of the frozen netlist: 1 output, 2 inout.
+            if is_connected || !matches!(frozen.cell_pin_dir.get(slot), Some(1 | 2)) {
+                continue;
+            }
+            count += 1;
+            if names.len() < samples {
+                let name = |id: u32| frozen.string(id).unwrap_or("?");
+                names.push(format!(
+                    "{}/{}",
+                    name(inst.name),
+                    name(frozen.cell_pin_name[slot])
+                ));
+            }
+        }
+    }
+    (count, names)
+}
+
+/// The pins of the design rules that are left out or checked by a special rule
+/// (`STA-REQ-0809`, `STA-REQ-0818`, `STA-REQ-0808`, `STA-REQ-0819`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct DrvCounts {
+    /// Drivers of constant nets: not checked for capacitance and fanout.
+    pub constant_drivers: u64,
+    /// Pins checked for transition with a static transition.
+    pub static_transition_pins: u64,
+    /// Pins of an ideal clock network: not checked.
+    pub ideal_clock_pins: u64,
+    /// Pins without any transition: their transition check is not evaluated.
+    pub untimed_pins: u64,
+    /// Clock commands with `-clock_path` only that the scope `domain` does not apply.
+    pub clock_path_skipped: u64,
+    /// Checked pins of a clock network whose clock has different clock-path and data-path
+    /// limits: the clock limit scope decides their limit.
+    pub clock_scope_pins: u64,
+    /// Output and inout pins of instances that the netlist leaves unconnected: not checked.
+    pub unconnected_output_pins: u64,
+    /// The names of the first of them.
+    pub unconnected_samples: Vec<String>,
 }
 
 pub(super) fn check_design_rules(
     inputs: &LimitInputs<'_>,
     rows: &mut RowCollector,
     diags: &mut Vec<Diag>,
-) {
+) -> DrvCounts {
     let rules = SdcRules::build(inputs, diags);
     let nv = inputs.netview;
     let frozen = nv.frozen();
+    // Unconnected library pins are not pins of the design (`STA-REQ-0819`).
+    let (unconnected_output_pins, unconnected_samples) = unconnected_output_pins(frozen, 5);
+    let mut counts = DrvCounts {
+        clock_path_skipped: rules.clock_path_skipped,
+        unconnected_output_pins,
+        unconnected_samples,
+        ..DrvCounts::default()
+    };
     let cell_pins = map_netlist_cell_pins(frozen, inputs.lib);
     let lib_pin = |node: NodeId| -> Option<&CellPin> {
         match nv.node_kind(node) {
@@ -305,27 +394,58 @@ pub(super) fn check_design_rules(
 
     for i in 0..nv.num_nodes() {
         let node = NodeId(i as u32);
+        let clock_net = inputs.clock_model.pin_clocks(node);
+        // The design rules of an ideal clock network are not checked; its limited checks are
+        // unevaluated (`STA-REQ-0818`).
+        let ideal = !clock_net.is_empty()
+            && clock_net
+                .iter()
+                .all(|(c, _)| !inputs.clock_model.is_propagated(*c));
+        if ideal {
+            counts.ideal_clock_pins += 1;
+        }
         if any_clock_rule {
             data_clocks(inputs, node, &mut data);
         }
-        let clock_net = inputs.clock_model.pin_clocks(node);
         let lp = lib_pin(node);
 
-        // max_transition (`STA-REQ-0803`).
+        // max_transition (`STA-REQ-0803`): the propagated transition, else the static one of a
+        // pin on a constant net or in its cone (`STA-REQ-0809`).
+        let propagated = [
+            v.transition(i, Tr::Rise.index(), An::Late.index()),
+            v.transition(i, Tr::Fall.index(), An::Late.index()),
+        ];
+        let tr_values = if ideal {
+            None
+        } else if propagated.iter().any(|&s| An::Late.is_present(s)) {
+            Some(propagated)
+        } else {
+            match inputs.statics.get(node) {
+                Some(StaticTransition::Computed(s)) => {
+                    counts.static_transition_pins += 1;
+                    Some(s)
+                }
+                Some(StaticTransition::Constant) => {
+                    counts.static_transition_pins += 1;
+                    Some([0.0, 0.0])
+                }
+                None => None,
+            }
+        };
         let mut best: Option<LimitRow> = None;
         let mut has_value = false;
+        let mut has_limit = false;
+        // An evaluated check of this pin whose limit depends on the clock limit scope
+        // (`STA-REQ-0808`).
+        let mut scope_dependent = false;
         for tr in Tr::ALL {
-            let s = v.transition(i, tr.index(), An::Late.index());
-            if !An::Late.is_present(s) {
-                continue;
-            }
-            has_value = true;
             cands.clear();
             if let Some(l) = lp.and_then(|p| p.max_transition) {
                 cands.push((l, LimitSource::Liberty));
             }
-            sdc_candidates(
+            let dependent = sdc_candidates(
                 &rules,
+                inputs.clock_limits,
                 LimitKind::MaxTransition,
                 node,
                 tr,
@@ -333,7 +453,17 @@ pub(super) fn check_design_rules(
                 &data,
                 &mut cands,
             );
-            if let Some((limit, source)) = tightest(cands.iter().copied()) {
+            let limit = tightest(cands.iter().copied());
+            has_limit |= limit.is_some();
+            let Some(s) = tr_values
+                .map(|x| x[tr.index()])
+                .filter(|&s| An::Late.is_present(s))
+            else {
+                continue;
+            };
+            has_value = true;
+            scope_dependent |= dependent;
+            if let Some((limit, source)) = limit {
                 let row = LimitRow {
                     node,
                     kind: LimitKind::MaxTransition,
@@ -352,26 +482,46 @@ pub(super) fn check_design_rules(
         match best {
             Some(row) => rows.push(row),
             None if has_value => rows.unlimited(LimitKind::MaxTransition),
+            None if tr_values.is_none() => {
+                // A pin of an ideal clock network, or an untimed pin: counted, and not evaluated
+                // where a limit applies.
+                if !ideal {
+                    counts.untimed_pins += 1;
+                }
+                if has_limit {
+                    rows.unevaluated(LimitKind::MaxTransition);
+                }
+            }
             None => {}
         }
+        if scope_dependent {
+            counts.clock_scope_pins += 1;
+        }
 
-        // max_capacitance and max_fanout of the net of a driver (`STA-REQ-0804`).
+        // max_capacitance and max_fanout of the net of a driver (`STA-REQ-0804`), except on a
+        // constant net (`STA-REQ-0809`).
         if !nv.is_driver(node) {
             continue;
         }
         let NetTarget::Net(net) = nv.node_net(node) else {
             continue;
         };
+        if inputs.constant.get(i).copied().unwrap_or(false) {
+            counts.constant_drivers += 1;
+            continue;
+        }
         let cap = totals.get(net.index()).copied().unwrap_or_default();
         let mut best: Option<LimitRow> = None;
+        let mut cap_limited = false;
         for tr in Tr::ALL {
             let c = cap[tr.index()][0].max(cap[tr.index()][1]);
             cands.clear();
             if let Some(l) = lp.and_then(|p| p.max_capacitance) {
                 cands.push((l, LimitSource::Liberty));
             }
-            sdc_candidates(
+            let dependent = sdc_candidates(
                 &rules,
+                inputs.clock_limits,
                 LimitKind::MaxCapacitance,
                 node,
                 tr,
@@ -379,7 +529,15 @@ pub(super) fn check_design_rules(
                 &data,
                 &mut cands,
             );
+            if dependent && !ideal && !scope_dependent {
+                scope_dependent = true;
+                counts.clock_scope_pins += 1;
+            }
             if let Some((limit, source)) = tightest(cands.iter().copied()) {
+                cap_limited = true;
+                if ideal {
+                    continue;
+                }
                 let row = LimitRow {
                     node,
                     kind: LimitKind::MaxCapacitance,
@@ -397,6 +555,8 @@ pub(super) fn check_design_rules(
         }
         match best {
             Some(row) => rows.push(row),
+            None if ideal && cap_limited => rows.unevaluated(LimitKind::MaxCapacitance),
+            None if ideal => {}
             None => rows.unlimited(LimitKind::MaxCapacitance),
         }
 
@@ -416,6 +576,7 @@ pub(super) fn check_design_rules(
         }
         sdc_candidates(
             &rules,
+            inputs.clock_limits,
             LimitKind::MaxFanout,
             node,
             Tr::Rise,
@@ -424,6 +585,8 @@ pub(super) fn check_design_rules(
             &mut cands,
         );
         match tightest(cands.iter().copied()) {
+            Some(_) if ideal => rows.unevaluated(LimitKind::MaxFanout),
+            None if ideal => {}
             Some((limit, source)) => rows.push(LimitRow {
                 node,
                 kind: LimitKind::MaxFanout,
@@ -437,4 +600,5 @@ pub(super) fn check_design_rules(
             None => rows.unlimited(LimitKind::MaxFanout),
         }
     }
+    counts
 }

@@ -13,7 +13,7 @@
 //! | 1 | `STR_BYTES` | 1 | UTF-8 strings (string 0 is empty) |
 //! | 2 | `STR_OFFS` | 4 | `u32` offsets, one more than the strings |
 //! | 3 | `META` | 16 | [`LimitsMeta`] |
-//! | 4 | `CORNERS` | 32 | [`LimitsCornerRec`] per corner |
+//! | 4 | `CORNERS` | 80 | [`LimitsCornerRec`] per corner |
 //! | 5 | `KINDS` | 56 | [`LimitsKindRec`] per corner and kind (`corner * 6 + kind`) |
 //! | 6 | `ROWS` | 48 | [`LimitsRowRec`] by corner, kind, slack, node |
 
@@ -29,7 +29,9 @@ use crate::engine::input::NetTarget;
 use crate::engine::store::hash::{StringTableBuilder, StringTableView};
 use crate::engine::types::{NodeId, Tr};
 
-use super::{CornerLimits, KindSummary, LimitKind, LimitRow, LimitSource, PulseRules};
+use super::{
+    ClockLimitScope, CornerLimits, KindSummary, LimitKind, LimitRow, LimitSource, PulseRules,
+};
 
 /// The `rbin` container kind of the table.
 pub const KIND: &str = "LIMITS";
@@ -73,8 +75,9 @@ pub struct LimitsMeta {
 pub struct LimitsCornerRec {
     /// The corner name.
     pub name_str: u32,
-    /// The pulse rules of the corner's checks ([`PulseRules::bits`], `STA-REQ-0816`,
-    /// `STA-REQ-0817`).
+    /// The rules of the corner's checks: the pulse rules ([`PulseRules::bits`], `STA-REQ-0816`,
+    /// `STA-REQ-0817`) and the clock limit scope of the design rules
+    /// ([`ClockLimitScope::bits`], `STA-REQ-0808`).
     pub pulse_rules: u32,
     /// Instance pins with pulse checks that no clock reaches.
     pub unclocked_pulse_pins: u64,
@@ -83,6 +86,20 @@ pub struct LimitsCornerRec {
     /// Clocked instance pins with pulse constraints that pass their clock on, not checked under
     /// the scope `clock-ends` (`STA-REQ-0817`).
     pub pass_through_pulse_pins: u64,
+    /// Drivers of constant nets, not checked for capacitance and fanout (`STA-REQ-0809`).
+    pub constant_drivers: u64,
+    /// Pins checked for transition with a static transition (`STA-REQ-0809`).
+    pub static_transition_pins: u64,
+    /// Pins and drivers of ideal clock networks, not checked for the design rules
+    /// (`STA-REQ-0818`).
+    pub ideal_clock_pins: u64,
+    /// Pins without any transition, whose transition check is not evaluated (`STA-REQ-0809`).
+    pub untimed_pins: u64,
+    /// Checked pins of clock networks whose limit the clock limit scope decides
+    /// (`STA-REQ-0808`).
+    pub clock_scope_pins: u64,
+    /// Unconnected instance output pins, not checked (`STA-REQ-0819`).
+    pub unconnected_output_pins: u64,
 }
 
 /// The counts of one kind in one corner.
@@ -166,10 +183,16 @@ impl LimitsData {
             let l = &ca.limits;
             corners.push(LimitsCornerRec {
                 name_str: strings.intern(&ca.corner_name),
-                pulse_rules: l.rules.bits(),
+                pulse_rules: l.rules.bits() | l.clock_limits.bits(),
                 unclocked_pulse_pins: l.unclocked_pulse_pins,
                 conditional_pulse_groups: l.conditional_pulse_groups,
                 pass_through_pulse_pins: l.pass_through_pulse_pins,
+                constant_drivers: l.constant_drivers,
+                static_transition_pins: l.static_transition_pins,
+                ideal_clock_pins: l.ideal_clock_pins,
+                untimed_pins: l.untimed_pins,
+                clock_scope_pins: l.clock_scope_pins,
+                unconnected_output_pins: l.unconnected_output_pins,
             });
             for kind in LimitKind::ALL {
                 let k = l.kind(kind);
@@ -399,7 +422,7 @@ impl LimitsTable {
             .iter()
             .any(|c| PulseRules::from_bits(c.pulse_rules).is_none())
         {
-            return Err(corrupt(&t.rbin, "unknown pulse rule bits"));
+            return Err(corrupt(&t.rbin, "unknown rule bits"));
         }
         let mut next = 0u64;
         for k in kinds {
@@ -483,6 +506,37 @@ impl LimitsTable {
                     .ok_or_else(|| corrupt(&self.rbin, "unknown pulse rule bits"))
             })
             .collect()
+    }
+
+    /// The clock limit scope of each corner's design rules (`STA-REQ-0808`).
+    pub fn clock_limits(&self) -> Result<Vec<ClockLimitScope>> {
+        Ok(self
+            .section::<LimitsCornerRec>(section::CORNERS)?
+            .iter()
+            .map(|c| ClockLimitScope::from_bits(c.pulse_rules))
+            .collect())
+    }
+
+    /// Per corner, the drivers of constant nets left out of the capacitance and fanout checks,
+    /// the pins checked with a static transition, the pins of ideal clock networks, the untimed
+    /// pins, the clock network pins whose limit the clock limit scope decides and the
+    /// unconnected instance output pins (`STA-REQ-0809`, `STA-REQ-0818`, `STA-REQ-0808`,
+    /// `STA-REQ-0819`).
+    pub fn drv_pin_counts(&self) -> Result<Vec<[u64; 6]>> {
+        Ok(self
+            .section::<LimitsCornerRec>(section::CORNERS)?
+            .iter()
+            .map(|c| {
+                [
+                    c.constant_drivers,
+                    c.static_transition_pins,
+                    c.ideal_clock_pins,
+                    c.untimed_pins,
+                    c.clock_scope_pins,
+                    c.unconnected_output_pins,
+                ]
+            })
+            .collect())
     }
 
     /// Clocked pins with pulse constraints left out by the scope `clock-ends`, per corner
@@ -575,7 +629,7 @@ mod tests {
     #[test]
     fn record_sizes_are_fixed() {
         assert_eq!(size_of::<LimitsMeta>(), 16);
-        assert_eq!(size_of::<LimitsCornerRec>(), 32);
+        assert_eq!(size_of::<LimitsCornerRec>(), 80);
         assert_eq!(size_of::<LimitsKindRec>(), 56);
         assert_eq!(size_of::<LimitsRowRec>(), 48);
     }

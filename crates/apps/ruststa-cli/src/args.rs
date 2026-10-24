@@ -169,6 +169,29 @@ pub enum PulsePinsArg {
     ClockEnds,
 }
 
+/// How the design-rule limits of a clock map to pins (`--clock-limits`, `STA-REQ-0808`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ClockLimitsArg {
+    /// -clock_path limits on the clock network, -data_path limits on the data pins, a limit
+    /// without either on both.
+    #[value(name = "paths")]
+    Paths,
+    /// The data-path limit (-data_path, or neither option) on the whole clock domain, the clock
+    /// network included; -clock_path limits alone are not applied (counted, T0144).
+    #[value(name = "domain")]
+    Domain,
+}
+
+/// The clock limit scope of `arg` (`STA-REQ-0808`).
+#[must_use]
+pub fn clock_limits(arg: ClockLimitsArg) -> ruststa::engine::limits::ClockLimitScope {
+    use ruststa::engine::limits::ClockLimitScope;
+    match arg {
+        ClockLimitsArg::Paths => ClockLimitScope::Paths,
+        ClockLimitsArg::Domain => ClockLimitScope::Domain,
+    }
+}
+
 /// The pulse rules of `groups` and `pins` (`STA-REQ-0816`, `STA-REQ-0817`).
 #[must_use]
 pub fn pulse_rules(
@@ -497,6 +520,17 @@ pub struct RunArgs {
     )]
     pub pulse_pins: PulsePinsArg,
 
+    /// How a clock's design-rule limits map to pins: `paths` (-clock_path on the clock network,
+    /// -data_path on the data pins) or `domain` (the data-path limit on the whole domain;
+    /// -clock_path alone not applied; `STA-REQ-0808`).
+    #[arg(
+        long = "clock-limits",
+        value_enum,
+        default_value_t = ClockLimitsArg::Paths,
+        value_name = "SCOPE"
+    )]
+    pub clock_limits: ClockLimitsArg,
+
     /// Storage mode for `sta.rbin` (`full` or `summary`).
     #[arg(
         long = "sta-store",
@@ -580,6 +614,17 @@ pub struct UpdateArgs {
         value_name = "SCOPE"
     )]
     pub pulse_pins: PulsePinsArg,
+
+    /// How a clock's design-rule limits map to pins: `paths` (-clock_path on the clock network,
+    /// -data_path on the data pins) or `domain` (the data-path limit on the whole domain;
+    /// -clock_path alone not applied; `STA-REQ-0808`).
+    #[arg(
+        long = "clock-limits",
+        value_enum,
+        default_value_t = ClockLimitsArg::Paths,
+        value_name = "SCOPE"
+    )]
+    pub clock_limits: ClockLimitsArg,
 
     /// Storage mode for `sta.rbin` (`full` or `summary`).
     #[arg(

@@ -896,6 +896,34 @@ pub struct CornerLimitsReport {
     /// The pulse pin scope of the analysis, `all` or `clock-ends` (`STA-REQ-0817`).
     #[serde(default = "default_pulse_pins")]
     pub pulse_pins: String,
+    /// The clock limit scope of the design rules, `paths` or `domain` (`STA-REQ-0808`).
+    #[serde(default = "default_clock_limits")]
+    pub clock_limits: String,
+    /// Drivers of constant nets, not checked for capacitance and fanout (`STA-REQ-0809`).
+    #[serde(default)]
+    pub constant_drivers: u64,
+    /// Pins checked for transition with a static transition (`STA-REQ-0809`).
+    #[serde(default)]
+    pub static_transition_pins: u64,
+    /// Pins and drivers of ideal clock networks, not checked for the design rules
+    /// (`STA-REQ-0818`).
+    #[serde(default)]
+    pub ideal_clock_pins: u64,
+    /// Pins without any transition, whose transition check is not evaluated (`STA-REQ-0809`).
+    #[serde(default)]
+    pub untimed_pins: u64,
+    /// Checked pins of clock networks whose clock has different clock-path and data-path
+    /// limits, so that the clock limit scope decides their limit (`STA-REQ-0808`).
+    #[serde(default)]
+    pub clock_scope_pins: u64,
+    /// Output and inout pins of instances that the netlist leaves unconnected, not checked for
+    /// the design rules (`STA-REQ-0819`).
+    #[serde(default)]
+    pub unconnected_output_pins: u64,
+}
+
+fn default_clock_limits() -> String {
+    "paths".to_owned()
 }
 
 fn default_pulse_groups() -> String {

@@ -19,13 +19,22 @@ their own status, `max_transition_status`, `max_capacitance_status`,
 `max_fanout_status`, `drv_status` and `pulse_width_status`, with counts. A status
 is `met` only when every check was evaluated without violation: `partial` when
 some checks were not evaluated (unclocked pulse pins, pulse pins left out by
-`--pulse-pins clock-ends`, values that are not finite), when a design rule is
+`--pulse-pins clock-ends`, values that are not finite, pins without any transition
+`completeness.drv_untimed_pins`, pins of an ideal clock network
+`completeness.drv_ideal_clock_pins`), when a design rule is
 checked on some pins but others have no limit (`completeness.drv_unlimited`), or
 when a design rule has no limit anywhere; `unconstrained` when there is nothing
 to check, and `unchecked` when nothing was evaluated or the table did not check
 them. A count without a checked row is `null`, never zero. The rules of the
 pulse checks are part of the scope (`scope.pulse_rules`: `groups` `worst` or
-`last`, `pins` `all` or `clock-ends`).
+`last`, `pins` `all` or `clock-ends`), and so is the clock limit scope of the
+design rules (`scope.drv_rules.clock_limits`: `paths` or `domain`; the clock network pins
+on which the two differ are counted in `completeness.drv_clock_scope_pins`). The drivers
+of constant nets, which are not checked for capacitance and fanout, and the pins
+checked with a static transition are counted in `completeness.drv_constant_drivers`
+and `completeness.drv_static_transition_pins`; unconnected instance output pins,
+which drive no net, are not checked and are counted in
+`completeness.drv_unconnected_output_pins`.
 
 ```bash
 ruststa report --workspace ./ws --rev rev2 --section limits --format json

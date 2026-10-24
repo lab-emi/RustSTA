@@ -45,6 +45,27 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   pulse status is `partial`). The envelope reports `scope.pulse_rules`; the `limits` table and the
   `sta.rbin` scope record the rules per corner; `T0142` counts unused period fall tables under
   `last`.
+- **Design rules on constant nets (`STA-REQ-0809`):** the drivers of constant nets (tie cells,
+  netlist literals, case analysis, propagated through cells) are not checked for
+  `max_capacitance` and `max_fanout` (`completeness.drv_constant_drivers`); pins that the
+  propagation leaves without a transition (constant nets and their cones, outputs of sequential
+  cells that no clock reaches) are checked for `max_transition` with a static transition from the
+  corner's delay calculation (`completeness.drv_static_transition_pins`, note `T0143`); any other
+  pin without a transition is counted as untimed (`completeness.drv_untimed_pins`, warning
+  `T0145`) and its limited check is unevaluated, so the rule is never `met` with a silent gap.
+- **Ideal clock networks (`STA-REQ-0818`):** the pins of an ideal clock's network are left out of
+  the design rules; their limited checks are unevaluated (`completeness.drv_ideal_clock_pins`,
+  warning `T0146`).
+- **Unconnected pins (`STA-REQ-0819`):** the library pins that the netlist leaves unconnected are
+  not pins of the design and are not checked; the unconnected output pins are counted
+  (`completeness.drv_unconnected_output_pins`, note `T0148` with the first five names).
+- **Clock limit scope (`STA-REQ-0808`):** `run` and `update` take `--clock-limits paths|domain`:
+  `-clock_path` limits on the clock network and `-data_path` limits on the data pins (the
+  default), or the data-path limit of a clock on its whole domain with `-clock_path` alone not
+  applied (warning `T0144`). The clock network pins on which the two scopes differ are counted
+  under either scope (`completeness.drv_clock_scope_pins`, note `T0147`). The envelope reports
+  `scope.drv_rules`; the `sta.rbin` scope and bit 2 of the `limits` table's corner rules record
+  it.
 - **`T0140`** warns when an import drops the `parasitics` table because the netlist changed
   (RCLI-REQ-0076).
 - **Extracted parasitics per corner (`STA-REQ-0820`, RCLI-REQ-0075):** `rusteda import` takes
@@ -56,6 +77,9 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 
 ### Changed
 - `min_pulse_width` and `minimum_period` groups are no longer counted as unanalyzed arcs.
+- The `CORNERS` record of the `limits` table (unreleased `LIMITS` v1) is 80 bytes and carries the
+  constant-driver, static-transition, ideal-clock, untimed, clock-scope and unconnected-output pin
+  counts of the design rules.
 - The analyzed design-rule commands no longer carry `D0021`; the import-time `D0021` wording is
   neutral about which analysis checks them.
 - The `sta` revision summary reports measured design-rule counts with `drv_status`; `rusteda show`

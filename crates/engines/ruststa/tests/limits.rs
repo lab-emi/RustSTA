@@ -21,7 +21,7 @@ use ruststa::engine::analysis::{AnalysisOptions, EngineAnalysis};
 use ruststa::engine::delay::spef::ParasiticInput;
 use ruststa::engine::input::constr::{CompiledConstraints, CornerLibs};
 use ruststa::engine::limits::table::LimitsData;
-use ruststa::engine::limits::{CornerLimits, LimitKind, LimitRow, LimitSource};
+use ruststa::engine::limits::{ClockLimitScope, CornerLimits, LimitKind, LimitRow, LimitSource};
 use ruststa::engine::types::Tr;
 
 const LIB: &str = r#"library (sig) {
@@ -407,9 +407,105 @@ fn design_rules_take_the_tightest_limit() {
 }
 
 // STA-REQ-0805: clock-domain slots: -clock_path reaches the clock network pins only and
-// -data_path the data pins of the domain only; -rise and -fall limit one transition.
+// -data_path the data pins of the domain only; -rise and -fall limit one transition. The clock is
+// propagated, with the port transition 0.2 at its source (STA-REQ-0818 leaves an ideal clock
+// network out, see below).
 #[test]
 fn clock_domain_limits_follow_the_path_options() {
+    let lib = lib();
+    let frozen = freeze(PULSE_NETLIST, &lib);
+    let prop = format!(
+        "{PULSE_SDC}set_propagated_clock [get_clocks c]\nset_input_transition 0.2 [get_ports clk]\n"
+    );
+    let violators = |sdc: &str, opts: &AnalysisOptions| -> (Vec<String>, Vec<String>) {
+        let a = analyze(&frozen, std::slice::from_ref(&lib), sdc, opts);
+        let mut v: Vec<String> = a.corners[0]
+            .limits
+            .rows_of(LimitKind::MaxTransition)
+            .filter(|r| r.slack < 0.0)
+            .map(|r| a.netview.node_name_str(r.node).into_owned())
+            .collect();
+        v.sort();
+        (v, a.diags.iter().map(|d| d.code.clone()).collect())
+    };
+    let ideal = AnalysisOptions::ideal();
+    let domain = AnalysisOptions {
+        clock_limits: ClockLimitScope::Domain,
+        ..AnalysisOptions::ideal()
+    };
+
+    let sdc = format!("{prop}set_max_transition 0.15 -clock_path [get_clocks c]\n");
+    // The clock source and the pins it reaches by wire carry the port transition 0.2 > 0.15;
+    // behind the inverter the transition is its table value 0.1. Data pins (Q pins, d) are
+    // outside the clock network.
+    let (viol, codes) = violators(&sdc, &ideal);
+    assert_eq!(viol, ["clk", "f1/CK", "i1/A"]);
+    assert!(!codes.iter().any(|c| c == "T0144"), "{codes:?}");
+
+    let sdc = format!("{prop}set_max_transition 0.05 -data_path [get_clocks c]\n");
+    // Q pins (0.1) and the ports they drive are data pins of c; clock pins are not.
+    let (viol, _) = violators(&sdc, &ideal);
+    assert_eq!(viol, ["f1/Q", "f2/Q", "q1", "q2"]);
+
+    let sdc = format!("{prop}set_max_transition 0.05 -rise [get_clocks c]\n");
+    let a = analyze(&frozen, std::slice::from_ref(&lib), &sdc, &ideal);
+    let r = row(&a.corners[0].limits, LimitKind::MaxTransition, "f1/Q", &a);
+    assert_eq!(r.tr, Some(Tr::Rise));
+    assert_eq!(r.source, LimitSource::SdcClock);
+    // Without a path option both slots are equal: no pin depends on the scope.
+    assert_eq!(a.corners[0].limits.clock_scope_pins, 0);
+    assert!(!a.diags.iter().any(|d| d.code == "T0147"));
+
+    // STA-REQ-0808: the five clock network pins (clk, i1/A, i1/Y, f1/CK, f2/CK) have a clock
+    // whose clock-path and data-path slots differ, under either scope: counted, note T0147.
+    for (cmd, opts) in [
+        ("-clock_path 0.15", &ideal),
+        ("-data_path 0.05", &ideal),
+        ("-clock_path 0.15", &domain),
+        ("-data_path 0.05", &domain),
+    ] {
+        let sdc = format!("{prop}set_max_transition {cmd} [get_clocks c]\n");
+        let a = analyze(&frozen, std::slice::from_ref(&lib), &sdc, opts);
+        assert_eq!(a.corners[0].limits.clock_scope_pins, 5, "{cmd}");
+        assert!(a.diags.iter().any(|d| d.code == "T0147"), "{cmd}");
+    }
+
+    // STA-REQ-0808: under the scope `domain` the data-path limit covers the clock network too,
+    // and a -clock_path limit alone applies nowhere (T0144).
+    let sdc = format!("{prop}set_max_transition 0.15 -clock_path [get_clocks c]\n");
+    let (viol, codes) = violators(&sdc, &domain);
+    assert!(viol.is_empty(), "{viol:?}");
+    assert!(codes.iter().any(|c| c == "T0144"), "{codes:?}");
+    let sdc = format!("{prop}set_max_transition 0.05 -data_path [get_clocks c]\n");
+    let (viol, codes) = violators(&sdc, &domain);
+    assert_eq!(
+        viol,
+        [
+            "clk", "f1/CK", "f1/Q", "f2/CK", "f2/Q", "i1/A", "i1/Y", "q1", "q2"
+        ]
+    );
+    assert!(!codes.iter().any(|c| c == "T0144"), "{codes:?}");
+    // A later -clock_path command does not replace the data-path slot under `domain`; a
+    // -data_path command replaces the slot of a command without option.
+    let sdc = format!(
+        "{prop}set_max_transition 0.05 [get_clocks c]\nset_max_transition 0.5 -clock_path [get_clocks c]\n"
+    );
+    let (viol, _) = violators(&sdc, &domain);
+    assert_eq!(viol.len(), 9, "{viol:?}");
+    let sdc = format!(
+        "{prop}set_max_transition 0.05 [get_clocks c]\nset_max_transition 0.5 -data_path [get_clocks c]\n"
+    );
+    let (viol, _) = violators(&sdc, &domain);
+    assert!(viol.is_empty(), "{viol:?}");
+}
+
+// STA-REQ-0818: the design rules of an ideal clock network are not checked. clk, f1/CK, i1/A,
+// i1/Y and f2/CK form the network of the ideal clock c: no transition row, and their limited
+// checks are unevaluated (the -clock_path transition limit on all five; the library's
+// default_max_fanout on the driver i1/Y; clk has no fanout or capacitance limit). The design
+// rules are then unchecked or partial, never met, and a warning T0146 names the count.
+#[test]
+fn ideal_clock_network_is_left_out_of_the_design_rules() {
     let lib = lib();
     let frozen = freeze(PULSE_NETLIST, &lib);
     let sdc = format!("{PULSE_SDC}set_max_transition 0.15 -clock_path [get_clocks c]\n");
@@ -420,45 +516,43 @@ fn clock_domain_limits_follow_the_path_options() {
         &AnalysisOptions::ideal(),
     );
     let l = &a.corners[0].limits;
-    let viol: Vec<String> = l
-        .rows_of(LimitKind::MaxTransition)
-        .filter(|r| r.slack < 0.0)
-        .map(|r| a.netview.node_name_str(r.node).into_owned())
-        .collect();
-    // The clock source and the pins it reaches by wire carry the ideal clock transition 0.2 >
-    // 0.15; behind the inverter the propagated transition is its table value 0.1. Data pins
-    // (Q pins, d) are outside the clock network.
-    let mut viol = viol;
-    viol.sort();
-    assert_eq!(viol, ["clk", "f1/CK", "i1/A"]);
+    assert_eq!(l.ideal_clock_pins, 5);
+    assert_eq!(l.kind(LimitKind::MaxTransition).unevaluated, 5);
+    assert_eq!(l.kind(LimitKind::MaxFanout).unevaluated, 1);
+    assert_eq!(l.kind(LimitKind::MaxCapacitance).unevaluated, 0);
+    let network = ["clk", "f1/CK", "i1/A", "i1/Y", "f2/CK"];
+    assert!(
+        !l.rows
+            .iter()
+            .any(|r| r.kind.is_drv() && network.contains(&a.netview.node_name_str(r.node).as_ref())),
+        "no design-rule row of the ideal network (its pulse checks stay, STA-REQ-0815)"
+    );
+    let codes: Vec<&str> = a.diags.iter().map(|d| d.code.as_str()).collect();
+    assert!(codes.contains(&"T0146"), "{codes:?}");
+    assert!(!codes.contains(&"T0137"), "{codes:?}");
+    let report = ruststa::engine::store::from_analysis::corner_limits_report(&a.corners[0]);
+    assert_eq!(report.ideal_clock_pins, 5);
+    // Every limited transition check is on the ideal network: unchecked, not unconstrained
+    // (STA-REQ-0813); the fanout rule has a checked driver (f1/Q) and is partial.
+    let s = ruststa::engine::limits::status::limit_statuses(Some(&[&report]));
+    use ruststa::engine::limits::status::CheckStatus;
+    assert_eq!(s.drv[0].1, CheckStatus::Unchecked);
+    assert_eq!(s.drv[2].1, CheckStatus::Partial);
 
-    let sdc = format!("{PULSE_SDC}set_max_transition 0.05 -data_path [get_clocks c]\n");
-    let a = analyze(
+    // Propagated, the same pins are checked.
+    let prop = format!("{sdc}set_propagated_clock [get_clocks c]\n");
+    let p = analyze(
         &frozen,
         std::slice::from_ref(&lib),
-        &sdc,
+        &prop,
         &AnalysisOptions::ideal(),
     );
-    let l = &a.corners[0].limits;
-    let viol: Vec<String> = l
-        .rows_of(LimitKind::MaxTransition)
-        .filter(|r| r.slack < 0.0)
-        .map(|r| a.netview.node_name_str(r.node).into_owned())
-        .collect();
-    // Q pins (0.1) and the ports they drive are data pins of c; clock pins are not.
-    assert!(viol.contains(&"f1/Q".to_string()), "{viol:?}");
-    assert!(!viol.iter().any(|p| p.ends_with("/CK")), "{viol:?}");
-
-    let sdc = format!("{PULSE_SDC}set_max_transition 0.05 -rise [get_clocks c]\n");
-    let a = analyze(
-        &frozen,
-        std::slice::from_ref(&lib),
-        &sdc,
-        &AnalysisOptions::ideal(),
-    );
-    let r = row(&a.corners[0].limits, LimitKind::MaxTransition, "f1/Q", &a);
-    assert_eq!(r.tr, Some(Tr::Rise));
-    assert_eq!(r.source, LimitSource::SdcClock);
+    let l = &p.corners[0].limits;
+    assert_eq!(l.ideal_clock_pins, 0);
+    assert_eq!(l.kind(LimitKind::MaxTransition).unevaluated, 0);
+    for pin in network {
+        row(l, LimitKind::MaxTransition, pin, &p);
+    }
 }
 
 // STA-REQ-0805: options that do not apply and objects that are not checked are reported.

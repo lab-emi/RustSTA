@@ -75,13 +75,18 @@ table records them in its corner records (STA-REQ-0806).
 
 ## Electrical design rules
 
-**STA-REQ-0803** `max_transition`. Every port and instance pin with a propagated transition time is
-checked: for each transition, the late transition time against the tightest limit that applies
-to that transition (STA-REQ-0805); the row reports the transition with the smallest slack
-`limit - value`. A pin with a transition time but no limit is counted as `unlimited`.
+**STA-REQ-0803** `max_transition`. Every port and connected instance pin (STA-REQ-0819) is
+checked with its transition
+time: the propagated transition, or for a pin without one its static transition (STA-REQ-0809):
+for each transition, the late transition time against the tightest limit that applies to that
+transition (STA-REQ-0805); the row reports the transition with the smallest slack
+`limit - value`. A pin with a transition time but no limit is counted as `unlimited`. A pin
+without any transition time (an untimed pin, STA-REQ-0809) is counted, and its check is not
+evaluated where a limit applies. The pins of an ideal clock network follow STA-REQ-0818.
 
 **STA-REQ-0804** `max_capacitance` and `max_fanout`. Every driver of a net (an input or inout port,
-an output or inout instance pin) is checked against the limits of its net. The capacitance is the
+a connected output or inout instance pin, STA-REQ-0819) whose net is not constant (STA-REQ-0809)
+is checked against the limits of its net. The capacitance is the
 total of the net's alias class (the pin capacitances of the library, the wire capacitance of the
 wire model or of the extracted parasitics, and `set_load` on ports), the largest over the bounds
 for each transition. The fanout is the sum of the `fanout_load` of the instance load pins (the
@@ -95,8 +100,8 @@ that order): the library limit of an instance pin (its `max_transition`, `max_ca
 (every pin and port); a constraint on a port (the port itself; for capacitance and fanout only an
 input or inout port, which drives a net); and a constraint on a clock `C`, for the transition and
 the capacitance, whose domain is the clock network of `C` (with `-clock_path`) and the data pins
-that `C` launches (with `-data_path`), both without either option, and whose `-rise` or `-fall`
-restricts it to one transition. Every constraint object holds one value per slot (design, port,
+that `C` launches (with `-data_path`), both without either option, under the clock limit scope
+`paths` (STA-REQ-0808), and whose `-rise` or `-fall` restricts it to one transition. Every constraint object holds one value per slot (design, port,
 clock path and transition), and a later command on the same slot replaces an earlier one. The
 options `-clock_path`, `-data_path`, `-rise` and `-fall` on the design or a port are ignored with a
 warning `T0130`; an object that is not checked (a pin, cell, net or library object, an output
@@ -105,12 +110,77 @@ with a warning `T0131`. `set_max_transition`, `set_max_capacitance`, `set_max_fa
 `set_fanout_load` are analyzed and carry no `D0021`; `set_min_capacitance` and
 `set_port_fanout_number` remain recorded with `D0021`.
 
+**STA-REQ-0808** The clock limit scope. `ruststa run` and `update` take
+`--clock-limits paths|domain` (default `paths`). Under `paths` a clock's design-rule slots apply
+as STA-REQ-0805 states: the clock-path slot to its clock network, the data-path slot to the data
+pins that it launches. Under `domain` the data-path slot of a clock (written by `-data_path` or by
+a command without either option) applies to every pin of its domain, its clock network included,
+and a command with `-clock_path` alone writes no slot: it is applied nowhere, and a warning
+`T0144` counts such commands. The scope reproduces the choice that a reference timing tool makes,
+observed as a black box with each option, both, neither, `-rise` and `-fall`, in either command
+order and with ideal and propagated clocks; `paths` follows the definitions of the constraint
+format and is never looser on a clock pin whose clock-path limit is the smaller. The two scopes
+differ exactly on the checked pins of the clock network of a clock whose clock-path and data-path
+slots differ (for a transition): under either scope these pins are counted in
+`clock_scope_pins`, and a note `T0147` per corner names the count and the slot that the scope
+applies to them. The scope of a run is part of its scope: the envelope reports
+`scope.drv_rules.clock_limits`, the `SCOPE` of `sta.rbin` records it per corner, and the `limits`
+table records it in bit 2 of the rules of each corner (STA-REQ-0806).
+
+**STA-REQ-0809** Constant nets, untimed pins and static transitions. A net whose logic value is
+constant (netlist literals and tie cells, `set_case_analysis` and `set_logic_*`, propagated
+through the cells, STA-REQ-0150) never switches: its driver is not checked for
+`max_capacitance` and `max_fanout`, and is counted in `constant_drivers`. A pin that the
+propagation leaves without a transition time (a pin of a constant net or of its cone, whose arcs
+the constants disable, or the output of a sequential cell that no clock reaches) is checked for
+`max_transition` with its static transition: the corner's delay calculation (the arc evaluation
+of the propagation, STA-REQ-0723, and of the launch of a clocked output, STA-REQ-0217, with the
+same wire model and loads) carried in topological order from the propagated transitions and from
+the outputs of tie cells (constant drivers without timing arcs, transition 0) through the arcs
+that only logic values disable (constants, case analysis, false `when` conditions) and the
+clock-to-output arcs; the transitions of pins with a propagated transition are not changed. A
+constant pin that no transition reaches this way (a pin tied to a netlist literal and its cone)
+has the transition 0. These pins are counted in `static_transition_pins`, and a note `T0143` per
+corner names both counts. Any other pin without a transition (reached only through an arc that
+`set_disable_timing` or loop breaking disables, or on an undriven net) is untimed: it is counted
+in `untimed_pins`, its limited transition check is unevaluated (STA-REQ-0813), and a warning
+`T0145` per corner names the count. The rules reproduce the pin sets and transitions of a
+reference timing tool, observed as a black box on tie cells, buffers and gates fed by ties with
+controlling and non-controlling constants, literals, case analysis, an unclocked and a tied-off
+flip-flop clock, with ideal wires and extracted parasitics, on both default libraries.
+
+**STA-REQ-0819** Unconnected pins. The design rules check the pins of the netlist: the ports and
+the connected instance pins. A library pin of an instance that the netlist leaves unconnected (not
+listed, or written `.P()`), such as the unused output of a tie cell with two outputs or the
+unused complement output of a flip-flop, drives no net and has no load and no receiver, and a
+cell's internal pins (direction `internal`) are not pins of the design: neither is checked, and
+their checks are not counted as unevaluated. The unconnected output and inout pins are counted in
+`unconnected_output_pins`, and a note `T0148` per corner names the count and the first five
+pins; unconnected input pins are reported by `T0010` (STA-REQ-0002). A reference timing tool,
+observed as a black box, also lists these pins under the transition limit: the internal and
+unconnected input pins with the transition 0, the unconnected outputs with the table transition
+of the cell at zero load. A limit below such a zero-load transition therefore makes an
+unconnected output a violator of the reference only; this is a declared and counted difference.
+
+**STA-REQ-0818** Ideal clock networks. The pins of the clock network (STA-REQ-0200) of a clock
+that is not propagated (`set_propagated_clock`), when every clock that reaches the pin there is
+ideal, are not checked for any design rule: their transitions are the ideal clock transition, and
+the network that drives them is not yet built. Their limited checks (the transition of every such
+pin, the capacitance and fanout of every such driver) are unevaluated (STA-REQ-0813), the corner
+counts the pins in `ideal_clock_pins`, and a warning `T0146` per corner names the count, so a
+design rule with an ideal clock is `partial` or `unchecked`, never `met`. The network includes
+the pins behind clock buffers, inverters and gaters and the data pins that the clock reaches, as
+observed of a reference timing tool. Their pulse checks follow STA-REQ-0815.
+
 ## Tables, summaries and reports
 
 **STA-REQ-0806** The `limits` table. `ruststa run` and `ruststa update` commit, with `sta.rbin` and
 with the same upstream tables, a table `limits` (`limits.rbin`, rbin kind `LIMITS`, version 1): per
-corner the pulse rules (bit 0 for `last`, bit 1 for `clock-ends`; other bits are a corrupt table),
-the unclocked, conditional and pass-through pulse counts, the counts of every kind (checked,
+corner the rules (bit 0 for the pulse groups `last`, bit 1 for the pulse pins `clock-ends`, bit 2
+for the clock limit scope `domain`; other bits are a corrupt table), the unclocked, conditional
+and pass-through pulse counts, the constant drivers, static-transition, ideal-clock, untimed,
+clock-scope and unconnected output pin counts of the design rules (STA-REQ-0809, STA-REQ-0818,
+STA-REQ-0808, STA-REQ-0819), the counts of every kind (checked,
 violating, worst slack, unlimited, kept rows) and the kept rows with the names of their pin, net
 and clock, the value, limit, slack, transition and source. Equal inputs give byte-identical tables; `update --verify-full` requires the incremental
 table to equal the table of a full analysis byte for byte, as for `sta.rbin`; a timing session
@@ -135,7 +205,9 @@ of a corner carry its transition and capacitance violations. The command envelop
 `worst_max_transition_slack_ns`, `max_transition_status`, `max_capacitance_violating`,
 `worst_max_capacitance_slack_pf`, `max_capacitance_status`, `max_fanout_violating`,
 `worst_max_fanout_slack`, `max_fanout_status` and `drv_status`, and the completeness
-`unchecked_pulse_width_pins`, `unevaluated_limit_checks` and `drv_unlimited` (per design rule), the
+`unchecked_pulse_width_pins`, `pass_through_pulse_pins`, `unevaluated_limit_checks`,
+`drv_constant_drivers`, `drv_static_transition_pins`, `drv_ideal_clock_pins`, `drv_untimed_pins`,
+`drv_clock_scope_pins`, `drv_unconnected_output_pins` and `drv_unlimited` (per design rule), the
 worst corner of each, or the `--corner` alone.
 
 **STA-REQ-0810** Bounded rows. Every check is counted, and at most `--max-limit-rows` rows
@@ -180,7 +252,8 @@ otherwise `unconstrained` when nothing is checked and nothing is left unevaluate
 pulse constraint, or no limit of the kind anywhere), `unchecked` when nothing is checked but some
 checks were left unevaluated (every pulse pin unclocked, STA-REQ-0802, or every value not finite),
 `partial` when some checks were evaluated and others not (unclocked pulse pins, pulse pins left
-out by the scope `clock-ends`, STA-REQ-0817, values that are not finite, or a design rule checked
+out by the scope `clock-ends`, STA-REQ-0817, values that are not finite, the limited checks of
+untimed pins, STA-REQ-0809, and of ideal clock networks, STA-REQ-0818, or a design rule checked
 on some pins or drivers while others have a value but no limit, `completeness.drv_unlimited`), and
 `met` when every check was evaluated without violation. `drv_status` is `violated` when a design rule is violated, `met` when all three
 are met, `unconstrained` when all three are unconstrained, `unchecked` when none was evaluated, and
@@ -253,4 +326,11 @@ STA-REQ-0801 takes the largest. That comparison is therefore made on a copy of t
 pins keep only the attributes, read by both tools, and the order-dependent difference on the
 original library is recorded as a measured deviation, not as a pass. The reference tool rejects
 `set_max_capacitance` on a clock, so that slot of STA-REQ-0805 has the hand derivations of the
-engine suite as its only oracle.
+engine suite as its only oracle. The design rules on constant nets, unclocked outputs and
+literals (STA-REQ-0809) and on ideal clock networks (STA-REQ-0818) are derived by hand on a
+library with tables linear in the input transition and the load (`tests/drv_constants.rs`,
+`tests/limits.rs`) and compared, as checked and violating pin sets and transition values, with
+the reference tool on a constant-net probe of both default libraries at three corners with
+extracted parasitics; the clock limit scopes (STA-REQ-0808) are compared with planted
+`-clock_path` and `-data_path` limits: `domain` gives the reference's limits on every pin, and
+`paths` differs exactly on the clock network pins, as a declared and counted rule choice.

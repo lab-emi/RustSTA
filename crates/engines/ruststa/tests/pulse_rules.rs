@@ -18,7 +18,9 @@ use rusteda_workspace::rbin::Rbin;
 use ruststa::engine::analysis::{AnalysisOptions, EngineAnalysis};
 use ruststa::engine::limits::status::{CheckStatus, limit_statuses};
 use ruststa::engine::limits::table::{LimitsData, LimitsTable};
-use ruststa::engine::limits::{CornerLimits, LimitKind, PulseGroupRule, PulsePinScope, PulseRules};
+use ruststa::engine::limits::{
+    ClockLimitScope, CornerLimits, LimitKind, PulseGroupRule, PulsePinScope, PulseRules,
+};
 use ruststa::engine::store::CornerLimitsReport;
 
 /// `DFL/CK`: attributes high 0.4, low 0.35, period 1.8; width groups `G1` (rise 0.5, fall 0.6)
@@ -314,7 +316,13 @@ fn clock_ends_scope_counts_pass_through_pins() {
     assert_eq!(t.pulse_rules().expect("rules"), vec![ends]);
     assert_eq!(t.pass_through_pulse_pins().expect("counts"), vec![1]);
     assert_eq!(PulseRules::from_bits(ends.bits()), Some(ends));
-    assert_eq!(PulseRules::from_bits(4), None);
+    // Bit 2 is the clock limit scope of the design rules (STA-REQ-0808); a higher bit is corrupt.
+    assert_eq!(PulseRules::from_bits(ends.bits() | 4), Some(ends));
+    assert_eq!(PulseRules::from_bits(8), None);
+    assert_eq!(
+        t.clock_limits().expect("scope"),
+        vec![ClockLimitScope::Paths]
+    );
 
     // Under the default scope the gater pin is checked and nothing passes through.
     let (l, codes, _) = limits(&[G1, G2, P1, P2], WORST);

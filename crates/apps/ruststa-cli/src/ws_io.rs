@@ -53,6 +53,8 @@ pub struct StaRunOptions {
     /// The rules of the pulse checks (`--pulse-groups`, `--pulse-pins`; `STA-REQ-0816`,
     /// `STA-REQ-0817`).
     pub pulse_rules: ruststa::engine::limits::PulseRules,
+    /// How the design-rule limits of a clock map to pins (`--clock-limits`, `STA-REQ-0808`).
+    pub clock_limits: ruststa::engine::limits::ClockLimitScope,
 }
 
 /// Code of an analysis whose wire model is not the required one (`STA-REQ-0821`).
@@ -372,6 +374,7 @@ pub fn analysis_settings(
         max_state_bytes: (opts.max_state_gib * f64::from(1u32 << 30)) as u64,
         max_limit_rows: opts.max_limit_rows,
         pulse_rules: opts.pulse_rules,
+        clock_limits: opts.clock_limits,
     };
     Ok((
         analysis_opts,
@@ -838,6 +841,16 @@ pub fn envelope_headers_from_store(
         None => None,
     };
     scope.insert("pulse_rules", &pulse_rules)?;
+    // The clock limit scope of the design rules (`STA-REQ-0808`).
+    let drv_rules = match scope_rep.limits.as_deref().and_then(<[_]>::first) {
+        Some(c) => {
+            let mut r = JsonObject::new();
+            r.insert("clock_limits", &c.clock_limits)?;
+            Some(r)
+        }
+        None => None,
+    };
+    scope.insert("drv_rules", &drv_rules)?;
 
     Ok((scope, completeness, metrics))
 }
@@ -915,6 +928,21 @@ pub fn add_limit_headers(
     )?;
     let uneval = sum(|c| c.kinds.values().map(|k| k.unevaluated).sum());
     completeness.insert("unevaluated_limit_checks", &uneval)?;
+    // Pins of the design rules left out or checked by a special rule (`STA-REQ-0809`,
+    // `STA-REQ-0818`), and the clock network pins whose limit the scope decides (`STA-REQ-0808`).
+    completeness.insert("drv_constant_drivers", &sum(|c| c.constant_drivers))?;
+    completeness.insert(
+        "drv_static_transition_pins",
+        &sum(|c| c.static_transition_pins),
+    )?;
+    completeness.insert("drv_ideal_clock_pins", &sum(|c| c.ideal_clock_pins))?;
+    completeness.insert("drv_untimed_pins", &sum(|c| c.untimed_pins))?;
+    completeness.insert("drv_clock_scope_pins", &sum(|c| c.clock_scope_pins))?;
+    // Unconnected instance output pins, not checked (`STA-REQ-0819`).
+    completeness.insert(
+        "drv_unconnected_output_pins",
+        &sum(|c| c.unconnected_output_pins),
+    )?;
     match corners.as_ref().filter(|cs| !cs.is_empty()) {
         Some(cs) => {
             let mut unlimited = JsonObject::new();

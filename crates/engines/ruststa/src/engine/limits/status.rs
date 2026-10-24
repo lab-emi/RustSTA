@@ -13,8 +13,8 @@
 //!   the kind anywhere);
 //! - `violated`: a checked row has a negative slack;
 //! - `partial`: no violation, but some checks were not evaluated (unclocked pulse pins, pulse pins
-//!   left out by the `clock-ends` scope, values
-//!   that are not finite, pins or drivers of a design rule without a limit while others have
+//!   left out by the `clock-ends` scope, values that are not finite, untimed pins, pins of an
+//!   ideal clock network, pins or drivers of a design rule without a limit while others have
 //!   one) or, for the design rules as a whole, a kind is unconstrained;
 //! - `met`: every check was evaluated and none is violated.
 //!
@@ -170,7 +170,9 @@ pub fn limit_statuses(corners: Option<&[&CornerLimitsReport]>) -> LimitStatuses 
     );
 
     // A design rule checked on some pins but without a limit on others is `partial`, never
-    // `met`; without a limit anywhere it is `unconstrained`.
+    // `met`; without a limit anywhere it is `unconstrained`. The limited checks of untimed pins
+    // and of the pins of an ideal clock network are unevaluated (`STA-REQ-0809`,
+    // `STA-REQ-0818`).
     let drv = DRV_KINDS.map(|k| {
         let t = totals(corners, &[k]);
         let unlimited = t.checked > 0 && t.unlimited > 0;

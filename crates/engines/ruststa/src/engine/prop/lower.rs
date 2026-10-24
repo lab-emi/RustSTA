@@ -17,6 +17,8 @@ use std::time::Instant;
 
 mod rc;
 
+pub(crate) use rc::arc_value;
+
 pub use rusteda_compute::timing::{
     ArcValues, CompiledLutBank, InArc, LevelizedTimingCsr, NO_PRED, NONE, PropagationStats,
     Readback, Request, Scope, StartRows, TagMapRec, TimingProblem, TimingPropagationBackend,

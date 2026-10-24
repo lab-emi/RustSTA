@@ -93,6 +93,7 @@ pub fn exec_run(
         max_limit_rows: args.max_limit_rows,
         require_wire_model: args.require_wire_model,
         pulse_rules: crate::args::pulse_rules(args.pulse_groups, args.pulse_pins),
+        clock_limits: crate::args::clock_limits(args.clock_limits),
     };
 
     let step_res = (|| {

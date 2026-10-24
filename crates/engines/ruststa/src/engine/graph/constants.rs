@@ -478,6 +478,11 @@ impl ConstantPropagation {
             .unwrap_or_default()
     }
 
+    /// Per node, true when its logic value is a constant (`STA-REQ-0150`).
+    pub fn constant_nodes(&self) -> Vec<bool> {
+        self.node_consts.iter().map(|c| c.is_const()).collect()
+    }
+
     /// Three-valued logic value of `node` (`Zero`, `One`, or `X`).
     pub fn node_val(&self, node: NodeId) -> LogicVal {
         self.node_const(node).value
