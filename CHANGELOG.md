@@ -23,13 +23,17 @@ output apart from the tool version, the time stamps and the program path.
   netlist tables with bounded memory (`EXPORT_BUDGET`) and parallel formatting in source order,
   without building a mutable netlist; the text is the same as before. The writer can also build
   frozen tables directly (`verilog::netlist::to_frozen_netlist`, `FrozenBuildLimits`).
-- **Bounded netlist import:** a netlist above 64 MiB that the streaming reader cannot take is
-  rejected (`V0300`) instead of being expanded by the full reader without a bound.
+- **Bounded netlist import:** a netlist that the streaming reader cannot take is read by the full
+  reader only up to `rusteda import --max-netlist-ast-mib` (default 64 MiB, RCLI-REQ-0024); a
+  larger one is rejected (`V0300`, naming the budget and the option) instead of being expanded
+  without a bound as in 0.4.0. To read such a file as 0.4.0 did, give a larger budget after
+  estimating the full reader's memory for it.
 
 ### Changed
 - The fast flat netlist reader is the synthesis tool's: nested concatenations, at most
-  `MAX_RANGE_WIDTH` bits and 64 nesting levels; a part-select against the declared direction
-  takes the full reader, with the same result.
+  `MAX_RANGE_WIDTH` bits and 64 nesting levels. A part-select against the declared direction and
+  a decimal constant of more than 32 digits take the full reader instead, with the same result
+  within its budget (see **Bounded netlist import**); above the budget the import is rejected.
 - The requirement of `rusteda show` for summaries without `drv_status` is RCLI-REQ-0023 (it was
   numbered RCLI-REQ-0021 in 0.4.0, a number the shared specification already gave to BLIF and
   AIGER import).
