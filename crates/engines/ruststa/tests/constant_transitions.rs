@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! Transitions next to logic constants (`STA-REQ-0116`, `STA-REQ-0159`), latches with a constant
-//! enable (`STA-REQ-0161`, `STA-REQ-0230`) and the related pin transition of the timing checks
+//! Transitions next to logic constants (`STA-REQ-0117`, `STA-REQ-0159`), latches with a constant
+//! enable (`STA-REQ-0163`, `STA-REQ-0230`) and the related pin transition of the timing checks
 //! (`STA-REQ-0229`).
 //!
 //! The library has tables that are linear in the input transition `s` and the load `c`
@@ -173,7 +173,7 @@ const SDC: &str = "create_clock -name c -period 10 [get_ports clk]\n\
 // The transition tables of an arc are equal for both output transitions, so every expected value
 // holds for rise and fall.
 //
-// STA-REQ-0116: the delay calculation ignores logic values. g1 is an AND2 whose input A is held
+// STA-REQ-0117: the delay calculation ignores logic values. g1 is an AND2 whose input A is held
 // at 1 by case analysis (k, transition 0.3) and whose input B carries a (transition 0.2); its load
 // is r1/D (0.001 pF). The arc A -> Y carries no arrival but its transition: late rise
 // 0.06 + 0.5 * 0.3 + 2 * 0.001 = 0.212 (the arc B -> Y alone gives 0.07 + 0.1 + 0.002 = 0.172),
@@ -186,7 +186,7 @@ const SDC: &str = "create_clock -name c -period 10 [get_ports clk]\n\
 // 0.3 + 0.1 + 0.002 = 0.402 (B positive at 0.2), early 0.05 + 0 + 0.002 = 0.052 (A negative at
 // the tie transition 0).
 //
-// STA-REQ-0116: rt is clocked by the tie-low net: its clock-to-output arc launches no arrival but
+// STA-REQ-0117: rt is clocked by the tie-low net: its clock-to-output arc launches no arrival but
 // carries the tie transition 0 to Q into g3/A (0.001): 0.08 + 0.002 = 0.082; g3/Y (no load) then
 // merges the arc from A at 0.082 (0.06 + 0.041 = 0.101) with the arc from B at 0.2 (0.07 + 0.1 =
 // 0.17): late 0.17, early 0.101.
@@ -256,7 +256,7 @@ fn constant_side_inputs_carry_transitions_not_arrivals() {
     }
 }
 
-// STA-REQ-0161: lt is a LAT whose enable G is tied high, so it is transparent: the late arrival of
+// STA-REQ-0163: lt is a LAT whose enable G is tied high, so it is transparent: the late arrival of
 // a passes D -> Q in its own tag (1 + 0.2 + 0.1 + 2 * 0.001 = 1.302 at lt/Q, load bo/A), no early
 // arrival passes, and the output o1 has a setup check and no hold check. lo is a LAT whose enable
 // is tied low: opaque, its Q carries the D -> Q transition (0.05 + 0.1 + 0.002 = 0.152) and no

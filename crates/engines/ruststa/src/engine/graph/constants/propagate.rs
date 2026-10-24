@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! Fixed point of the constant propagation (owner: E7; `STA-REQ-0151`, `STA-REQ-0161`).
+//! Fixed point of the constant propagation (owner: E7; `STA-REQ-0162`).
 
 use std::collections::VecDeque;
 
-use rusteda_core::liberty::{Cell, Direction, Func, Pin, Sequential};
+use rusteda_core::liberty::{Cell, Direction, Func, Pin};
 
-use super::{
-    ConstOrigin, InstCtx, LogicVal, PinConst, PropEngine, eval_func, eval_func_with_origin,
-    inst_ctx,
-};
+use super::{LogicVal, PinConst, PropEngine, eval_func, eval_func_with_origin, inst_ctx};
 use crate::engine::graph::{ArcKind, TimingGraph};
 use crate::engine::input::{NetTarget, NodeKind};
 use crate::engine::types::{NetRow, NodeId};
 
 impl PropEngine<'_> {
-    /// Propagates the seeded constants to their fixed point (`STA-REQ-0151`) with a worklist: a
+    /// Propagates the seeded constants to their fixed point (`STA-REQ-0162`) with a worklist: a
     /// net is evaluated again when one of its drivers changes, and an instance when one of its
     /// pins changes. A node changes at most twice (from `X` to a constant, and from a netlist to a
     /// case-analysis origin), so the work is linear in the pins of the netlist (AGENTS rule 3.4).
@@ -133,7 +130,9 @@ impl PropEngine<'_> {
         }
     }
 
-    /// Evaluates the outputs of instance `inst_row` from the states of its pins.
+    /// Evaluates the outputs of instance `inst_row` from the states of its pins: a clock gate
+    /// output from its clock and enable inputs, any other output of a combinational cell from its
+    /// `function`; the outputs of a sequential cell are never constant (`STA-REQ-0162`).
     fn eval_instance(&mut self, inst_row: u32) {
         let Some(ictx) = inst_ctx(self.netview, &self.cell_lookup, inst_row) else {
             return;
@@ -147,10 +146,6 @@ impl PropEngine<'_> {
                 .instance_pins(inst_row)
                 .any(|p| self.node_consts[ictx.n_port_bits + p].is_const())
         {
-            return;
-        }
-        if !ictx.meta.cell.sequentials.is_empty() || !ictx.meta.async_arcs.is_empty() {
-            eval_seq_async_consts(ictx, &self.explicit_case_node, &mut self.node_consts);
             return;
         }
         for p in ictx.frozen.instance_pins(inst_row) {
@@ -167,111 +162,59 @@ impl PropEngine<'_> {
             {
                 continue;
             }
-            if let Some(ref func) = lp.function {
-                let out_pc = eval_func_with_origin(func, &|n| ictx.pin(&self.node_consts, n));
-                if out_pc.is_const() && self.node_consts[node_idx] != out_pc {
-                    self.node_consts[node_idx] = out_pc;
-                }
-            }
-        }
-    }
-}
-
-/// True when [`PropEngine::eval_instance`] changes no output of an instance of `cell` whose pins
-/// are all `X`: every output function, and for a sequential cell every `clear`/`preset` state, is
-/// `X` under the all-`X` environment (asynchronous arcs need a constant input). A tautology such as
-/// `A | !A` is not inert, because the exhaustive evaluation makes it a constant.
-pub(super) fn cell_is_x_inert(cell: &Cell, cp_to_pin: &[Option<&Pin>], has_async: bool) -> bool {
-    let all_x = |_: &str| PinConst::X;
-    if !cell.sequentials.is_empty() || has_async {
-        return cell.sequentials.iter().all(|seq| {
-            let (state_pc, state_n_pc) = eval_seq_state(seq, &all_x);
-            !state_pc.is_const() && !state_n_pc.is_const()
-        });
-    }
-    cp_to_pin.iter().flatten().all(|lp| {
-        !matches!(lp.direction, Direction::Output | Direction::Inout)
-            || lp
-                .function
-                .as_ref()
-                .is_none_or(|f| !eval_func_with_origin(f, &all_x).is_const())
-    })
-}
-
-fn eval_seq_async_consts(
-    ictx: InstCtx<'_>,
-    explicit_case_node: &[bool],
-    node_consts: &mut [PinConst],
-) -> bool {
-    let mut changed = false;
-    for seq in &ictx.meta.cell.sequentials {
-        let (state_pc, state_n_pc) = eval_seq_state(seq, &|n| ictx.pin(node_consts, n));
-        if !state_pc.is_const() && !state_n_pc.is_const() {
-            continue;
-        }
-        for p in ictx.frozen.instance_pins(ictx.inst) {
-            let cp = ictx.frozen.pin_cellpin[p] as usize;
-            let node_idx = ictx.n_port_bits + p;
-            let Some(&Some(lp)) = ictx.meta.cp_to_pin.get(cp) else {
+            let Some(func) = output_func(lp, ictx.meta.sequential, ictx.meta.gate_func.as_ref())
+            else {
                 continue;
             };
-            if explicit_case_node[node_idx]
-                || !matches!(lp.direction, Direction::Output | Direction::Inout)
-            {
-                continue;
-            }
-            let out_pc = lp.function.as_ref().map_or(state_pc, |func| {
-                eval_func_with_origin(func, &|name| {
-                    if !seq.state.is_empty() && name == seq.state {
-                        state_pc
-                    } else if !seq.state_n.is_empty() && name == seq.state_n {
-                        state_n_pc
-                    } else {
-                        ictx.pin(node_consts, name)
-                    }
-                })
-            });
-            if out_pc.is_const() && node_consts[node_idx] != out_pc {
-                node_consts[node_idx] = out_pc;
-                changed = true;
+            let out_pc = eval_func_with_origin(func, &|n| ictx.pin(&self.node_consts, n));
+            if out_pc.is_const() && self.node_consts[node_idx] != out_pc {
+                self.node_consts[node_idx] = out_pc;
             }
         }
     }
-
-    for &(from_cp, to_cp, is_preset, active_high) in &ictx.meta.async_arcs {
-        let (Some(from_idx), Some(out_idx)) = (ictx.cp_node(from_cp), ictx.cp_node(to_cp)) else {
-            continue;
-        };
-        let from_pc = node_consts[from_idx];
-        if let (Some(b), Some(origin)) = (from_pc.value.as_bool(), from_pc.origin)
-            && b == active_high
-            && !explicit_case_node[out_idx]
-        {
-            let pc = PinConst::new(LogicVal::from_bool(is_preset), origin);
-            if node_consts[out_idx] != pc {
-                node_consts[out_idx] = pc;
-                changed = true;
-            }
-        }
-    }
-    changed
 }
 
-fn eval_seq_state(seq: &Sequential, env: &impl Fn(&str) -> PinConst) -> (PinConst, PinConst) {
-    let ev = |f: Option<&Func>| f.map_or(PinConst::X, |fn_| eval_func_with_origin(fn_, env));
-    let (c, p) = (ev(seq.clear.as_ref()), ev(seq.preset.as_ref()));
-    if c.value == LogicVal::One {
-        let o = c.origin.unwrap_or(ConstOrigin::Netlist);
-        let h = p.value == LogicVal::One && seq.clear_preset_var1.as_deref() == Some("H");
-        let v = LogicVal::from_bool(h);
-        (PinConst::new(v, o), PinConst::new(v.not(), o))
-    } else if p.value == LogicVal::One {
-        let o = p.origin.unwrap_or(ConstOrigin::Netlist);
-        (
-            PinConst::new(LogicVal::One, o),
-            PinConst::new(LogicVal::Zero, o),
-        )
+/// The function that gives the logic value of output `lp` (`STA-REQ-0162`): for a clock gate
+/// output (`clock_gate_out_pin`) the conjunction `gate_func` of the cell's clock and enable inputs
+/// (`clock_gate_clock_pin`, `clock_gate_enable_pin`; the test enable, the `function`, the
+/// `state_function` and the `statetable` take no part), for any other output of a combinational
+/// cell its `function`, and none for the outputs of a sequential cell, whose stored state is not
+/// a constant even when an asynchronous `clear` or `preset` is held active.
+fn output_func<'f>(lp: &'f Pin, sequential: bool, gate_func: Option<&'f Func>) -> Option<&'f Func> {
+    if lp.clock_gate_out_pin {
+        gate_func
+    } else if sequential {
+        None
     } else {
-        (PinConst::X, PinConst::X)
+        lp.function.as_ref()
     }
+}
+
+/// The conjunction of the `clock_gate_clock_pin` and `clock_gate_enable_pin` inputs of `cell`, in
+/// library pin order; `None` when the cell has neither (`STA-REQ-0162`).
+pub(super) fn clock_gate_func(cell: &Cell) -> Option<Func> {
+    cell.pins
+        .iter()
+        .filter(|p| {
+            matches!(p.direction, Direction::Input | Direction::Inout)
+                && (p.clock_gate_clock_pin || p.clock_gate_enable_pin)
+        })
+        .map(|p| Func::Var(p.name.clone()))
+        .reduce(|a, b| Func::And(Box::new(a), Box::new(b)))
+}
+
+/// True when [`PropEngine::eval_instance`] changes no output of an instance whose pins are all
+/// `X`: every output's function (see [`output_func`]) is `X` under the all-`X` environment. A
+/// tautology such as `A | !A` is not inert, because the exhaustive evaluation makes it a constant.
+pub(super) fn cell_is_x_inert(
+    cp_to_pin: &[Option<&Pin>],
+    sequential: bool,
+    gate_func: Option<&Func>,
+) -> bool {
+    let all_x = |_: &str| PinConst::X;
+    cp_to_pin.iter().flatten().all(|lp| {
+        !matches!(lp.direction, Direction::Output | Direction::Inout)
+            || output_func(lp, sequential, gate_func)
+                .is_none_or(|f| !eval_func_with_origin(f, &all_x).is_const())
+    })
 }

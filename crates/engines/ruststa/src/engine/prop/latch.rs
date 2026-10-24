@@ -407,7 +407,7 @@ pub fn build_latch_tag_maps<C: Cppr>(
     }
 
     // A latch that a constant active enable holds transparent passes the late arrivals of every
-    // tag through `D -> Q` and no early one: no hold path passes a latch (`STA-REQ-0161`).
+    // tag through `D -> Q` and no early one: no hold path passes a latch (`STA-REQ-0163`).
     for &ai in graph.transparent_latch_arcs() {
         if graph.is_arc_disabled(ai as usize) {
             continue;

@@ -25,6 +25,16 @@
   the existing tag budget. Add retained clock state to regular data-state checks.
   CPU reference, full/incremental consistency, native CUDA f64 consistency and
   external dual-PDK propagated-clock timing comparisons gate acceptance.
+**STA-REQ-0714**: The transition of a pin of a propagated clock network merges
+  every arc into it as in the data propagation (STA-REQ-0117), including the
+  outputs of sequential cells whose launched transitions reach the network (a
+  flop output into a clock gate or a clock multiplexer select). The
+  propagation seeds those outputs, without arrivals, with the transitions of
+  their clock-to-output arcs at the transitions that the previous propagation
+  gives their clock pins, and repeats until the seeded transitions no longer
+  change: with k such launches in series it runs k + 1 times, never more than
+  one plus the number of such launches. Each repetition counts against the work
+  bound of STA-REQ-0713 (T0023). Without such launches it runs once.
 
 The clock arrival is relative to its source waveform edge, as in ideal clocks;
 waveform/period relations are applied by the existing relation table, once.

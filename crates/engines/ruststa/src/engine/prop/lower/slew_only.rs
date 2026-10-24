@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! The incoming arcs that carry only their output transition (`STA-REQ-0116`): the delay
+//! The incoming arcs that carry only their output transition (`STA-REQ-0117`): the delay
 //! calculation ignores logic values, so the arcs that constants, case analysis and false `when`
 //! conditions disable, the library transitions that a sense refinement removes from an enabled
 //! arc, and the clock-to-output arcs that logic values disable or that no clock reaches all enter

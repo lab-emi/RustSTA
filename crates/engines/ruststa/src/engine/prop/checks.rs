@@ -181,7 +181,11 @@ pub fn evaluate_all_checks<C: Cppr>(
 
     // 1. Sequential setup, hold, recovery, removal, and latch data checks (`graph.checks()`).
     for (check_idx, ch) in g_checks.iter().enumerate() {
-        if is_check_disabled(netview, ch, &constraints.disabled_timing) {
+        // A check that a false `when`, a constant or case analysis disables is not timed even
+        // where arrivals reach its pins (`STA-REQ-0155`, `STA-REQ-0163`).
+        if graph.is_check_disabled(check_idx)
+            || is_check_disabled(netview, ch, &constraints.disabled_timing)
+        {
             continue;
         }
         let cell_row = netview.frozen().instances[ch.inst as usize].cell as usize;

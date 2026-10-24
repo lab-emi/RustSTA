@@ -91,7 +91,7 @@ pub struct LimitsCornerRec {
     /// Pins checked for transition with a static transition (`STA-REQ-0809`).
     pub static_transition_pins: u64,
     /// Pins and drivers of ideal clock networks, not checked for the design rules
-    /// (`STA-REQ-0818`).
+    /// (`STA-REQ-0822`).
     pub ideal_clock_pins: u64,
     /// Pins without any transition, whose transition check is not evaluated (`STA-REQ-0809`).
     pub untimed_pins: u64,
@@ -520,7 +520,7 @@ impl LimitsTable {
     /// Per corner, the drivers of constant nets left out of the capacitance and fanout checks,
     /// the pins checked with a static transition, the pins of ideal clock networks, the untimed
     /// pins, the clock network pins whose limit the clock limit scope decides and the
-    /// unconnected instance output pins (`STA-REQ-0809`, `STA-REQ-0818`, `STA-REQ-0808`,
+    /// unconnected instance output pins (`STA-REQ-0809`, `STA-REQ-0822`, `STA-REQ-0808`,
     /// `STA-REQ-0819`).
     pub fn drv_pin_counts(&self) -> Result<Vec<[u64; 6]>> {
         Ok(self

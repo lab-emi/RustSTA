@@ -47,9 +47,12 @@
   come from a delay calculation that ignores logic values (arcs that constants disable carry
   their transition but no arrival), and only literals and their cones are checked with the
   static transition 0; a latch whose enable a constant holds active is transparent and one
-  held inactive opaque; an ideal clock network is left out of the design rules (counted, the rules
-  `partial`), and a clock's limits map to its network and data pins (`--clock-limits paths`) or
-  to its whole domain (`--clock-limits domain`).
+  held inactive opaque; a flop or latch with a held clear or preset is not a constant, a clock
+  gate output follows its clock and enable pins, and a pin at a constant passes no arrival; an
+  ideal clock network, including the pins it reaches through arcs that constants disable, is
+  left out of the design rules (counted, the rules `partial`), and a clock's limits map to its
+  network and data pins (`--clock-limits paths`) or to its whole domain (`--clock-limits
+  domain`).
 
 ## Current limits
 

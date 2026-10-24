@@ -1,4 +1,4 @@
-# Sequential data and clock pins held constant (STA-REQ-0161)
+# Sequential data and clock pins held constant (STA-REQ-0163)
 
 Flip-flop `f` has its data pin `D` tied to `TIELO` (`0`) and its clock pin `CK` driven by `clk`,
 while flip-flop `f2` has its clock pin `CK` tied to `TIEHI` (`1`) [@bhasker2009static, ch. 7;
@@ -6,11 +6,13 @@ while flip-flop `f2` has its clock pin `CK` tied to `TIEHI` (`1`) [@bhasker2009s
 
 ### Derivations
 
-1. **Constant data pin `f/D` (`STA-REQ-0161`):**
+1. **Constant data pin `f/D` (`STA-REQ-0163`):**
    - `f/D` is at constant `0`, so no setup or hold check is evaluated at `f/D` (`no_data_arrival`);
    - `f/CK` is clocked by `clk`, so `f: CK -> Q` still launches at `C(qd) = 0.02 pF` (`g/A` and
      `f2/D`): `qd` rise `0.42 ns` (slew `0.10 ns`), fall `0.368 ns` (slew `0.09 ns`).
-2. **Constant clock pin `f2/CK` (`STA-REQ-0161`):**
+   The stored state of a flop is never a constant, also when an asynchronous clear or preset
+   is held active (`STA-REQ-0162`): the clock-to-output arc of such a flop launches as here.
+2. **Constant clock pin `f2/CK` (`STA-REQ-0163`):**
    - `f2/CK` is at constant `1`, so `f2` is `unclocked` and its `D` pin is not a timed endpoint.
 3. **Output port `y` (`g/Y` at `C = 0`):**
    - `y` rise `0.42 + (0.20 + 0.10 * 0.10 + 0) = 0.63 ns`,

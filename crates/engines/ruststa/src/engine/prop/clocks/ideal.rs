@@ -24,6 +24,9 @@ pub struct IdealClockModel {
     propagated: Option<Arc<PropagatedClocks>>,
     /// Per-node list of `(ClockId, SenseBits)` reaching the node in the clock network.
     clock_sense: Vec<Vec<(ClockId, SenseBits)>>,
+    /// The ideal clocks that reach a node only through arcs that logic values disable, for the
+    /// nodes outside their clock network (`STA-REQ-0822`).
+    logic_clocks: FxHashMap<NodeId, Vec<ClockId>>,
     /// Per-clock source latency `[an][edge]` in ns (`Early` uses `early`/`min`, `Late` uses
     /// `late`/`max`; `STA-REQ-0217`).
     source_latency_ns: Vec<[[f64; 2]; 2]>,
@@ -84,6 +87,53 @@ impl IdealClockModel {
             for (v, &b) in bits.iter().enumerate() {
                 if b != 0 {
                     clock_sense[v].push((cid, b));
+                }
+            }
+        }
+
+        // 1b. The pins that an ideal clock reaches only through arcs that logic values disable (a
+        // clock gate that a constant stops, a clock port under case analysis): the design rules
+        // leave them out with the ideal clock network (`STA-REQ-0822`).
+        let mut logic_clocks: FxHashMap<NodeId, Vec<ClockId>> = FxHashMap::default();
+        let mut logic_out: FxHashMap<NodeId, Vec<u32>> = FxHashMap::default();
+        for (ai, arc) in g_arcs.iter().enumerate() {
+            if graph
+                .arc_disable_reason(ai)
+                .is_some_and(|r| r.carries_transition())
+                && !arc.kind.is_latch_data()
+            {
+                logic_out.entry(arc.src).or_default().push(ai as u32);
+            }
+        }
+        if !logic_out.is_empty() {
+            for (ci, ck) in constraints.clocks.iter().enumerate() {
+                if ck.propagated || ck.is_virtual() {
+                    continue;
+                }
+                let cid = ClockId(ci as u32);
+                let mut seen = vec![false; n_nodes];
+                let mut stack = Vec::new();
+                for &src in &ck.sources {
+                    if src.index() < n_nodes && !seen[src.index()] {
+                        seen[src.index()] = true;
+                        stack.push(src);
+                    }
+                }
+                while let Some(v) = stack.pop() {
+                    let extra = logic_out.get(&v).map_or(&[][..], Vec::as_slice);
+                    for &ai in graph.outgoing(v).iter().chain(extra) {
+                        let arc = &g_arcs[ai as usize];
+                        if arc.kind.is_latch_data() || seen[arc.dst.index()] {
+                            continue;
+                        }
+                        seen[arc.dst.index()] = true;
+                        stack.push(arc.dst);
+                    }
+                }
+                for (v, &s) in seen.iter().enumerate() {
+                    if s && !clock_sense[v].iter().any(|&(c, _)| c == cid) {
+                        logic_clocks.entry(NodeId(v as u32)).or_default().push(cid);
+                    }
                 }
             }
         }
@@ -184,6 +234,7 @@ impl IdealClockModel {
 
         Self {
             clock_sense,
+            logic_clocks,
             propagated: None,
             source_latency_ns,
             network_latency_ns,
@@ -196,8 +247,18 @@ impl IdealClockModel {
     pub(super) fn set_propagated(&mut self, clocks: Arc<PropagatedClocks>) {
         self.propagated = Some(clocks);
     }
+    pub(super) fn take_propagated(&mut self) -> Option<Arc<PropagatedClocks>> {
+        self.propagated.take()
+    }
     pub fn is_propagated(&self, clock: ClockId) -> bool {
         self.propagated.as_ref().is_some_and(|p| p.contains(clock))
+    }
+
+    /// The ideal clocks that reach `node` only through arcs that constants, case analysis or false
+    /// `when` conditions disable (`STA-REQ-0822`).
+    #[must_use]
+    pub fn logic_network_clocks(&self, node: NodeId) -> &[ClockId] {
+        self.logic_clocks.get(&node).map_or(&[], Vec::as_slice)
     }
 
     /// Returns the `(ClockId, SenseBits)` pairs reaching `node`.

@@ -154,7 +154,7 @@ fn close(a: f64, b: f64, what: &str) {
 // STA-REQ-0809: the drivers of constant nets (the tie outputs th/Z and tl/ZN, the buffers b0, b1
 // of the tie-high net, the gate g whose input A is the controlling 0, and the buffer l1 of the
 // literal 1'b1) are not checked for capacitance and fanout: 6 drivers, note T0143. The delay
-// calculation ignores logic values (STA-REQ-0116), so the propagation gives the constant nets
+// calculation ignores logic values (STA-REQ-0117), so the propagation gives the constant nets
 // their transitions, without arrivals:
 // - th/Z and tl/ZN: tie outputs, 0; the pins of their nets (b0/A, b1/A, g/A) 0 by ideal wire;
 // - b0/Y = r0/D: rise 0.05 + 0.5 * 0 + 2 * 0.001 (r0/D) = 0.052, fall 0.042;

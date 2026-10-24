@@ -172,7 +172,7 @@ pub fn limit_statuses(corners: Option<&[&CornerLimitsReport]>) -> LimitStatuses 
     // A design rule checked on some pins but without a limit on others is `partial`, never
     // `met`; without a limit anywhere it is `unconstrained`. The limited checks of untimed pins
     // and of the pins of an ideal clock network are unevaluated (`STA-REQ-0809`,
-    // `STA-REQ-0818`).
+    // `STA-REQ-0822`).
     let drv = DRV_KINDS.map(|k| {
         let t = totals(corners, &[k]);
         let unlimited = t.checked > 0 && t.unlimited > 0;

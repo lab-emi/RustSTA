@@ -906,7 +906,7 @@ pub struct CornerLimitsReport {
     #[serde(default)]
     pub static_transition_pins: u64,
     /// Pins and drivers of ideal clock networks, not checked for the design rules
-    /// (`STA-REQ-0818`).
+    /// (`STA-REQ-0822`).
     #[serde(default)]
     pub ideal_clock_pins: u64,
     /// Pins without any transition, whose transition check is not evaluated (`STA-REQ-0809`).

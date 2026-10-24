@@ -3,7 +3,7 @@
 
 //! Transitions of the pins that the propagation leaves without one (`STA-REQ-0809`).
 //!
-//! The delay calculation ignores logic values (`STA-REQ-0116`): the propagation of a corner
+//! The delay calculation ignores logic values (`STA-REQ-0117`): the propagation of a corner
 //! carries transitions through the arcs that constants, case analysis and false `when`
 //! conditions disable and through the clock-to-output arcs of sequential cells that no clock
 //! reaches, from the tie outputs (transition 0) and the ports. The pins left without a

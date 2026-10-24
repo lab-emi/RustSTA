@@ -846,7 +846,7 @@ fn path_to_an_endpoint_honours_the_corner() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// STA-REQ-0808, STA-REQ-0809, STA-REQ-0818, STA-REQ-0819: the envelope states the clock limit scope of the
+// STA-REQ-0808, STA-REQ-0809, STA-REQ-0822, STA-REQ-0819: the envelope states the clock limit scope of the
 // design rules (`scope.drv_rules.clock_limits`) and counts the pins left out or checked by a
 // special rule. FF_NETLIST plus a buffer of the literal 1'b1 driving the port q3: u/Y is the
 // driver of a constant net (no capacitance or fanout check), and u/A, u/Y and q3 are checked with

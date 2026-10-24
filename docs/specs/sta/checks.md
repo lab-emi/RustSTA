@@ -137,7 +137,7 @@ combinational arc is a tag-mapping arc that maps every borrowing arrival at `D` 
 - the pin transition `slew[Q][tr_Q][an]` at `Q` is the transition of the `G -> Q` enable arc.
 
 **STA-REQ-0230** Sense of the latch `D -> Q` arc. The `D -> Q` arc of a latch, transparent by
-its clock (STA-REQ-0222) or by a constant enable (STA-REQ-0161), is timed with the `timing_sense`
+its clock (STA-REQ-0222) or by a constant enable (STA-REQ-0163), is timed with the `timing_sense`
 of its library arc. A latch group that stores the inverted data pin (`data_in : "!D"`, the output
 then reading the inverted state, for example `function : "IQN"`) keeps that sense: the functional
 description agrees with it, and the arc is not inverted. The latch instances of such cells are
@@ -203,9 +203,9 @@ per path group.
 status:
 - `constrained`: at least one timed check (setup/recovery or hold/removal) applies to the endpoint;
 - `unclocked`: sequential check pin whose related clock pin is not in any clock network (including
-  a clock pin held constant, STA-REQ-0161);
+  a clock pin held constant, STA-REQ-0163);
 - `no_data_arrival`: clocked check pin that no launch tag reaches (for example, fed by a primary
-  input without `set_input_delay`, by a constant pin of STA-REQ-0161, or by arcs disabled by
+  input without `set_input_delay`, by a constant pin of STA-REQ-0163, or by arcs disabled by
   constants);
 - `false_path_only`: every path reaching the endpoint is excluded by `set_false_path` or
   `set_clock_groups` (`exceptions.md`);

@@ -929,7 +929,7 @@ pub fn add_limit_headers(
     let uneval = sum(|c| c.kinds.values().map(|k| k.unevaluated).sum());
     completeness.insert("unevaluated_limit_checks", &uneval)?;
     // Pins of the design rules left out or checked by a special rule (`STA-REQ-0809`,
-    // `STA-REQ-0818`), and the clock network pins whose limit the scope decides (`STA-REQ-0808`).
+    // `STA-REQ-0822`), and the clock network pins whose limit the scope decides (`STA-REQ-0808`).
     completeness.insert("drv_constant_drivers", &sum(|c| c.constant_drivers))?;
     completeness.insert(
         "drv_static_transition_pins",

@@ -39,7 +39,7 @@ hold time `0.05 ns`; `DFFR/RN` recovery time is `0.12 ns` (rise), removal time `
 | [`wireload_lumped`](wireload_lumped/DERIVATION.md) | Lumped wire-load interpolation, slope extrapolation, and port-connected net exclusion | STA-REQ-0122 to 0125 |
 | [`const_tielo_and2`](const_tielo_and2/DERIVATION.md) | `TIELO` constant propagation disabling an `AND2` branch into an `OR2` | STA-REQ-0150 to 0152 |
 | [`const_xor_tiehi`](const_xor_tiehi/DERIVATION.md) | `XOR2` with `TIEHI` input refined from `non_unate` to `negative_unate` | STA-REQ-0153 |
-| [`const_flop_d`](const_flop_d/DERIVATION.md) | Flip-flop `D` tied constant (`CK -> Q` still launches) and `CK` tied constant (`unclocked`) | STA-REQ-0161 |
+| [`const_flop_d`](const_flop_d/DERIVATION.md) | Flip-flop `D` tied constant (`CK -> Q` still launches) and `CK` tied constant (`unclocked`) | STA-REQ-0163 |
 | [`const_mux_select`](const_mux_select/DERIVATION.md) | `MUX2` select tied to `TIELO` disabling unselected data and select arcs | STA-REQ-0155 |
 | [`case_analysis`](case_analysis/DERIVATION.md) | `set_case_analysis`, `set_logic_zero`, and `set_disable_timing` on a `MUX2` | STA-REQ-0156, 0157 |
 | [`io_delay_latency`](io_delay_latency/DERIVATION.md) | Input/output delay clock latencies, `-source_latency_included`, `-network_latency_included`, and `set_driving_cell` | STA-REQ-0217, 0218 |

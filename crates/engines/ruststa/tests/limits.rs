@@ -408,7 +408,7 @@ fn design_rules_take_the_tightest_limit() {
 
 // STA-REQ-0805: clock-domain slots: -clock_path reaches the clock network pins only and
 // -data_path the data pins of the domain only; -rise and -fall limit one transition. The clock is
-// propagated, with the port transition 0.2 at its source (STA-REQ-0818 leaves an ideal clock
+// propagated, with the port transition 0.2 at its source (STA-REQ-0822 leaves an ideal clock
 // network out, see below).
 #[test]
 fn clock_domain_limits_follow_the_path_options() {
@@ -499,7 +499,7 @@ fn clock_domain_limits_follow_the_path_options() {
     assert!(viol.is_empty(), "{viol:?}");
 }
 
-// STA-REQ-0818: the design rules of an ideal clock network are not checked. clk, f1/CK, i1/A,
+// STA-REQ-0822: the design rules of an ideal clock network are not checked. clk, f1/CK, i1/A,
 // i1/Y and f2/CK form the network of the ideal clock c: no transition row, and their limited
 // checks are unevaluated (the -clock_path transition limit on all five; the library's
 // default_max_fanout on the driver i1/Y; clk has no fanout or capacitance limit). The design

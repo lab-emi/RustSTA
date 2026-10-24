@@ -77,7 +77,7 @@ following conventions, while moving the superseded Phase 1 texts to
     sequential pins while preserving clocked `CK -> Q` launches, and records disabled-arc counts by
     reason.
 13. **Transitions ignore logic values; checks take the capture clock path's transition (version
-    0.4, `STA-REQ-0116`, `0159`, `0161`, `0229`, `0230`).** Black-box comparisons with a reference
+    0.4, `STA-REQ-0117`, `0159`, `0163`, `0229`, `0230`).** Black-box comparisons with a reference
     timing tool on both default libraries (gates with constant side inputs next to their twins
     whose constant input is a port with transition 0, case analysis on and off, clock muxes with a
     tied select, latches with tied enables) showed that the reference's pin transitions do not
@@ -90,6 +90,19 @@ following conventions, while moving the superseded Phase 1 texts to
     that of the capture clock path (early for setup and recovery, late for hold and removal),
     which the same comparison confirmed; with a single arc into each clock pin the results are
     those of the earlier rule.
+14. **Sequential cells, clock gates and constant pins next to logic values (version 0.4,
+    `STA-REQ-0162`, `0163`, `0164`, `0714`, `0822`).** Further black-box comparisons with the
+    reference timing tool on both default libraries showed that a flop or latch whose
+    asynchronous clear or preset is held active is not a constant there (its clock-to-output arc
+    launches and the cone below it is timed and checked); that a clock gate output is the
+    conjunction of its clock and enable pins as the Liberty clock-gate pin attributes name them
+    (an enable held at 0 stops the clock whatever the test enable, the state function and the
+    statetable say; copies of the libraries with the attributes removed confirmed it); that a
+    pin at a constant passes no arrival (the loads of a port under case analysis are not in its
+    clock's domain); that the transition of a propagated clock pin merges a launched enable that
+    enters the clock network; and that with ideal clocks the pins reached through arcs that
+    constants disable belong to the ideal clock network, whose stopped flops launch at the ideal
+    clock transition. RustSTA follows each observation.
 
 ## Consequences
 

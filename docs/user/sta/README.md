@@ -238,12 +238,18 @@ to a fixpoint (`STA-REQ-0150`–`0157`):
 4. **Transitions ignore logic values:** the arcs disabled by constants, case analysis and `when`
    still carry their output transitions (not arrivals) into their destination pins, tie outputs
    start at transition 0, and the clock-to-output arcs of unclocked sequential cells carry the
-   transition of their clock pin (`STA-REQ-0116`). Arcs disabled by `set_disable_timing` or
-   cycle breaking carry nothing.
+   transition of their clock pin (`STA-REQ-0117`). Arcs disabled by `set_disable_timing` or
+   cycle breaking carry nothing. A pin at a constant passes no arrival: the loads of a port under
+   case analysis are not in its clock's domain (`STA-REQ-0164`).
 5. **Latches with a constant enable:** an enable held active makes the latch transparent (late
    arrivals pass `D -> Q` in their own tags, no hold path passes), held inactive opaque
-   (`STA-REQ-0161`). The `D -> Q` arc keeps the sense of its library arc, also when the latch
+   (`STA-REQ-0163`). The `D -> Q` arc keeps the sense of its library arc, also when the latch
    group stores the inverted data pin (note `T0150`, `STA-REQ-0230`).
+6. **Sequential cells and clock gates:** a flop or latch whose asynchronous clear or preset is
+   held active is not a constant; its clock-to-output arc launches (`STA-REQ-0162`). The output
+   of a clock gate (`clock_gate_out_pin`) is the conjunction of its clock and enable pins
+   (`clock_gate_clock_pin`, `clock_gate_enable_pin`): an enable held at 0 stops the clock, also
+   with the test enable held at 1.
 
 ## 5. Clocks, sequential elements, and timing checks
 

@@ -11,9 +11,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use rusteda_core::job::Diag;
-use rusteda_core::liberty::{
-    Cell, Direction, Func, Library, Pin, TimingArc, TimingSense, TimingType,
-};
+use rusteda_core::liberty::{Cell, Direction, Func, Library, Pin, TimingArc, TimingType};
 use rusteda_core::netlist::FrozenNetlist;
 use rusteda_formats::sdc::CaseValue;
 
@@ -25,7 +23,7 @@ use crate::engine::types::{NetRow, NodeId, Tr};
 mod propagate;
 mod sequential;
 
-use sequential::{latch_enable, unclocked_launches};
+use sequential::{ideal_launches, latch_enable, unclocked_launches};
 
 /// Canonical completeness record label for a [`DisableReason`] (`STA-REQ-0157`, `STA-REQ-0304`).
 pub const fn disable_reason_str(reason: DisableReason) -> &'static str {
@@ -117,7 +115,7 @@ impl fmt::Display for LogicVal {
     }
 }
 
-/// Provenance of a constant logic value (`STA-REQ-0150`, `STA-REQ-0151`, `STA-REQ-0156`).
+/// Provenance of a constant logic value (`STA-REQ-0150`, `STA-REQ-0162`, `STA-REQ-0156`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConstOrigin {
     /// Constant originates purely from netlist ties (`1'b0`, `1'b1`, `TIELO`, `TIEHI`, `assign`).
@@ -225,7 +223,7 @@ pub fn eval_func(func: &Func, env: &impl Fn(&str) -> LogicVal) -> LogicVal {
 
 /// Evaluates a Liberty Boolean [`Func`] under a [`PinConst`] environment, attributing the result
 /// to [`ConstOrigin::Netlist`] if netlist constants alone determine the constant value and to
-/// [`ConstOrigin::CaseAnalysis`] otherwise (`STA-REQ-0150`, `STA-REQ-0151`).
+/// [`ConstOrigin::CaseAnalysis`] otherwise (`STA-REQ-0150`, `STA-REQ-0162`).
 pub fn eval_func_with_origin(func: &Func, env: &impl Fn(&str) -> PinConst) -> PinConst {
     let (_, net_val) = cofactor_summary(func, "", &|n| env(n).netlist_only());
     if net_val.is_const() {
@@ -238,7 +236,7 @@ pub fn eval_func_with_origin(func: &Func, env: &impl Fn(&str) -> PinConst) -> Pi
     PinConst::X
 }
 
-/// Outcome of cofactor analysis for a combinational arc `p -> y` (`STA-REQ-0151`, `STA-REQ-0159`).
+/// Outcome of cofactor analysis for a combinational arc `p -> y` (`STA-REQ-0162`, `STA-REQ-0159`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CofactorEffect {
     /// `f|_{p=0}` and `f|_{p=1}` are identically equal over all assignments of remaining `X`
@@ -253,7 +251,7 @@ pub enum CofactorEffect {
 }
 
 /// Evaluates the cofactors `f|_{p=0}` and `f|_{p=1}` of `func` with respect to `pin_name` under
-/// `env` (`STA-REQ-0151` to `STA-REQ-0153`).
+/// `env` (`STA-REQ-0162`, `STA-REQ-0153`).
 pub fn analyze_arc_cofactors(
     func: &Func,
     pin_name: &str,
@@ -386,7 +384,7 @@ pub struct RefinedArc {
     pub new_sense: ArcSense,
 }
 
-/// Status of a timing check arc after constant propagation and arc disabling (`STA-REQ-0161`,
+/// Status of a timing check arc after constant propagation and arc disabling (`STA-REQ-0163`,
 /// `STA-REQ-0156`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CheckStatus {
@@ -431,7 +429,7 @@ pub struct ConstantPropagation {
 
 impl ConstantPropagation {
     /// Propagates netlist constants only (`1'b0`, `1'b1`, `TIELO`, `TIEHI`, `assign`s) without
-    /// SDC constraints (`STA-REQ-0150` to `STA-REQ-0161`, `STA-REQ-0156`).
+    /// SDC constraints (`STA-REQ-0150` to `STA-REQ-0163`, `STA-REQ-0156`).
     pub fn apply_netlist_only(
         netview: &NetlistView<'_>,
         libs: &[Library],
@@ -461,10 +459,15 @@ impl ConstantPropagation {
         graph.set_tie_outputs(std::mem::take(&mut eng.tie_outputs));
         graph.relevelize();
         // A launch arc whose clock pin no clock reaches launches no arrival; its transition still
-        // enters its output pin, so the levels order it (`STA-REQ-0116`).
+        // enters its output pin, so the levels order it (`STA-REQ-0117`).
         let unclocked = unclocked_launches(graph, constraints);
-        if unclocked.iter().any(|&u| u) {
+        // Launches that an ideal clock reaches only through arcs that logic values disable take
+        // their transition at the ideal clock transition (`STA-REQ-0822`).
+        let ideal = ideal_launches(graph, constraints, &unclocked);
+        let any_ideal = ideal.iter().any(|&u| u);
+        if unclocked.iter().any(|&u| u) || any_ideal {
             graph.set_unclocked_launches(unclocked);
+            graph.set_ideal_launches(ideal);
             graph.relevelize();
         }
         let check_status = eng.classify_checks(graph);
@@ -531,7 +534,7 @@ impl ConstantPropagation {
     }
 
     /// Refines `check_status(check_idx)` with propagated clock and data arrival availability
-    /// (`STA-REQ-0161`, `STA-REQ-0156`).
+    /// (`STA-REQ-0163`, `STA-REQ-0156`).
     pub fn classify_check_with_arrivals(
         &self,
         check_idx: usize,
@@ -610,7 +613,13 @@ struct CellMeta<'a> {
     cp_to_pin: Vec<Option<&'a Pin>>,
     prop_arcs: Vec<&'a TimingArc>,
     check_arcs: Vec<&'a TimingArc>,
-    async_arcs: Vec<(u32, u32, bool, bool)>,
+    /// True for a cell with a storage group (`ff`, `latch`) or asynchronous `clear`/`preset`
+    /// arcs: its outputs never take a constant from their `function` (`STA-REQ-0162`).
+    sequential: bool,
+    /// The value of a clock gate output (`clock_gate_out_pin`): the conjunction of the cell's
+    /// `clock_gate_clock_pin` and `clock_gate_enable_pin` inputs, `None` without any such input
+    /// (`STA-REQ-0162`).
+    gate_func: Option<Func>,
     /// True when evaluating an instance whose pins are all `X` changes none of its outputs (see
     /// `propagate::cell_is_x_inert`), so such an instance need not be evaluated.
     x_inert: bool,
@@ -664,13 +673,6 @@ impl<'a> InstCtx<'a> {
         })
     }
 
-    fn cp_node(&self, target_cp: u32) -> Option<usize> {
-        self.frozen
-            .instance_pins(self.inst)
-            .find(|&p| self.frozen.pin_cellpin[p] == target_cp)
-            .map(|p| self.n_port_bits + p)
-    }
-
     fn when_false(&self, node_consts: &[PinConst], arc: &TimingArc) -> bool {
         arc.when.as_ref().is_some_and(|when_fn| {
             eval_func(when_fn, &|name| self.pin(node_consts, name).value) == LogicVal::Zero
@@ -684,7 +686,7 @@ struct PropEngine<'a> {
     node_consts: Vec<PinConst>,
     net_consts: Vec<PinConst>,
     explicit_case_node: Vec<bool>,
-    /// Outputs of tie cells, in node order (`STA-REQ-0116`).
+    /// Outputs of tie cells, in node order (`STA-REQ-0117`).
     tie_outputs: Vec<NodeId>,
 }
 
@@ -784,7 +786,14 @@ impl<'a> PropEngine<'a> {
                 continue;
             }
             let arc = graph.arcs()[arc_idx];
+            // A pin at a constant passes no arrival: neither the wire of a constant net (its
+            // driver or a load that case analysis holds) nor an arc into a pin that a constant
+            // or case analysis holds; these arcs carry their transition (`STA-REQ-0164`).
+            let held = |n: NodeId| self.node_consts[n.index()].disable_reason();
             let Some((inst, lib_arc)) = arc.kind.inst_and_lib_arc() else {
+                if let Some(reason) = held(arc.src).or_else(|| held(arc.dst)) {
+                    graph.disable_arc(arc_idx, reason);
+                }
                 continue;
             };
             let Some(ictx) = inst_ctx(self.netview, &self.cell_lookup, inst) else {
@@ -798,7 +807,7 @@ impl<'a> PropEngine<'a> {
                 graph.disable_arc(arc_idx, DisableReason::FalseWhen);
                 continue;
             }
-            if let Some(reason) = self.node_consts[arc.src.index()].disable_reason() {
+            if let Some(reason) = held(arc.src).or_else(|| held(arc.dst)) {
                 graph.disable_arc(arc_idx, reason);
                 continue;
             }
@@ -806,10 +815,8 @@ impl<'a> PropEngine<'a> {
             if let ArcKind::LatchData { setup_check, .. } = arc.kind {
                 // A latch whose enable logic values hold active is transparent: `D -> Q` becomes
                 // a combinational arc; held inactive it is opaque and the arc carries no arrival
-                // (`STA-REQ-0161`).
-                if let Some(reason) = self.node_consts[arc.dst.index()].disable_reason() {
-                    graph.disable_arc(arc_idx, reason);
-                } else if let Some(reason) = graph
+                // (`STA-REQ-0163`).
+                if let Some(reason) = graph
                     .checks()
                     .get(setup_check as usize)
                     .and_then(|ch| self.node_consts[ch.clock_pin.index()].disable_reason())
@@ -989,15 +996,16 @@ fn build_cell_meta<'a>(
             .map(|i| i as u32)
     };
 
-    let (mut prop_arcs, mut check_arcs, mut async_arcs) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut prop_arcs, mut check_arcs) = (Vec::new(), Vec::new());
+    let mut has_async = false;
     for pin in &lib_cell.pins {
-        let Some(to_cp) = find_cp(&pin.name) else {
+        if find_cp(&pin.name).is_none() {
             continue;
-        };
+        }
         for arc in &pin.arcs {
-            let Some(from_cp) = find_cp(&arc.related_pin) else {
+            if find_cp(&arc.related_pin).is_none() {
                 continue;
-            };
+            }
             match arc.kind() {
                 SetupRising | SetupFalling | HoldRising | HoldFalling | RecoveryRising
                 | RecoveryFalling | RemovalRising | RemovalFalling => check_arcs.push(arc),
@@ -1009,26 +1017,21 @@ fn build_cell_meta<'a>(
                 ThreeStateDisable | ThreeStateDisableRise | ThreeStateDisableFall => {
                     prop_arcs.push(arc)
                 }
-                tt @ (Preset | Clear) => {
-                    let is_preset = tt == Preset;
-                    let active_high = !matches!(
-                        (is_preset, arc.sense()),
-                        (true, Some(TimingSense::NegativeUnate))
-                            | (false, Some(TimingSense::PositiveUnate))
-                    );
-                    async_arcs.push((from_cp, to_cp, is_preset, active_high));
-                }
+                Preset | Clear => has_async = true,
                 _ => {}
             }
         }
     }
-    let x_inert = propagate::cell_is_x_inert(lib_cell, &cp_to_pin, !async_arcs.is_empty());
+    let sequential = has_async || !lib_cell.sequentials.is_empty();
+    let gate_func = propagate::clock_gate_func(lib_cell);
+    let x_inert = propagate::cell_is_x_inert(&cp_to_pin, sequential, gate_func.as_ref());
     CellMeta {
         cell: lib_cell,
         cp_to_pin,
         prop_arcs,
         check_arcs,
-        async_arcs,
+        sequential,
+        gate_func,
         x_inert,
     }
 }

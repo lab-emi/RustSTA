@@ -165,7 +165,7 @@ pub struct LoweredCorner<'a> {
     pub csr: LevelizedTimingCsr<'static>,
     /// Maps each CSR incoming arc index (`0..csr.arcs()`) back to its [`TimingGraph`] arc index;
     /// an arc that carries only the transition of a launch arc `li` disabled by logic values maps
-    /// to `graph.arcs().len() + li` ([`Self::csr_raw_arc`], `STA-REQ-0116`).
+    /// to `graph.arcs().len() + li` ([`Self::csr_raw_arc`], `STA-REQ-0117`).
     pub csr_arc_to_graph_arc: Vec<u32>,
     /// Maps each [`TimingGraph`] arc index (`0..graph.num_arcs()`) to its CSR incoming arc index,
     /// or [`NONE`] when the arc is disabled.
@@ -185,7 +185,7 @@ pub struct LoweredCorner<'a> {
     /// The tag map of the incoming arcs that carry only their output transition (an empty record
     /// range, so that no arrival passes them), or [`NONE`] without any such arc: the arcs and
     /// launches that logic values disable, and the library transitions that a sense refinement
-    /// removed from an enabled arc (`STA-REQ-0116`).
+    /// removed from an enabled arc (`STA-REQ-0117`).
     pub slew_only_map: u32,
     /// Wall-clock seconds spent lowering into the compute ABI.
     pub lower_s: f64,
@@ -344,7 +344,7 @@ impl<'a> LoweredCorner<'a> {
         })
     }
 
-    /// True when CSR incoming arc `k` carries only its output transition (`STA-REQ-0116`).
+    /// True when CSR incoming arc `k` carries only its output transition (`STA-REQ-0117`).
     #[inline]
     #[must_use]
     pub fn is_slew_only(&self, k: usize) -> bool {
@@ -353,7 +353,7 @@ impl<'a> LoweredCorner<'a> {
 
     /// The timing graph arc of CSR incoming arc `k`; for an arc carrying the transition of a
     /// launch arc disabled by logic values, the clock-to-output arc as a cell arc
-    /// (`STA-REQ-0116`).
+    /// (`STA-REQ-0117`).
     #[must_use]
     pub fn csr_raw_arc(&self, graph: &TimingGraph, k: usize) -> GraphArc {
         let r = self.csr_arc_to_graph_arc[k] as usize;

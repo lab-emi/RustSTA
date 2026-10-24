@@ -53,9 +53,18 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   corner's delay calculation (`completeness.drv_static_transition_pins`, note `T0143`); any other
   pin without a transition is counted as untimed (`completeness.drv_untimed_pins`, warning
   `T0145`) and its limited check is unevaluated, so the rule is never `met` with a silent gap.
-- **Ideal clock networks (`STA-REQ-0818`):** the pins of an ideal clock's network are left out of
-  the design rules; their limited checks are unevaluated (`completeness.drv_ideal_clock_pins`,
-  warning `T0146`).
+- **Ideal clock networks (`STA-REQ-0822`, replaces `STA-REQ-0818`):** the pins of an ideal
+  clock's network are left out of the design rules; their limited checks are unevaluated
+  (`completeness.drv_ideal_clock_pins`, warning `T0146`). The network includes the pins that the
+  clock reaches only through arcs that constants or case analysis disable (a clock gate stopped by
+  a tie, a clock port under case analysis), and a flop whose clock such a constant stops has the
+  output transition of its clock-to-output arc at the ideal clock transition.
+- **Constant pins pass no arrival (`STA-REQ-0164`):** the wires of a constant net (from a tie, a
+  port or pin under case analysis, or a gate a constant controls), the wire into a load pin under
+  case analysis and the cell arcs into a pin held constant are disabled with the constant's
+  reason and carry only their transitions. The loads of a port under case analysis that also has
+  an input delay were in that clock's domain and took its design-rule limit; checks at a flop data
+  pin held by case analysis were timed.
 - **Unconnected pins (`STA-REQ-0819`):** the library pins that the netlist leaves unconnected are
   not pins of the design and are not checked; the unconnected output pins are counted
   (`completeness.drv_unconnected_output_pins`, note `T0148` with the first five names).
@@ -76,7 +85,8 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   (`STA-REQ-0821`, `T0135`).
 
 ### Changed
-- **Transitions ignore logic values (`STA-REQ-0116`):** the transition of a pin merges every arc
+- **Transitions ignore logic values (`STA-REQ-0117`, replaces `STA-REQ-0116`):** the transition of
+  a pin merges every arc
   that carries one: the enabled arcs, the arcs that constants, case analysis and false `when`
   conditions disable (with their library sense), the transitions that a sense refinement removes,
   the clock-to-output arcs of sequential cells that logic values disable or that no clock reaches,
@@ -86,16 +96,33 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   (3 to 84 ps on a synthesized core with case analysis) and their delays and checks followed;
   constant nets now have propagated transitions, and only literals and their cones keep the
   static transition 0 (`STA-REQ-0809`). The propagation of a propagated clock merges the same
-  arcs, with the input ports and tie cells as transition sources. A loop that these arcs would
-  close is cut and warned with `T0149`.
+  arcs, with the input ports, the tie cells and the launched outputs of sequential cells as
+  transition sources: a flop output that enters the clock network (an AND clock gate, a clock
+  multiplexer select) seeds the clock propagation with its transition, repeated until the seeds
+  no longer change (`STA-REQ-0714`); the clock latency below such a gate was 1.5 to 7.4 ps off on
+  the probes, optimistic for hold. A loop that these arcs would close is cut and warned with
+  `T0149`.
 - **Unate arcs contradicted by constants (`STA-REQ-0159`, replaces `STA-REQ-0152`):** a declared
   `positive_unate` (`negative_unate`) arc whose residual function is negative (positive) unate in
   its input is disabled: an `XOR2` next to a tie keeps only the arc of the right sense (it timed
   the wrong-sense arc as well, 28 to 756 ps pessimistic on the probes).
-- **Latches with a constant enable (`STA-REQ-0161`, replaces `STA-REQ-0154`):** a latch whose
-  enable a constant holds active is transparent (late arrivals pass `D -> Q` in their own tags, no
-  early arrival); held inactive it is opaque. It made the outputs behind it unconstrained and left
-  them out of the clock's design-rule limits.
+- **Latches with a constant enable (`STA-REQ-0163`, replaces `STA-REQ-0161` and `STA-REQ-0154`):**
+  a latch whose enable a constant holds active is transparent (late arrivals pass `D -> Q` in
+  their own tags, no early arrival); held inactive it is opaque. It made the outputs behind it
+  unconstrained and left them out of the clock's design-rule limits. A check that a false `when`,
+  a constant or case analysis disables is no longer timed where arrivals reach its pins (a
+  `when : "RN"` setup check of a flop whose reset is tied).
+- **Held clear and preset (`STA-REQ-0162`, replaces `STA-REQ-0151`):** a flop or latch whose
+  asynchronous clear or preset is held active (tie or case analysis) is no longer a constant: its
+  clock-to-output arc launches and the cone below it is timed and checked for capacitance and
+  fanout. With `set_case_analysis 0` on the reset of a synthesized core the reference reported
+  max_transition violators that RustSTA missed, and slacks were up to 1 ns (setup) and 390 ps
+  (hold) optimistic.
+- **Clock gate outputs (`STA-REQ-0162`):** the output of a clock gate (`clock_gate_out_pin`) is the
+  conjunction of its `clock_gate_clock_pin` and `clock_gate_enable_pin` inputs: an enable or clock
+  held at 0 makes it constant 0 (whatever the test enable, the state function and the statetable),
+  its clock arc carries only a transition and the flops below are unclocked. Such an output was
+  never constant and was checked for capacitance and fanout.
 - **Related pin transition of checks (`STA-REQ-0229`, replaces `STA-REQ-0211`):** setup and
   recovery checks (and the closing edge of a latch setup) take the early transition of the
   capture clock pin, hold and removal checks the late one, the transitions of the capture clock

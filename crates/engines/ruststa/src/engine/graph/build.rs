@@ -35,7 +35,7 @@ pub enum DisableReason {
 impl DisableReason {
     /// True when only the logic values disable the arc (`constant`, `case_analysis`,
     /// `false_when`): it carries no arrival, but the delay calculation still evaluates it, so its
-    /// output transition enters the transition of its destination pin (`STA-REQ-0116`). A
+    /// output transition enters the transition of its destination pin (`STA-REQ-0117`). A
     /// loop-breaking or user-disabled arc carries nothing.
     #[inline]
     #[must_use]
@@ -48,7 +48,7 @@ impl DisableReason {
 }
 
 /// True when an arc with the disable state `reason` carries its output transition into its
-/// destination pin: an enabled arc, or one disabled by logic values only (`STA-REQ-0116`).
+/// destination pin: an enabled arc, or one disabled by logic values only (`STA-REQ-0117`).
 #[inline]
 #[must_use]
 pub const fn carries_transition(reason: Option<DisableReason>) -> bool {
@@ -257,14 +257,19 @@ pub struct TimingGraph {
     levels: Levels,
     diagnostics: Vec<GraphDiagnostic>,
     /// Outputs of tie cells (constant drivers without timing arcs), set by constant propagation:
-    /// their transition is 0 (`STA-REQ-0116`).
+    /// their transition is 0 (`STA-REQ-0117`).
     tie_outputs: Vec<NodeId>,
     /// Per launch arc, true when no clock reaches its clock pin: it launches no arrival, but its
-    /// output transition enters its output pin (`STA-REQ-0116`). Empty until constant
+    /// output transition enters its output pin (`STA-REQ-0117`). Empty until constant
     /// propagation sets it.
     unclocked_launches: Vec<bool>,
+    /// Per launch arc, true when it launches no arrival and an ideal clock reaches its clock pin
+    /// only through arcs that logic values disable: its output transition is the arc's at the
+    /// ideal clock transition, a start of the propagation (`STA-REQ-0822`). Empty until constant
+    /// propagation sets it.
+    ideal_launches: Vec<bool>,
     /// The latch data arcs that a constant active enable made transparent combinational arcs,
-    /// in arc order (`STA-REQ-0161`).
+    /// in arc order (`STA-REQ-0163`).
     transparent_latch_arcs: Vec<u32>,
 }
 
@@ -537,6 +542,7 @@ impl TimingGraph {
             diagnostics,
             tie_outputs: Vec::new(),
             unclocked_launches: Vec::new(),
+            ideal_launches: Vec::new(),
             transparent_latch_arcs: Vec::new(),
         })
     }
@@ -599,7 +605,7 @@ impl TimingGraph {
     }
 
     /// Recomputes levels and CSR arc tables after disabling arcs (e.g. in E7 constant propagation).
-    /// The levels order every arc and launch that carries a transition (`STA-REQ-0116`); the
+    /// The levels order every arc and launch that carries a transition (`STA-REQ-0117`); the
     /// incoming and outgoing tables list the enabled arcs only. Arcs and launches disabled by
     /// logic values that would close a loop are left out of the levels and counted with
     /// diagnostic `T0149`.
@@ -621,7 +627,7 @@ impl TimingGraph {
                 code: "T0149",
                 message: format!(
                     "{dropped} arcs disabled by logic values close a loop with their transitions; \
-                     their transitions are not merged into their destination pins (STA-REQ-0116)"
+                     their transitions are not merged into their destination pins (STA-REQ-0117)"
                 ),
             });
         }
@@ -629,7 +635,7 @@ impl TimingGraph {
 
     /// Converts the latch data arc `arc_idx` into a combinational arc: a latch whose enable is
     /// held active by logic values is transparent, and data passes `D -> Q` in its own tags
-    /// (`STA-REQ-0161`).
+    /// (`STA-REQ-0163`).
     pub fn make_latch_transparent(&mut self, arc_idx: usize) {
         if let ArcKind::LatchData {
             inst,
@@ -648,32 +654,53 @@ impl TimingGraph {
     }
 
     /// The latch data arcs made transparent by a constant active enable, in arc order
-    /// (`STA-REQ-0161`).
+    /// (`STA-REQ-0163`).
     #[inline]
     pub fn transparent_latch_arcs(&self) -> &[u32] {
         &self.transparent_latch_arcs
     }
 
-    /// Outputs of tie cells: constant drivers without timing arcs (`STA-REQ-0116`).
+    /// Outputs of tie cells: constant drivers without timing arcs (`STA-REQ-0117`).
     #[inline]
     pub fn tie_outputs(&self) -> &[NodeId] {
         &self.tie_outputs
     }
 
-    /// Records the outputs of tie cells (constant propagation, `STA-REQ-0116`).
+    /// Records the outputs of tie cells (constant propagation, `STA-REQ-0117`).
     pub fn set_tie_outputs(&mut self, nodes: Vec<NodeId>) {
         self.tie_outputs = nodes;
     }
 
-    /// Records, per launch arc, whether no clock reaches its clock pin (`STA-REQ-0116`).
+    /// Records, per launch arc, whether no clock reaches its clock pin (`STA-REQ-0117`).
     pub fn set_unclocked_launches(&mut self, unclocked: Vec<bool>) {
         self.unclocked_launches = unclocked;
     }
 
+    /// Records, per launch arc, whether its output transition is seeded from the ideal clock
+    /// transition (`STA-REQ-0822`).
+    pub fn set_ideal_launches(&mut self, ideal: Vec<bool>) {
+        self.ideal_launches = ideal;
+    }
+
+    /// True when launch arc `launch_idx` launches no arrival and its output transition is the
+    /// arc's at the ideal clock transition of the clock that reaches its clock pin through arcs
+    /// that logic values disable (`STA-REQ-0822`).
+    #[inline]
+    pub fn is_ideal_launch(&self, launch_idx: usize) -> bool {
+        self.ideal_launches
+            .get(launch_idx)
+            .copied()
+            .unwrap_or(false)
+    }
+
     /// True when launch arc `launch_idx` carries only its output transition into its output pin:
-    /// logic values disable it, or no clock reaches its clock pin (`STA-REQ-0116`).
+    /// logic values disable it, or no clock reaches its clock pin (`STA-REQ-0117`), unless an
+    /// ideal clock reaches it through arcs that logic values disable (`STA-REQ-0822`).
     #[inline]
     pub fn launch_carries_transition(&self, launch_idx: usize) -> bool {
+        if self.is_ideal_launch(launch_idx) {
+            return false;
+        }
         match self.disabled_launches[launch_idx] {
             Some(r) => r.carries_transition(),
             None => self

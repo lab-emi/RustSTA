@@ -1,4 +1,4 @@
-# Constant propagation from a tie cell through an AND gate (STA-REQ-0150, STA-REQ-0151, STA-REQ-0159)
+# Constant propagation from a tie cell through an AND gate (STA-REQ-0150, STA-REQ-0162, STA-REQ-0159, STA-REQ-0164)
 
 Tie cell `t0` (`TIELO`, `function : "0"`) drives input `B` of `AND2` gate `g1`, whose input `A`
 is driven by flip-flop `ra` (`qa`). The output `n1` of `g1` feeds `OR2` gate `g2` alongside `rb/Q`
@@ -6,13 +6,15 @@ is driven by flip-flop `ra` (`qa`). The output `n1` of `g1` feeds `OR2` gate `g2
 
 ### Derivations
 
-1. **Kleene propagation (`STA-REQ-0150`, `0151`):**
+1. **Kleene propagation (`STA-REQ-0150`, `0162`):**
    - `t0/Y = lo = 0` -> `g1/B = 0`;
    - `g1/Y` (`A & B` with `B = 0`) evaluates to `X & 0 = 0` (`n1 = 0`).
 2. **Arc disabling (`STA-REQ-0159`):**
    - `g1` output is constant `0`, so `g1: A -> Y` and `g1: B -> Y` are disabled (`reason = constant`);
    - at `g2` (`n1 | qb` with `n1 = 0`), `g2: A -> Y` from constant `n1` is disabled, while
-     `g2: B -> Y` has residual function `0 | qb = qb` (`positive_unate`) and stays enabled.
+     `g2: B -> Y` has residual function `0 | qb = qb` (`positive_unate`) and stays enabled;
+   - the wires of the constant nets, `t0/Y -> g1/B` and `g1/Y -> g2/A`, pass no arrival
+     (`STA-REQ-0164`), five arcs disabled with `reason = constant` in all.
 3. **Arrivals and slacks at `f1/D`:**
    - Only `rb/Q -> g2/B -> g2/Y` reaches `f1/D`:
      rise `0.41 + 0.219 = 0.629 ns`, fall `0.359 + 0.20 = 0.559 ns`;

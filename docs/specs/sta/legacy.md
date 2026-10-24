@@ -149,3 +149,71 @@ Here `lat_C` is the capture clock latency (`-min` for setup, `-max` for hold) an
 uncertainty (`set_clock_uncertainty`) of the capture clock. A data transition whose constraint
 table is absent from the check arc is not checked.
 
+## Superseded constant, transition and ideal clock rules (replaced in version 0.4 by STA-REQ-0117, 0162, 0163, 0822)
+
+The rules below are those of version 0.4.0 before sequential cells, clock gates and constant pins
+were aligned with the observed behaviour of a reference timing tool. STA-REQ-0162 replaces
+STA-REQ-0151 (a held asynchronous `clear` or `preset` no longer makes the stored state a constant,
+and clock gate outputs follow their clock and enable inputs), STA-REQ-0163 replaces STA-REQ-0161
+(the same rule for the launch of a cell with a held `clear`/`preset`, and checks that logic values
+disable are not timed), STA-REQ-0117 replaces STA-REQ-0116 (launched outputs are transition
+sources of a propagated clock, STA-REQ-0714) and STA-REQ-0822 replaces STA-REQ-0818 (the ideal clock
+network includes the pins reached through arcs that logic values disable). STA-REQ-0164 is new.
+
+**STA-REQ-0116** Transitions ignore logic values
+([`const_mux_select`](../../../verification/analytic/sta/const_mux_select/DERIVATION.md))
+[@bhasker2009static, ch. 3 and 7]. The transition of a pin is a property of the pin, not of the
+paths through it, and the delay calculation that gives it ignores logic values: the merge of
+STA-REQ-0108 runs over every arc that carries a transition into the pin, each evaluated at the
+transition of its source pin with its library timing sense:
+- the enabled arcs;
+- the arcs that only logic values disable (reasons `constant`, `case_analysis` and `false_when`,
+  STA-REQ-0159, STA-REQ-0155), with the transitions that a sense refinement (STA-REQ-0153) removes
+  from an enabled arc;
+- the clock-to-output arcs of sequential cells that launch no arrival because logic values
+  disable them or because no clock reaches their clock pin (STA-REQ-0161);
+- the `D -> Q` arc of a latch whose enable is held constant (STA-REQ-0161).
+Arcs that break a combinational cycle or that `set_disable_timing` disables carry nothing. The
+outputs of tie cells (constant drivers without timing arcs) have the transition 0; a port held
+constant by case analysis keeps its input transition. These arcs carry no arrival and no required
+time. An arc that logic values disable and that would close a loop with these transitions is left
+out of the merge and counted with warning `T0149`. The propagation of a propagated clock merges the
+same arcs, with the input ports and tie cells as its transition sources (STA-REQ-0710).
+
+**STA-REQ-0151** Forward three-valued evaluation
+([`const_tielo_and2`](../../../verification/analytic/sta/const_tielo_and2/DERIVATION.md))
+[@liberty2017; @bhasker2009static, ch. 3]. Constants propagate in topological order across nets (a
+single constant driver sets the net and all its load pins to that constant) and across combinational
+cell output `function` expressions using Kleene three-valued logic (`!0 = 1`, `!1 = 0`, `!X = X`;
+`0 & X = 0`, `1 & X = X`; `1 | X = 1`, `0 | X = X`; `0 ^ b = b`, `1 ^ b = !b`, `X ^ _ = X`).
+Sequential cell outputs (`ff`, `latch`) do not propagate constants from their synchronous data (`D`)
+or clock/enable inputs, except when an asynchronous `clear` or `preset` expression evaluates to `1`
+under the constant inputs.
+
+**STA-REQ-0161** Sequential pins held constant (replaces STA-REQ-0154)
+([`const_flop_d`](../../../verification/analytic/sta/const_flop_d/DERIVATION.md))
+[@bhasker2009static, ch. 7; @sdc2016]. When a sequential data pin (`D`) or asynchronous control pin
+(`RN`, `SN`) is at constant `0` or `1`, it carries no signal transition, so no setup, hold,
+recovery or removal check is timed at that pin (its endpoint status is `no_data_arrival`,
+STA-REQ-0226). The cell's `CK -> Q` edge arc still launches both output transitions if `CK` is in a
+clock network, because the stored state is not treated as constant across clock cycles unless `clear`
+or `preset` is held active. When a sequential clock pin (`CK`, `CKN`) or latch enable pin (`G`) is
+at constant `0` or `1`, the clock network does not propagate through it, its edge arcs launch no
+arrival (their transitions still enter the output pin, STA-REQ-0116), and checks referencing that
+clock pin have status `unclocked`. A latch whose enable expression (the `enable` of its `latch`
+group) the constants make:
+- active (`1`) is transparent: its `D -> Q` arc is a combinational arc that passes the late
+  arrivals at `D` into `Q` in their own launch tags, with the arc's delay at the transition of
+  `D`, and no early arrival (no hold path passes a latch); the outputs below are timed as data of
+  those tags;
+- inactive (`0`) is opaque: its `D -> Q` arc passes no arrival and carries its transition only.
+
+**STA-REQ-0818** Ideal clock networks. The pins of the clock network (STA-REQ-0200) of a clock
+that is not propagated (`set_propagated_clock`), when every clock that reaches the pin there is
+ideal, are not checked for any design rule: their transitions are the ideal clock transition, and
+the network that drives them is not yet built. Their limited checks (the transition of every such
+pin, the capacitance and fanout of every such driver) are unevaluated (STA-REQ-0813), the corner
+counts the pins in `ideal_clock_pins`, and a warning `T0146` per corner names the count, so a
+design rule with an ideal clock is `partial` or `unchecked`, never `met`. The network includes
+the pins behind clock buffers, inverters and gaters and the data pins that the clock reaches, as
+observed of a reference timing tool. Their pulse checks follow STA-REQ-0815.

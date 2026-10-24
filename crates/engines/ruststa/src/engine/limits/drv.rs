@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
 //! Electrical design rules: `max_transition`, `max_capacitance` and `max_fanout`
-//! (`STA-REQ-0803` to `STA-REQ-0809`, `STA-REQ-0818`, `STA-REQ-0819`).
+//! (`STA-REQ-0803` to `STA-REQ-0809`, `STA-REQ-0822`, `STA-REQ-0819`).
 //!
 //! The limit of a check is the smallest of the limits that apply to it: the library limit of an
 //! instance pin (its own attribute, or the library default), and the constraint limits of the
@@ -16,7 +16,7 @@
 //! whose net is not constant, with the capacitance of its net (pins, wire and port loads, the
 //! largest over transitions and bounds) and the sum of the `fanout_load` of its instance load
 //! pins and of `set_fanout_load` on its output ports. The pins of an ideal clock network are not
-//! checked (`STA-REQ-0818`), nor are the library pins that the netlist leaves unconnected, which
+//! checked (`STA-REQ-0822`), nor are the library pins that the netlist leaves unconnected, which
 //! are counted (`STA-REQ-0819`).
 
 use rustc_hash::FxHashMap;
@@ -337,7 +337,7 @@ fn unconnected_output_pins(frozen: &FrozenNetlist<'_>, samples: usize) -> (u64, 
 }
 
 /// The pins of the design rules that are left out or checked by a special rule
-/// (`STA-REQ-0809`, `STA-REQ-0818`, `STA-REQ-0808`, `STA-REQ-0819`).
+/// (`STA-REQ-0809`, `STA-REQ-0822`, `STA-REQ-0808`, `STA-REQ-0819`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct DrvCounts {
     /// Drivers of constant nets: not checked for capacitance and fanout.
@@ -396,11 +396,15 @@ pub(super) fn check_design_rules(
         let node = NodeId(i as u32);
         let clock_net = inputs.clock_model.pin_clocks(node);
         // The design rules of an ideal clock network are not checked; its limited checks are
-        // unevaluated (`STA-REQ-0818`).
-        let ideal = !clock_net.is_empty()
-            && clock_net
+        // unevaluated. The network includes the pins that an ideal clock reaches only through
+        // arcs that logic values disable (`STA-REQ-0822`).
+        let ideal = if clock_net.is_empty() {
+            !inputs.clock_model.logic_network_clocks(node).is_empty()
+        } else {
+            clock_net
                 .iter()
-                .all(|(c, _)| !inputs.clock_model.is_propagated(*c));
+                .all(|(c, _)| !inputs.clock_model.is_propagated(*c))
+        };
         if ideal {
             counts.ideal_clock_pins += 1;
         }

@@ -54,7 +54,7 @@ impl Levels {
         Self::from_kahn(n_nodes, arcs, disabled, level, out_off, out_arcs)
     }
 
-    /// Computes levels over every arc and launch that carries a transition (`STA-REQ-0116`): the
+    /// Computes levels over every arc and launch that carries a transition (`STA-REQ-0117`): the
     /// enabled arcs, the arcs that logic values disable and the launches flagged in
     /// `carrying_launches` (disabled by logic values, or unclocked). The incoming and
     /// outgoing tables still list the enabled arcs only. If the arcs and launches disabled by

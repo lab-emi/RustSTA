@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! Pin limit checks of a corner (owner: S1; `STA-REQ-0800` to `STA-REQ-0812`, `STA-REQ-0818`,
+//! Pin limit checks of a corner (owner: S1; `STA-REQ-0800` to `STA-REQ-0812`, `STA-REQ-0822`,
 //! `STA-REQ-0819`).
 //!
 //! After the propagation of a corner, every clock pin with `min_pulse_width` or `minimum_period`
@@ -366,7 +366,7 @@ pub struct CornerLimits {
     /// transition (`STA-REQ-0809`).
     pub static_transition_pins: u64,
     /// Pins and drivers of ideal clock networks, not checked for the design rules
-    /// (`STA-REQ-0818`).
+    /// (`STA-REQ-0822`).
     pub ideal_clock_pins: u64,
     /// Pins without any transition: their `max_transition` check is not evaluated
     /// (`STA-REQ-0809`).
@@ -527,7 +527,7 @@ pub fn check_corner_limits(
             format!(
                 "corner '{corner}': {} pin(s) of ideal clock networks are not checked for the \
                  design rules; their limited checks are unevaluated until the clocks are \
-                 propagated (STA-REQ-0818)",
+                 propagated (STA-REQ-0822)",
                 drv.ideal_clock_pins
             ),
         ));
@@ -663,7 +663,7 @@ struct RowCollector {
     heaps: [BinaryHeap<HeapRow>; 6],
     kinds: [KindSummary; 6],
     /// Per kind, the checks not evaluated by a rule: a pin without a transition, or a pin of an
-    /// ideal clock network (`STA-REQ-0809`, `STA-REQ-0818`).
+    /// ideal clock network (`STA-REQ-0809`, `STA-REQ-0822`).
     skipped: [u64; 6],
 }
 
@@ -682,7 +682,7 @@ impl RowCollector {
     }
 
     /// A limited check that a rule leaves unevaluated, an untimed pin or a pin of an ideal clock
-    /// network: counted as unevaluated (`STA-REQ-0809`, `STA-REQ-0813`, `STA-REQ-0818`).
+    /// network: counted as unevaluated (`STA-REQ-0809`, `STA-REQ-0813`, `STA-REQ-0822`).
     fn unevaluated(&mut self, kind: LimitKind) {
         self.kinds[kind.index()].unevaluated += 1;
         self.skipped[kind.index()] += 1;

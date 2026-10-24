@@ -44,7 +44,7 @@ launch tag `tag` present at `(u, tr_in, an)`, the candidate arrival at `(v, tag,
 `arr[u][tag][tr_in][an] + d`, reduced across incoming arcs in topological CSR order by `max` for
 `late` and `min` for `early`.
 
-**STA-REQ-0116** Transitions ignore logic values
+**STA-REQ-0117** Transitions ignore logic values (replaces STA-REQ-0116)
 ([`const_mux_select`](../../../verification/analytic/sta/const_mux_select/DERIVATION.md))
 [@bhasker2009static, ch. 3 and 7]. The transition of a pin is a property of the pin, not of the
 paths through it, and the delay calculation that gives it ignores logic values: the merge of
@@ -52,17 +52,20 @@ STA-REQ-0108 runs over every arc that carries a transition into the pin, each ev
 transition of its source pin with its library timing sense:
 - the enabled arcs;
 - the arcs that only logic values disable (reasons `constant`, `case_analysis` and `false_when`,
-  STA-REQ-0159, STA-REQ-0155), with the transitions that a sense refinement (STA-REQ-0153) removes
-  from an enabled arc;
+  STA-REQ-0159, STA-REQ-0155, STA-REQ-0164), with the transitions that a sense refinement
+  (STA-REQ-0153) removes from an enabled arc;
 - the clock-to-output arcs of sequential cells that launch no arrival because logic values
-  disable them or because no clock reaches their clock pin (STA-REQ-0161);
-- the `D -> Q` arc of a latch whose enable is held constant (STA-REQ-0161).
+  disable them or because no clock reaches their clock pin (STA-REQ-0163); when an ideal clock
+  reaches that clock pin, the arc is evaluated at the ideal clock transition instead
+  (STA-REQ-0822);
+- the `D -> Q` arc of a latch whose enable is held constant (STA-REQ-0163).
 Arcs that break a combinational cycle or that `set_disable_timing` disables carry nothing. The
 outputs of tie cells (constant drivers without timing arcs) have the transition 0; a port held
 constant by case analysis keeps its input transition. These arcs carry no arrival and no required
 time. An arc that logic values disable and that would close a loop with these transitions is left
 out of the merge and counted with warning `T0149`. The propagation of a propagated clock merges the
-same arcs, with the input ports and tie cells as its transition sources (STA-REQ-0710).
+same arcs, with the input ports, the tie cells and the launched outputs of sequential cells as its
+transition sources (STA-REQ-0710, STA-REQ-0714).
 
 ## Net loads and delay lookup
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! Independent per-pin transitions (`STA-REQ-0108`, `0109`, `0116`): the delay calculation
+//! Independent per-pin transitions (`STA-REQ-0108`, `0109`, `0117`): the delay calculation
 //! ignores logic values, so every arc that only constants, case analysis or `when` disable
 //! carries its transition with its library sense, tie cells start at 0 and the clock-to-output
 //! arcs of unclocked or constant-clocked sequential cells carry their clock pin's transition.
@@ -15,7 +15,7 @@ use super::TimingSolver;
 
 impl TimingSolver<'_> {
     /// True when the latch `l_idx` of instance `inst_idx` carries its `D -> Q` transition: its
-    /// enable is constant (transparent or opaque, `STA-REQ-0161`) or no clock reaches it; a
+    /// enable is constant (transparent or opaque, `STA-REQ-0163`) or no clock reaches it; a
     /// clocked latch's `Q` transition comes from `G -> Q` only (`STA-REQ-0222`).
     fn latch_dq_carries_transition(&self, inst_idx: usize, latch: &LatchDef, l_idx: usize) -> bool {
         if self
@@ -33,7 +33,7 @@ impl TimingSolver<'_> {
 
     /// True when combinational arc `(inst_idx, ca_idx)` carries its output transition: it is
     /// enabled, or only logic values (constants, case analysis, `when`) disable it; arcs that
-    /// break a cycle or that `set_disable_timing` disables carry none (`STA-REQ-0116`).
+    /// break a cycle or that `set_disable_timing` disables carry none (`STA-REQ-0117`).
     fn comb_arc_carries_transition(&self, inst_idx: usize, ca_idx: usize) -> bool {
         !self.cycle_disabled_arcs.contains(&(inst_idx, ca_idx))
             && self.consts.disabled_comb_arcs.get(&(inst_idx, ca_idx))
@@ -42,7 +42,7 @@ impl TimingSolver<'_> {
 
     /// True when launch arc `(inst_idx, la_idx)` carries its output transition without launching
     /// an arrival: only logic values disable it, or no clock reaches its clock pin
-    /// (`STA-REQ-0116`).
+    /// (`STA-REQ-0117`).
     fn launch_carries_transition(&self, inst_idx: usize, la_idx: usize, ck_node: usize) -> bool {
         match self.consts.disabled_launch_arcs.get(&(inst_idx, la_idx)) {
             Some(DisableReason::UserDisabled) => false,
@@ -101,7 +101,7 @@ impl TimingSolver<'_> {
         edges
     }
 
-    /// Computes per-pin slews `slews[node][tr][an]` (`STA-REQ-0108`, `0109`, `0116`, `0218`,
+    /// Computes per-pin slews `slews[node][tr][an]` (`STA-REQ-0108`, `0109`, `0117`, `0218`,
     /// `0222`): the delay calculation ignores logic values, so every arc that carries a
     /// transition (an enabled arc, or one that constants, case analysis or `when` disable)
     /// merges its output transition with its library sense, evaluated at its source pin's
@@ -295,7 +295,7 @@ impl TimingSolver<'_> {
     }
 }
 
-/// An arc that carries a transition (`STA-REQ-0116`).
+/// An arc that carries a transition (`STA-REQ-0117`).
 #[derive(Debug, Clone, Copy)]
 enum TransitionArc {
     Net,

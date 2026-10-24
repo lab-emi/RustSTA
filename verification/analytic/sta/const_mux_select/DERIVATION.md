@@ -1,4 +1,4 @@
-# Multiplexer select constant and conditional arc disabling (STA-REQ-0155, STA-REQ-0116)
+# Multiplexer select constant and conditional arc disabling (STA-REQ-0155, STA-REQ-0117)
 
 Multiplexer `g` (`MUX2`, `Y = (A0 & !S) | (A1 & S)`) has its select `S` tied to `TIELO` (`0`),
 `A0` driven directly by `ra/Q`, and `A1` driven by `rb/Q` through inverter `i` [@liberty2017;
@@ -10,7 +10,7 @@ Multiplexer `g` (`MUX2`, `Y = (A0 & !S) | (A1 & S)`) has its select `S` tied to 
    - Residual function is `(A0 & 1) | (A1 & 0) = A0`, which is independent of `A1`;
    - `g: S -> Y` (constant input) and `g: A1 -> Y` (equal cofactors `A0 == A0`, or false `when`
      condition `S`) are disabled; only `g: A0 -> Y` remains enabled.
-2. **Transition at `g/Y = f/D` (`STA-REQ-0116`, `C = 0.01 pF`):** the delay calculation ignores
+2. **Transition at `g/Y = f/D` (`STA-REQ-0117`, `C = 0.01 pF`):** the delay calculation ignores
    logic values, so the disabled arcs still carry their transitions (and no arrival). `S` is on
    the tie net (transition `0`); every model has `ms = 0`:
    - `A0 -> Y` and `A1 -> Y` (`BUF` model): rise `0.06 + 1.0 * 0.01 = 0.07 ns`, fall

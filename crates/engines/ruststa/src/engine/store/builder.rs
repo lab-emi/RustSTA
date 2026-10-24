@@ -1078,7 +1078,7 @@ fn propagate_backward_required(
         }
         let dst_load = lowered.load[dst_pos];
         for in_arc in &in_arcs[in_ptr[dst_pos] as usize..in_ptr[dst_pos + 1] as usize] {
-            // An arc that carries only a transition carries no required time (`STA-REQ-0116`).
+            // An arc that carries only a transition carries no required time (`STA-REQ-0117`).
             if lowered.slew_only_map != NONE && in_arc.map == lowered.slew_only_map {
                 continue;
             }

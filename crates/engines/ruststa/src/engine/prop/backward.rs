@@ -559,8 +559,8 @@ impl BackwardPass {
 
 /// Evaluates all endpoint checks (`Setup`, `Hold`, `Recovery`, `Removal`, `LatchSetup`,
 /// `LatchHold`, `OutputMax`, `OutputMin`), records latch transparency windows, and runs the
-/// backward required-time pass (`STA-REQ-0229` to `STA-REQ-0214`, `STA-REQ-0221`, `STA-REQ-0222`,
-/// `STA-REQ-0224`, `STA-REQ-0227`).
+/// backward required-time pass (`STA-REQ-0229`, `STA-REQ-0212` to `STA-REQ-0214`, `STA-REQ-0221`,
+/// `STA-REQ-0222`, `STA-REQ-0224`, `STA-REQ-0227`).
 #[must_use]
 pub fn evaluate_checks_and_backward(
     netview: &NetlistView<'_>,

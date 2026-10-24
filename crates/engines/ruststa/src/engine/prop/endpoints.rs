@@ -608,12 +608,22 @@ fn collect_disabled_nodes(
             _ => {}
         }
     }
-    if !constraints.disabled_timing.is_empty() {
+    // A pin all of whose checks are disabled, by `set_disable_timing` or by a false `when` (also
+    // where arrivals reach it), is a disabled endpoint (`STA-REQ-0157`, `STA-REQ-0163`).
+    let explicit = |ci: usize| {
+        matches!(
+            graph.check_disable_reason(ci),
+            Some(DisableReason::UserDisabled | DisableReason::FalseWhen)
+        )
+    };
+    if !constraints.disabled_timing.is_empty() || (0..graph.checks().len()).any(explicit) {
         let mut by_pin: BTreeMap<NodeId, (usize, usize)> = BTreeMap::new();
-        for ch in graph.checks() {
+        for (ci, ch) in graph.checks().iter().enumerate() {
             let entry = by_pin.entry(ch.data_pin).or_insert((0, 0));
             entry.0 += 1;
-            if super::checks::is_check_disabled(netview, ch, &constraints.disabled_timing) {
+            if explicit(ci)
+                || super::checks::is_check_disabled(netview, ch, &constraints.disabled_timing)
+            {
                 entry.1 += 1;
             }
         }

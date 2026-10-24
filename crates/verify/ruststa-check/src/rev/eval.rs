@@ -691,7 +691,8 @@ impl<'a> TimingSolver<'a> {
             if self.consts.pin_vals[u] != LogicVal::X {
                 continue;
             }
-            // Net driver -> sink pins.
+            // Net driver -> sink pins; a constant driver or sink passes no arrival
+            // (`STA-REQ-0164`).
             if let Some(net_idx) = self.design.nodes[u].net_idx {
                 let net = &self.design.nets[net_idx];
                 if net.drivers.contains(&u) {
@@ -744,7 +745,7 @@ impl<'a> TimingSolver<'a> {
                     {
                         // A latch that a constant active enable holds transparent passes the
                         // late arrivals in their own tags; held opaque it passes none
-                        // (`STA-REQ-0161`).
+                        // (`STA-REQ-0163`).
                         match self.consts.constant_enable_latches.get(&(inst_idx, l_idx)) {
                             Some(true) => late_only = true,
                             Some(false) => continue,
