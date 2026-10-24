@@ -103,7 +103,16 @@ timing tool (linear synthetic Liberty tables, both PDKs). The remaining measured
 above about 1 kOhm the reference's effective capacitance lies between the one-step value and
 the charge solution (delay differences up to 8 ps at 3 kOhm on the default cells), and its
 driver waveform transition differs from the refitted one by up to 1.5 % (1.5 ps on a
-0.1 ns transition).
+0.1 ns transition). That difference is not a smooth model difference: as a function of the pi
+resistance the reference's driver transition is piecewise smooth with steps of 0.3 to 1.2 ps
+between resistances 1 % apart (with the same cell, input transition and pi capacitances), and
+between the steps it agrees with the refitted transition within 0.1 ps. Transistor-level
+transients of the real cells into the same loads (sky130 `clkbuf_2`, slow corner, the pi of an
+extracted clock net, 60 to 200 Ohm) change smoothly by 0.03 to 0.1 ps per 3 % step; both models
+lie 2.4 to 5.8 ps below them, and beyond a step the reference moves away from them by the size
+of the step while the refitted transition does not.
+RustSTA keeps the continuous model; a clock pin's minimum pulse width, a table of its
+transition, inherits such a step multiplied by the table slope (1.5 on the sky130 flip-flops).
 
 **STA-REQ-0725**: Read trip-point and slew-derate fields from the parsed Library
 metadata on both direct and persisted-library paths. Never select threshold

@@ -5,6 +5,18 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 
 ## [Unreleased]
 
+### Documented
+- **Driver transitions near a reference's discontinuities (STA-REQ-0728):** on the final layouts
+  of the eight suite designs (both default PDKs, three corners, native and reference-extracted
+  parasitics) the minimum-pulse-width requirements of the clock pins agree with the reference
+  timing tool within 1 ps except at three slow-corner sky130 cases (1.28 to 1.86 ps). Each of them
+  is a clock buffer whose reference driver transition lies beyond a step of that tool's
+  transition as a function of the clock net's resistance (0.7 to 1.2 ps between resistances 1 %
+  apart); across the step the two tools agree within 0.1 ps, and transistor-level transients of
+  the same cell and loads are continuous and closer to RustSTA beyond the step. The model is
+  unchanged; the specification states the difference and a unit test keeps the driver
+  transition continuous and non-decreasing in the pi resistance.
+
 ## [0.4.3] - 2026-10-24
 
 Extracted nets whose RC network is not a tree. Version 0.4.2 refused the whole timing run on two

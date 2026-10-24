@@ -168,6 +168,34 @@ mod tests {
         assert_eq!(pi_response(lumped, t, kink).unwrap().2, 0.0095);
     }
 
+    // STA-REQ-0728: the driver transition is a continuous, non-decreasing function of the pi
+    // resistance. Linear tables shaped like a sky130 `clkbuf_2` at the slow corner drive the pi of
+    // an extracted clock net (0.8 fF near, 25 fF far) from 60 to 240 Ohm in 1 % steps. A reference
+    // timing tool's driver transition steps by 0.3 to 1.2 ps between two resistances 1 % apart in
+    // this range (its iteration count changes), while transistor-level transients of the real cell
+    // move by less than 0.01 ps per step; the clock-pin pulse-width tables then amplify such a
+    // step by their slope. The model must not acquire such steps.
+    #[test]
+    fn transition_is_continuous_in_the_pi_resistance() {
+        let t = trips();
+        let eval = |c: f64| (0.197 + 5.7 * c, 0.02 + 8.14 * c);
+        let mut previous: Option<f64> = None;
+        for i in 0..140 {
+            let pi = Pi {
+                near: 0.0008,
+                far: 0.025,
+                resistance: 0.06 * 1.01f64.powi(i),
+            };
+            let r = pi_drive(pi, t, eval).unwrap();
+            assert!(r.drive.is_some());
+            if let Some(p) = previous {
+                let step = r.slew - p;
+                assert!((0.0..2e-5).contains(&step), "{i}: {p} -> {}", r.slew);
+            }
+            previous = Some(r.slew);
+        }
+    }
+
     // STA-REQ-0728: the corrected capacitance of linear synthetic tables (delay 0.06 + S c,
     // transition 0.07 + T c at the 0.1 ns input transition), with the effective capacitance that a
     // reference timing tool reports for the same pi loads (black-box delay-calculation reports,
