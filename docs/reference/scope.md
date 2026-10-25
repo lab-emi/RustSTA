@@ -59,7 +59,7 @@
 ## Current limits
 
 The following capabilities sit behind explicit engine seams in Phase 2a and are scheduled for
-Phase 2b (see [`docs/roadmap.md`](../roadmap.md)):
+Phase 2b (see [scope](https://lab-emi.github.io/RustEDA/verification/)):
 
 - **Generated clocks:** `create_generated_clock` remains unsupported. Explicit
   propagated primary-port clocks are supported on the bounded unate clock

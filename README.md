@@ -1,45 +1,24 @@
 <p align="center">
-  <img src="docs/assets/ruststa-wordmark.svg" alt="RustSTA — a RustEDA tool" width="360">
+  <img src="docs/assets/ruststa-wordmark.svg" alt="RustSTA" width="440">
 </p>
 
-# RustSTA
+<h1 align="center">Timing feedback for the next design iteration.</h1>
 
-**Static timing analysis in Rust. Built for terminals and agents.**
-
-[![CI](https://github.com/lab-emi/RustSTA/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/lab-emi/RustSTA/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Rust 1.97.1](https://img.shields.io/badge/rust-1.97.1-orange.svg?logo=rust)](rust-toolchain.toml)
-[![Documentation](https://img.shields.io/badge/docs-online-57D6BE)](https://lab-emi.github.io/RustSTA/)
-
-RustSTA turns gate-level Verilog, Liberty, SDC and detailed SPEF into timing results you can
-trace, check and automate. Analyze multiple corners, inspect critical paths,
-query saved results as JSON, and coordinate changes through immutable disk
-workspaces. Part of the **RustEDA** family.
-
-This branch consumes a fixed revision of the private [RustEDA-Common](https://github.com/lab-emi/RustEDA-Common)
-foundation. Building it requires authorized Git/SSH access. Shared implementation paths now
-belong to that repository; see the canonical-foundation section in [CONTRIBUTING.md](CONTRIBUTING.md).
+<p align="center">
+  <a href="https://lab-emi.github.io/RustEDA/modules/ruststa/">Documentation</a> ·
+  <a href="https://github.com/lab-emi/RustEDA">RustEDA</a> ·
+  <a href="https://lab-emi.github.io/RustEDA/benchmarks/">Benchmarks</a> ·
+  <a href="LICENSE">Apache-2.0</a>
+</p>
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/ruststa-banner.svg">
-  <img src="docs/assets/ruststa-banner.gif" alt="Netlist, Liberty and SDC inputs feed a timing graph. A critical path connects its launch and capture registers to a path report." width="1200" height="400">
+  <img src="docs/assets/ruststa-banner.gif" alt="RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi-corner timing results, bounded queries and incremental updates" width="1200" height="360">
 </picture>
 
-[Static banner](docs/assets/ruststa-banner.svg) · [Get started](#quick-start) ·
-[Agent guide](docs/guide/agents.md) · [Documentation](https://lab-emi.github.io/RustSTA/) ·
-[Verification](docs/verification/index.md)
+RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi-corner timing results, bounded queries and incremental updates.
 
-- **Follow the critical path:** multi-corner NLDM timing, setup and hold, latches, recovery/removal, clock gating and explicit timing exceptions.
-- **Inspect without another run:** memory-mapped `sta.rbin` reports, path tracing, pin inspection and bounded endpoint queries.
-- **Give agents a contract:** JSON results, coded diagnostics, shell-safe handles and fixed exit statuses.
-- **Keep changes coordinated:** daemonless disk workspaces, immutable revisions and explicit `--base-rev` conflict checks.
-- **Choose how to compute:** deterministic pure Rust CPU propagation in f64; optional native CUDA with CPU differential checks.
-- **Keep the evidence:** independent checker and full-rerun modes, analytic fixtures, incremental consistency tests, and pinned Sky130/GF180 libraries.
-
-> **Development preview:** version 0.4.1 is unreleased and is not on crates.io.
-> Build from source. Linux is the CI baseline. Read the
-> [analysis scope](docs/reference/scope.md) and [verification limits](docs/verification/index.md)
-> before interpreting a timing result.
+Part of **[RustEDA](https://github.com/lab-emi/RustEDA)**, infrastructure for chip-design recursive self-improvement. Native tools shorten the work between inference steps; verified results guide the next iteration.
 
 ## Quick start
 
@@ -120,7 +99,7 @@ handles such as `path1` belong to the selected revision. Initialization creates
 
 Unsupported semantic constructs produce diagnostics. See the
 [complete support table](docs/reference/scope.md),
-[backend guide](docs/guide/backends.md) and [roadmap](docs/roadmap.md).
+[backend guide](docs/guide/backends.md) and [scope](https://lab-emi.github.io/RustEDA/verification/).
 
 ## Verification and performance
 
@@ -145,7 +124,7 @@ wall time, peak memory, timing scope and numerical agreement together.
 
 ## Documentation
 
-- [Get started](https://lab-emi.github.io/RustSTA/guide/quickstart/) and [install from source](docs/guide/installation.md).
+- [Get started](https://lab-emi.github.io/RustEDA/modules/ruststa/guide/quickstart/) and [install from source](docs/guide/installation.md).
 - [Timing manual](docs/user/sta/README.md), [CLI manual](docs/user/cli/README.md), and [formal specifications](docs/specs/sta/README.md).
 - [Architecture](docs/architecture/index.md), [requirements and evidence](docs/verification/requirements.md), and [RustEDA brand](docs/brand/README.md).
 - [Build and publish the documentation](docs/about/maintaining-docs.md).

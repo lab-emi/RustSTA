@@ -83,6 +83,7 @@ validation:
     anchors: warn
     unrecognized_links: warn
 nav:
+  - RustEDA: https://lab-emi.github.io/RustEDA/
   - Home: index.md
   - Get started:
       - Install from source: guide/installation.md
@@ -146,7 +147,6 @@ nav:
       - Contribute: contributing.md
       - RustEDA visual identity: brand/README.md
       - Maintain this site: about/maintaining-docs.md
-      - Roadmap: roadmap.md
       - Engineering decisions:
           - Native GPU runtimes: adr/0001-gpu-runtimes-and-native-cuda.md
           - Frontends: adr/0002-front-ends.md
