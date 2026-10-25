@@ -3,6 +3,9 @@
 """Keep repository-relative source links usable on GitHub and the static site."""
 
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from foundation_paths import relocated
 from html import escape
 import posixpath
 import re
@@ -22,8 +25,14 @@ def on_page_markdown(markdown, *, page, config, files):
         if target.is_relative_to(docs) or not target.is_relative_to(root):
             return match.group(0)
         if not target.exists():
-            # Let strict validation diagnose missing source references.
-            return match.group(0)
+            moved = relocated(root, target)
+            if moved is None:
+                # Let strict validation diagnose missing source references.
+                return match.group(0)
+            destination = moved[1]
+            if url.fragment:
+                destination += "#" + url.fragment
+            return f"]({destination})"
         kind = "tree" if target.is_dir() else "blob"
         path = quote(target.relative_to(root).as_posix(), safe="/")
         destination = urlunsplit(("https", "github.com", f"/lab-emi/RustSTA/{kind}/main/{path}",

@@ -12,11 +12,12 @@ authors = ["RustSTA contributors"]
 repository = "https://github.com/lab-emi/RustSTA"
 
 [workspace.dependencies]
-rusteda-core = { path = "crates/core/rusteda-core" }
-rusteda-workspace = { path = "crates/core/rusteda-workspace" }
-rusteda-compute = { path = "crates/core/rusteda-compute" }
-rusteda-formats = { path = "crates/formats/rusteda-formats" }
+rusteda-core = { git = "ssh://git@github.com/lab-emi/RustEDA-Common.git", rev = "7e78e705908a3475018ab39df94b94423e158a13" }
+rusteda-workspace = { git = "ssh://git@github.com/lab-emi/RustEDA-Common.git", rev = "7e78e705908a3475018ab39df94b94423e158a13" }
+rusteda-compute = { git = "ssh://git@github.com/lab-emi/RustEDA-Common.git", rev = "7e78e705908a3475018ab39df94b94423e158a13" }
+rusteda-formats = { git = "ssh://git@github.com/lab-emi/RustEDA-Common.git", rev = "7e78e705908a3475018ab39df94b94423e158a13" }
 rusteda-cli = { path = "crates/apps/rusteda-cli" }
+rusteda-cli-shared = { package = "rusteda-cli-common", git = "ssh://git@github.com/lab-emi/RustEDA-Common.git", rev = "7e78e705908a3475018ab39df94b94423e158a13" }
 ruststa = { path = "crates/engines/ruststa" }
 ruststa-check = { path = "crates/verify/ruststa-check" }
 ruststa-fixtures = { path = "crates/verify/ruststa-fixtures" }

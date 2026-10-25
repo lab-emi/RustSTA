@@ -115,7 +115,10 @@ fn sta_plan_names_existing_targets() {
         return;
     };
     let cli = root.join("crates/apps/ruststa-cli");
-    let gpu = root.join("crates/core/rusteda-compute");
+    let common = crate::foundation::root(root)
+        .unwrap()
+        .unwrap_or_else(|| root.to_path_buf());
+    let gpu = common.join("crates/core/rusteda-compute");
     let read = |p: &Path| std::fs::read_to_string(p).unwrap_or_default();
     let (cli_toml, gpu_toml) = (read(&cli.join("Cargo.toml")), read(&gpu.join("Cargo.toml")));
     assert_eq!(
@@ -155,7 +158,7 @@ fn sta_plan_names_existing_targets() {
     assert!(!sta_suites.is_empty());
     for s in &sta_suites {
         assert!(
-            root.join(&s.test).is_file(),
+            source_path(root, Some(&common), &s.test).is_file(),
             "{}: missing test file {}",
             s.file,
             s.test
@@ -176,7 +179,7 @@ fn sta_plan_names_existing_targets() {
     assert!(!compute_suites.is_empty());
     for s in &compute_suites {
         assert!(
-            root.join(&s.test).is_file(),
+            source_path(root, Some(&common), &s.test).is_file(),
             "{}: missing test file {}",
             s.file,
             s.test
@@ -186,4 +189,17 @@ fn sta_plan_names_existing_targets() {
         read(&gpu.join("src/lib.rs")).contains("#[ignore]"),
         "crates/core/rusteda-compute/src/lib.rs has no ignored test"
     );
+}
+
+#[test]
+fn relocated_shared_test_paths_remain_resolvable() {
+    let root = Tree::new("local-suite-paths");
+    let common = Tree::new("canonical-suite-paths");
+    let relative = "crates/formats/rusteda-formats/tests/constraints.rs";
+    common.file(relative, "canonical test");
+    assert!(source_path(root.root(), Some(common.root()), relative).is_file());
+    assert!(!source_path(root.root(), None, relative).is_file());
+    let tool = "crates/engines/ruststa/tests/own.rs";
+    common.file(tool, "must not be borrowed");
+    assert!(!source_path(root.root(), Some(common.root()), tool).is_file());
 }

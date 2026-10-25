@@ -16,6 +16,10 @@ trace, check and automate. Analyze multiple corners, inspect critical paths,
 query saved results as JSON, and coordinate changes through immutable disk
 workspaces. Part of the **RustEDA** family.
 
+This branch consumes a fixed revision of the private [RustEDA-Common](https://github.com/lab-emi/RustEDA-Common)
+foundation. Building it requires authorized Git/SSH access. Shared implementation paths now
+belong to that repository; see the canonical-foundation section in [CONTRIBUTING.md](CONTRIBUTING.md).
+
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/ruststa-banner.svg">
   <img src="docs/assets/ruststa-banner.gif" alt="Netlist, Liberty and SDC inputs feed a timing graph. A critical path connects its launch and capture registers to a path report." width="1200" height="400">
