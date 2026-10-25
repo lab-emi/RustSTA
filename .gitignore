@@ -4,3 +4,9 @@
 # Documentation tooling caches.
 __pycache__/
 *.py[cod]
+
+AGENTS.md
+
+agents.md
+
+HANDOFF.md

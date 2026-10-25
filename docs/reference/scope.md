@@ -34,7 +34,7 @@
 ## Current limits
 
 The following capabilities sit behind explicit engine seams in Phase 2a and are scheduled for
-Phase 2b (see [`docs/roadmap.md`](../roadmap.md)):
+Phase 2b (see [scope](https://lab-emi.github.io/RustEDA/verification/)):
 
 - **Propagated and generated clocks:** `set_propagated_clock` and `create_generated_clock` are
   diagnosed and rejected at constraint compilation; clocks are ideal in Phase 2a.
