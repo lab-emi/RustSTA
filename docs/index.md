@@ -1,26 +1,13 @@
-<div class="ruststa-hero" markdown>
+# RustSTA
 
-<p class="ruststa-eyebrow">RUSTEDA / STATIC TIMING ANALYSIS</p>
+RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi-corner timing results, bounded queries and incremental updates.
 
-# Every path. A clear answer.
+[All RustEDA modules](https://lab-emi.github.io/RustEDA/)
 
-Turn gate-level Verilog, Liberty and SDC into timing results you can inspect,
-check and automate. Written in Rust. Built for terminals, CI and coding agents.
-
-[Run your first timing analysis](guide/quickstart.md){ .md-button .md-button--primary }
-[Build an agent workflow](guide/agents.md){ .md-button }
-
-<p class="ruststa-release">Source preview · 0.1.0 · Apache-2.0 · CPU reference + optional CUDA</p>
-
-</div>
-
-<figure class="ruststa-banner">
-  <picture>
-    <source media="(prefers-reduced-motion: no-preference)" srcset="assets/ruststa-banner.gif" type="image/gif">
-    <img src="assets/ruststa-banner.svg" alt="Netlist, Liberty and SDC inputs feed a timing graph. A highlighted critical path connects its launch and capture registers to a path report." width="1200" height="400" data-animation="assets/ruststa-banner.gif" data-poster="assets/ruststa-banner.svg">
-  </picture>
-  <figcaption>Netlist → timing graph → critical path. Illustration. <button type="button" class="ruststa-motion-control" aria-pressed="false" hidden>Pause animation</button></figcaption>
-</figure>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="assets/ruststa-banner.svg">
+  <img src="assets/ruststa-banner.gif" alt="Timing feedback for the next design iteration." width="1200" height="360">
+</picture>
 
 ## Analyze. Trace. Iterate.
 
