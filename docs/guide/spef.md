@@ -103,3 +103,16 @@ does not mean the design meets setup/hold or signoff requirements.
 Extracted waveform timing currently uses port transition annotations. A
 `set_driving_cell` port annotation fails with T0077 rather than combining it
 with an unvalidated waveform convention. Ideal/lumped modes retain that feature.
+
+## Topology edits after extraction
+
+`whatif` can resize a cell while retaining the routed net topology and its SPEF.
+Inserting a buffer creates a new net and moves sink pins. The original SPEF no
+longer describes those connections, so the candidate is rejected with `T0070`;
+the disk workspace and its parasitics remain unchanged. Other independent
+candidates, such as a resize, can still be evaluated in the same request.
+
+To evaluate a physical buffer insertion, apply the netlist edit in the physical
+flow, place and route it, re-extract the changed topology, and import the new
+netlist and matching SPEF together. No inferred split of the old RC network or
+silent ideal-wire fallback is supplied by `whatif`.

@@ -163,6 +163,76 @@ fn workspace(dir: &Path, with_spef: bool) -> String {
     dir.join("ws").to_string_lossy().into_owned()
 }
 
+// STA-REQ-0706/0732: a topology edit needs replacement extracted data. A rejected
+// candidate must leave the disk workspace intact and must not poison a resize
+// evaluated after it. <50 pins, 9 tiny RC nets, one corner, three session copies:
+// under 1 MiB of graph/RC state; this test has no enumerated paths.
+#[test]
+fn whatif_rejects_stale_spef_and_keeps_following_candidates_independent() {
+    use rusteda_workspace::edits::{Candidate, Edit, EditFile, Sink};
+    let dir = temp_dir("whatif-spef");
+    let w = workspace(&dir, true);
+    let root = Path::new(&w);
+    let manifest = std::fs::read(root.join("manifest.json")).unwrap();
+    let history = std::fs::read(root.join("history.jsonl")).unwrap();
+    let parasitics = root.join("revisions/rev0002/parasitics.rbin");
+    let original = std::fs::read(&parasitics).unwrap();
+    let file = EditFile {
+        candidates: vec![
+            Candidate {
+                id: "needs_new_extraction".into(),
+                edits: vec![Edit::InsertBuffer {
+                    net: "l1q".into(),
+                    cell: "wt_buf_1".into(),
+                    instance: "new_buffer".into(),
+                    net_out: "new_net".into(),
+                    sinks: vec![Sink::Pin {
+                        instance: "b1".into(),
+                        pin: "A".into(),
+                    }],
+                }],
+            },
+            Candidate {
+                id: "same_topology".into(),
+                edits: vec![Edit::Resize {
+                    instance: "b1".into(),
+                    cell: "wt_buf_2".into(),
+                }],
+            },
+        ],
+        ..EditFile::default()
+    };
+    let path = dir.join("edits.json");
+    std::fs::write(&path, file.to_json()).unwrap();
+    let (code, result) = run_json(&[
+        "whatif",
+        "-w",
+        &w,
+        "--rev",
+        "rev2",
+        "--edits",
+        path.to_str().unwrap(),
+        "--require-wire-model",
+        "spef_rc",
+        "--max-state-gib",
+        "1",
+    ]);
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["scope"]["wire_model"], "spef_rc", "{result}");
+    assert_eq!(result["candidates"][0]["status"], "rejected", "{result}");
+    assert_eq!(
+        result["candidates"][0]["error"]["code"], "T0070",
+        "{result}"
+    );
+    assert_eq!(result["candidates"][0]["values"], Value::Null);
+    assert_eq!(result["candidates"][1]["status"], "evaluated", "{result}");
+    assert_eq!(std::fs::read(root.join("manifest.json")).unwrap(), manifest);
+    assert_eq!(std::fs::read(root.join("history.jsonl")).unwrap(), history);
+    assert_eq!(std::fs::read(parasitics).unwrap(), original);
+    assert!(!root.join("revisions/rev0003").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // STA-REQ-0812: `inspect --pin` of a latch data endpoint reports the required times of its worst
 // setup and hold path, equal to `path --to`, with its endpoint slacks; the `pins` section reports
 // the node values, which at the latch data pin also cover the path through the transparent latch
