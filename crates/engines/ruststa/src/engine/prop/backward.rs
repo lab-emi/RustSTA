@@ -66,7 +66,7 @@ pub const fn absent_req(an: An) -> f64 {
     }
 }
 
-/// Role of an endpoint timing check (`STA-REQ-0211`, `STA-REQ-0212`, `STA-REQ-0221`,
+/// Role of an endpoint timing check (`STA-REQ-0229`, `STA-REQ-0212`, `STA-REQ-0221`,
 /// `STA-REQ-0224`, `STA-REQ-0225`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EndpointCheckRole {
@@ -559,8 +559,8 @@ impl BackwardPass {
 
 /// Evaluates all endpoint checks (`Setup`, `Hold`, `Recovery`, `Removal`, `LatchSetup`,
 /// `LatchHold`, `OutputMax`, `OutputMin`), records latch transparency windows, and runs the
-/// backward required-time pass (`STA-REQ-0211` to `STA-REQ-0214`, `STA-REQ-0221`, `STA-REQ-0222`,
-/// `STA-REQ-0224`, `STA-REQ-0227`).
+/// backward required-time pass (`STA-REQ-0229`, `STA-REQ-0212` to `STA-REQ-0214`, `STA-REQ-0221`,
+/// `STA-REQ-0222`, `STA-REQ-0224`, `STA-REQ-0227`).
 #[must_use]
 pub fn evaluate_checks_and_backward(
     netview: &NetlistView<'_>,

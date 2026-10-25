@@ -4,10 +4,10 @@
 name = "sta-constants"
 requirement = [
     "STA-REQ-0150",
-    "STA-REQ-0151",
-    "STA-REQ-0152",
+    "STA-REQ-0162",
+    "STA-REQ-0159",
     "STA-REQ-0153",
-    "STA-REQ-0154",
+    "STA-REQ-0163",
     "STA-REQ-0155",
     "STA-REQ-0156",
     "STA-REQ-0157",
@@ -15,3 +15,16 @@ requirement = [
 test = "crates/engines/ruststa/tests/constants.rs"
 cases = "verification/analytic/sta"
 description = "Three-valued Kleene constant propagation, case analysis, cofactor arc disabling, unate sense refinement, sequential constant pins, conditional when arcs, set_disable_timing, and disabled arc completeness accounting"
+
+[[suite]]
+name = "sta-held-sequential"
+requirement = [
+    "STA-REQ-0117",
+    "STA-REQ-0162",
+    "STA-REQ-0163",
+    "STA-REQ-0164",
+    "STA-REQ-0714",
+    "STA-REQ-0822",
+]
+test = "crates/engines/ruststa/tests/held_sequential.rs"
+description = "Flops with a held asynchronous clear stay live, clock gate outputs follow their clock and enable pins, constant pins pass no arrival, launched enables merge into propagated clock transitions, and ideal clock networks stopped by constants (hand-derived on a linear synthetic library)"

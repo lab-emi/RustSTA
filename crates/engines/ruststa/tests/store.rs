@@ -906,6 +906,7 @@ fn build_synthetic_scale_store(n_cells: usize) -> StaStoreData {
             disabled_arcs_by_reason: BTreeMap::new(),
             unanalyzed_arcs_by_type: BTreeMap::new(),
         },
+        limits: None,
     };
     let scope_bytes = serde_json::to_vec(&scope).expect("scope json");
     let (str_bytes, str_offs) = strings.finish();

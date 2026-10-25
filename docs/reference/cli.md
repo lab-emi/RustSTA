@@ -38,7 +38,13 @@ ruststa check --help
 | `--max-paths N` | Bound ranked paths stored per corner |
 | `--max-state-gib GIB` | Bound estimated per-corner propagation state |
 | `--sta-store full\|summary` | Select timing persistence detail |
-| `--section NAME` | Select summary, paths, endpoints, pins, clocks, checks, unconstrained or notes |
+| `--max-limit-rows N` | Bound kept pulse-width, period and design-rule rows per corner and kind |
+| `--require-wire-model MODEL` | Fail unless every corner uses `spef_rc`, `ideal` or `wireload_lumped` |
+| `--pulse-groups worst\|last` | Choose a pin's pulse constraint: the largest of its groups and attributes (default), or the last listed group that states it |
+| `--pulse-pins all\|clock-ends` | Check pulse constraints on every clocked pin (default), or only where a clock ends (clock-gater inputs are counted, not checked) |
+| `--clock-limits paths\|domain` | Map a clock's design-rule limits: `-clock_path` to its network and `-data_path` to its data pins (default), or the data-path limit to the whole domain (`-clock_path` alone is counted, not applied) |
+| `--section NAME` | Select summary, paths, endpoints, pins, clocks, checks, unconstrained, notes, limits, pulse_width, min_period, drv, max_transition, max_capacitance, max_fanout or hold_fix |
+| `--target-margin NS` | Hold slack target of the `hold_fix` section |
 | `--filter EXPR`, `--sort KEY`, `--limit N` | Restrict report tables |
 | `--method independent\|full\|both` | Choose verification method |
 

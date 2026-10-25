@@ -52,6 +52,18 @@ impl DriverLoad {
 pub trait WireModel {
     /// The name of the model in the analysis scope (`wire_model`).
     fn scope_name(&self) -> &'static str;
+    /// Physical load already including pin capacitances, in [tr * 2 + an] order.
+    fn physical_load(&self, _net: NetRow, _tr: Tr, _an: An) -> Option<DriverLoad> {
+        None
+    }
+    /// First moment used to build an extracted voltage-threshold wire response.
+    fn elmore(&self, _load: NodeId, _tr: Tr, _an: An) -> Option<f64> {
+        None
+    }
+    /// A port without a characterized driving-cell waveform.
+    fn primary_input(&self, _net: NetRow) -> bool {
+        false
+    }
 
     /// The load that `net` presents to its driver for the bound `an`, when the capacitances of
     /// the pins on the net sum to `pin_load` (pF).
@@ -388,6 +400,8 @@ impl WireModel for WireloadLumped {
 /// `STA-REQ-0125`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResolvedWireModel {
+    /// Detailed extracted RC with lumped driver load and first-moment delay.
+    Extracted(super::spef::Spef),
     /// Ideal wires (`wire_model = "ideal"`).
     Ideal(Ideal),
     /// Lumped wire-load estimation (`wire_model = "wireload_lumped"`).
@@ -425,6 +439,11 @@ impl ResolvedWireModel {
     pub fn scope(&self) -> WireScope {
         match self {
             Self::Ideal(_) => WireScope::ideal(),
+            Self::Extracted(_) => WireScope {
+                wire_model: "spef_rc",
+                wire_load_model: None,
+                wire_load_mode: None,
+            },
             Self::Lumped(w) => w.scope(),
         }
     }
@@ -433,7 +452,7 @@ impl ResolvedWireModel {
     #[must_use]
     pub fn as_lumped(&self) -> Option<&WireloadLumped> {
         match self {
-            Self::Ideal(_) => None,
+            Self::Ideal(_) | Self::Extracted(_) => None,
             Self::Lumped(w) => Some(w),
         }
     }
@@ -446,9 +465,27 @@ impl ResolvedWireModel {
 }
 
 impl WireModel for ResolvedWireModel {
+    fn elmore(&self, load: NodeId, tr: Tr, an: An) -> Option<f64> {
+        match self {
+            Self::Extracted(w) => w.elmore(load, tr, an),
+            _ => None,
+        }
+    }
+
+    fn physical_load(&self, net: NetRow, tr: Tr, an: An) -> Option<DriverLoad> {
+        match self {
+            Self::Extracted(w) => w.physical_load(net, tr, an),
+            _ => None,
+        }
+    }
+    fn primary_input(&self, net: NetRow) -> bool {
+        matches!(self,Self::Extracted(w) if w.primary_input(net))
+    }
+
     fn scope_name(&self) -> &'static str {
         match self {
             Self::Ideal(w) => w.scope_name(),
+            Self::Extracted(w) => w.scope_name(),
             Self::Lumped(w) => w.scope_name(),
         }
     }
@@ -456,6 +493,7 @@ impl WireModel for ResolvedWireModel {
     fn driver_load(&self, net: NetRow, an: An, pin_load: f64) -> DriverLoad {
         match self {
             Self::Ideal(w) => w.driver_load(net, an, pin_load),
+            Self::Extracted(w) => w.driver_load(net, an, pin_load),
             Self::Lumped(w) => w.driver_load(net, an, pin_load),
         }
     }
@@ -463,6 +501,7 @@ impl WireModel for ResolvedWireModel {
     fn load_delay(&self, net: NetRow, load: NodeId, tr: Tr, an: An, slew: f64) -> DelaySlew {
         match self {
             Self::Ideal(w) => w.load_delay(net, load, tr, an, slew),
+            Self::Extracted(w) => w.load_delay(net, load, tr, an, slew),
             Self::Lumped(w) => w.load_delay(net, load, tr, an, slew),
         }
     }

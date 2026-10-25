@@ -120,6 +120,121 @@ pub enum ReportSection {
     Checks,
     Unconstrained,
     Notes,
+    /// Counts of the pin limit checks per corner and kind (`STA-REQ-0811`).
+    Limits,
+    /// Minimum pulse width rows, high and low (`STA-REQ-0811`).
+    #[value(name = "pulse_width")]
+    PulseWidth,
+    /// Minimum period rows (`STA-REQ-0811`).
+    #[value(name = "min_period")]
+    MinPeriod,
+    /// Design-rule rows: transition, capacitance and fanout (`STA-REQ-0811`).
+    Drv,
+    /// `max_transition` rows (`STA-REQ-0811`).
+    #[value(name = "max_transition")]
+    MaxTransition,
+    /// `max_capacitance` rows (`STA-REQ-0811`).
+    #[value(name = "max_capacitance")]
+    MaxCapacitance,
+    /// `max_fanout` rows (`STA-REQ-0811`).
+    #[value(name = "max_fanout")]
+    MaxFanout,
+    /// Hold-violating endpoints with their worst hold paths, per corner (`STA-REQ-0830`).
+    #[value(name = "hold_fix")]
+    HoldFix,
+}
+
+/// How the constraint of a pulse check is chosen among the groups and the attribute of a pin
+/// (`--pulse-groups`, `STA-REQ-0801`, `STA-REQ-0816`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PulseGroupsArg {
+    /// The largest constraint of every group and the attribute (order-independent).
+    #[value(name = "worst")]
+    Worst,
+    /// Per transition the last listed group that states it, else the attribute; a period reads
+    /// its rise_constraint only.
+    #[value(name = "last")]
+    Last,
+}
+
+/// The clock pins whose pulse constraints are checked (`--pulse-pins`, `STA-REQ-0817`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PulsePinsArg {
+    /// Every pin with pulse constraints that a clock reaches.
+    #[value(name = "all")]
+    All,
+    /// Only pins where the clock ends; pins that pass their clock on through their cell (clock
+    /// gaters, buffers) are counted, not checked.
+    #[value(name = "clock-ends")]
+    ClockEnds,
+}
+
+/// How the design-rule limits of a clock map to pins (`--clock-limits`, `STA-REQ-0808`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ClockLimitsArg {
+    /// -clock_path limits on the clock network, -data_path limits on the data pins, a limit
+    /// without either on both.
+    #[value(name = "paths")]
+    Paths,
+    /// The data-path limit (-data_path, or neither option) on the whole clock domain, the clock
+    /// network included; -clock_path limits alone are not applied (counted, T0144).
+    #[value(name = "domain")]
+    Domain,
+}
+
+/// The clock limit scope of `arg` (`STA-REQ-0808`).
+#[must_use]
+pub fn clock_limits(arg: ClockLimitsArg) -> ruststa::engine::limits::ClockLimitScope {
+    use ruststa::engine::limits::ClockLimitScope;
+    match arg {
+        ClockLimitsArg::Paths => ClockLimitScope::Paths,
+        ClockLimitsArg::Domain => ClockLimitScope::Domain,
+    }
+}
+
+/// The pulse rules of `groups` and `pins` (`STA-REQ-0816`, `STA-REQ-0817`).
+#[must_use]
+pub fn pulse_rules(
+    groups: PulseGroupsArg,
+    pins: PulsePinsArg,
+) -> ruststa::engine::limits::PulseRules {
+    use ruststa::engine::limits::{PulseGroupRule, PulsePinScope, PulseRules};
+    PulseRules {
+        groups: match groups {
+            PulseGroupsArg::Worst => PulseGroupRule::Worst,
+            PulseGroupsArg::Last => PulseGroupRule::Last,
+        },
+        pins: match pins {
+            PulsePinsArg::All => PulsePinScope::All,
+            PulsePinsArg::ClockEnds => PulsePinScope::ClockEnds,
+        },
+    }
+}
+
+/// The wire model a timing command can require (`--require-wire-model`, `STA-REQ-0821`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum WireModelArg {
+    /// Extracted parasitics (SPEF) on every analyzed corner.
+    #[value(name = "spef_rc")]
+    SpefRc,
+    /// Ideal wires.
+    #[value(name = "ideal")]
+    Ideal,
+    /// Lumped wire-load models.
+    #[value(name = "wireload_lumped")]
+    WireloadLumped,
+}
+
+impl WireModelArg {
+    /// The `scope.wire_model` name.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SpefRc => "spef_rc",
+            Self::Ideal => "ideal",
+            Self::WireloadLumped => "wireload_lumped",
+        }
+    }
 }
 
 /// Pre-scanned global flags before full Clap parsing (`STA-REQ-0501`).
@@ -226,6 +341,9 @@ pub fn prescan(args: &[OsString]) -> PreScan {
                 | "--max-edits"
                 | "--max-state-gib"
                 | "--timeout"
+                | "--max-limit-rows"
+                | "--require-wire-model"
+                | "--target-margin"
         ) {
             i += 2;
             continue;
@@ -367,6 +485,52 @@ pub struct RunArgs {
     #[arg(long = "max-state-gib", default_value_t = 16.0, value_name = "GIB")]
     pub max_state_gib: f64,
 
+    /// Rows kept per corner and check kind in the `limits` table; every check is counted
+    /// (`STA-REQ-0810`).
+    #[arg(
+        long = "max-limit-rows",
+        default_value_t = ruststa::engine::limits::DEFAULT_MAX_LIMIT_ROWS,
+        value_name = "N"
+    )]
+    pub max_limit_rows: usize,
+
+    /// Fail with `T0135` unless every analyzed corner uses this wire model (`spef_rc`, `ideal`,
+    /// `wireload_lumped`; `STA-REQ-0821`).
+    #[arg(long = "require-wire-model", value_enum, value_name = "MODEL")]
+    pub require_wire_model: Option<WireModelArg>,
+
+    /// Pulse constraint of a pin among its `min_pulse_width`/`minimum_period` groups and
+    /// attributes: `worst` (the largest) or `last` (the last listed group stating it, else the
+    /// attribute; periods read the rise_constraint; `STA-REQ-0816`).
+    #[arg(
+        long = "pulse-groups",
+        value_enum,
+        default_value_t = PulseGroupsArg::Worst,
+        value_name = "RULE"
+    )]
+    pub pulse_groups: PulseGroupsArg,
+
+    /// Clock pins whose pulse constraints are checked: `all`, or `clock-ends` (pins that pass
+    /// their clock on through their cell are counted, not checked; `STA-REQ-0817`).
+    #[arg(
+        long = "pulse-pins",
+        value_enum,
+        default_value_t = PulsePinsArg::All,
+        value_name = "SCOPE"
+    )]
+    pub pulse_pins: PulsePinsArg,
+
+    /// How a clock's design-rule limits map to pins: `paths` (-clock_path on the clock network,
+    /// -data_path on the data pins) or `domain` (the data-path limit on the whole domain;
+    /// -clock_path alone not applied; `STA-REQ-0808`).
+    #[arg(
+        long = "clock-limits",
+        value_enum,
+        default_value_t = ClockLimitsArg::Paths,
+        value_name = "SCOPE"
+    )]
+    pub clock_limits: ClockLimitsArg,
+
     /// Storage mode for `sta.rbin` (`full` or `summary`).
     #[arg(
         long = "sta-store",
@@ -415,6 +579,52 @@ pub struct UpdateArgs {
     /// Limit of the estimated propagation state of one corner, in GiB (`T0023` above it).
     #[arg(long = "max-state-gib", default_value_t = 16.0, value_name = "GIB")]
     pub max_state_gib: f64,
+
+    /// Rows kept per corner and check kind in the `limits` table; every check is counted
+    /// (`STA-REQ-0810`).
+    #[arg(
+        long = "max-limit-rows",
+        default_value_t = ruststa::engine::limits::DEFAULT_MAX_LIMIT_ROWS,
+        value_name = "N"
+    )]
+    pub max_limit_rows: usize,
+
+    /// Fail with `T0135` unless every analyzed corner uses this wire model (`spef_rc`, `ideal`,
+    /// `wireload_lumped`; `STA-REQ-0821`).
+    #[arg(long = "require-wire-model", value_enum, value_name = "MODEL")]
+    pub require_wire_model: Option<WireModelArg>,
+
+    /// Pulse constraint of a pin among its `min_pulse_width`/`minimum_period` groups and
+    /// attributes: `worst` (the largest) or `last` (the last listed group stating it, else the
+    /// attribute; periods read the rise_constraint; `STA-REQ-0816`).
+    #[arg(
+        long = "pulse-groups",
+        value_enum,
+        default_value_t = PulseGroupsArg::Worst,
+        value_name = "RULE"
+    )]
+    pub pulse_groups: PulseGroupsArg,
+
+    /// Clock pins whose pulse constraints are checked: `all`, or `clock-ends` (pins that pass
+    /// their clock on through their cell are counted, not checked; `STA-REQ-0817`).
+    #[arg(
+        long = "pulse-pins",
+        value_enum,
+        default_value_t = PulsePinsArg::All,
+        value_name = "SCOPE"
+    )]
+    pub pulse_pins: PulsePinsArg,
+
+    /// How a clock's design-rule limits map to pins: `paths` (-clock_path on the clock network,
+    /// -data_path on the data pins) or `domain` (the data-path limit on the whole domain;
+    /// -clock_path alone not applied; `STA-REQ-0808`).
+    #[arg(
+        long = "clock-limits",
+        value_enum,
+        default_value_t = ClockLimitsArg::Paths,
+        value_name = "SCOPE"
+    )]
+    pub clock_limits: ClockLimitsArg,
 
     /// Storage mode for `sta.rbin` (`full` or `summary`).
     #[arg(
@@ -525,7 +735,9 @@ pub struct ReportArgs {
     #[arg(long = "rev", default_value = "HEAD", value_name = "REV")]
     pub rev: String,
 
-    /// Report sections to include (`summary`, `paths`, `endpoints`, `pins`, `clocks`, `checks`, `unconstrained`, `notes`).
+    /// Report sections to include (`summary`, `paths`, `endpoints`, `pins`, `clocks`, `checks`,
+    /// `unconstrained`, `notes`, `limits`, `pulse_width`, `min_period`, `drv`, `max_transition`,
+    /// `max_capacitance`, `max_fanout`, `hold_fix`).
     #[arg(
         long = "section",
         value_enum,
@@ -550,13 +762,20 @@ pub struct ReportArgs {
     #[arg(long = "reverse")]
     pub reverse: bool,
 
-    /// Filter expression (`slack<0`, `violating`, `clock=<NAME>`, `kind=setup|hold`, `endpoint~<SUBSTR>`, `pin~<SUBSTR>`).
+    /// Filter expression (`violating`, `slack<X`, `setup<X`, `hold<X`, `clock=<NAME>`,
+    /// `kind=setup|hold`, `endpoint~<SUBSTR>`, `pin~<SUBSTR>`). With `--kind setup` or `--kind hold`
+    /// the endpoint filters and sorting use that slack only.
     #[arg(long = "filter", value_name = "EXPR")]
     pub filter: Option<String>,
 
     /// Maximum rows per tabular section.
     #[arg(long = "limit", value_name = "N")]
     pub limit: Option<usize>,
+
+    /// Hold slack target of `--section hold_fix`: endpoints below it are listed, with the delay
+    /// they need to reach it (ns, default 0; `STA-REQ-0830`).
+    #[arg(long = "target-margin", default_value_t = 0.0, value_name = "NS")]
+    pub target_margin: f64,
 
     /// Print full precision values without rounding in text mode.
     #[arg(long = "exact")]
@@ -593,6 +812,10 @@ pub struct WhatifArgs {
     /// Wall-clock budget in seconds; candidates beyond it are not evaluated (`T0108`, exit 5).
     #[arg(long = "timeout", value_name = "SECONDS")]
     pub timeout: Option<f64>,
+
+    /// Fail with `T0135` unless every analyzed corner uses this wire model (`STA-REQ-0821`).
+    #[arg(long = "require-wire-model", value_enum, value_name = "MODEL")]
+    pub require_wire_model: Option<WireModelArg>,
 }
 
 /// Arguments for `ruststa completions` (`STA-REQ-0565`).

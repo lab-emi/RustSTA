@@ -76,8 +76,12 @@ fn shared_paths() {
             "docs/specs/liberty",
             "docs/specs/sdc",
             "docs/specs/rusteda-cli",
+            "docs/specs/blif",
+            "docs/specs/aiger",
         ]
     );
+    assert!(is_shared("docs/specs/blif/README.md"));
+    assert!(is_shared("docs/specs/aiger/README.md"));
     assert!(is_shared("crates/core/rusteda-core/src/lib.rs"));
     assert!(is_shared("docs/specs/liberty/liberty.md"));
     for f in FILES {

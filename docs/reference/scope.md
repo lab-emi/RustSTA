@@ -8,15 +8,23 @@
 - **Workspace & binary containers:** `RBIN v1` (`NETLIST v1`, `LIBERTY v1`, `CONSTR v1`, `STA v2`),
   `sta_check.json` (`ruststa.sta_check.v1`), multi-corner library resolution, and carry-forward
   revision transactions.
+- **Detailed parasitics:** bounded plain/gzip SPEF import into `PARASIT v2`,
+  one explicit extraction per corner, unit/name mapping, complete net/pin annotation,
+  zero-resistance contraction, RC-tree first moments and nodal solutions of
+  resistor loops; a part of a net without a resistor path to its driver joins
+  the driver with warning `T0151`. Coupling is grounded at factor 1; missing
+  annotation is an error.
 - **Liberty timing & wire-load model:** 1D/2D/3D NLDM delay, transition, and constraint tables,
   per-table index overrides, `Table::mid_slew`, rise/fall and min/max pin capacitance ranges,
   driver output-pin capacitance, `three_state` functions and enable/disable arcs, `when` Boolean
   conditions, clock-gating attributes, `wire_load` / `wire_load_selection` (`WireloadLumped` and
-  `Ideal`), and electrical limit attributes (`max_transition`, `max_capacitance`, `max_fanout`).
+  `Ideal`), electrical limit attributes (`max_transition`, `max_capacitance`, `max_fanout`,
+  `fanout_load`), and `min_pulse_width` / `minimum_period` groups.
 - **SDC subset (`CONSTR v1`):** bounded Tcl interpreter (`set`, `list`, `expr`, `if`, `foreach`,
   `source`, explicit `--sdc-env NAME=VALUE`; `proc` and other Tcl outside the subset are errors
   `D0006`), `create_clock` (with `-add`),
   `set_clock_latency`, `set_clock_uncertainty` (simple and `-from`/`-to`), `set_clock_transition`,
+  `set_propagated_clock`, `unset_propagated_clock`,
   `set_input_delay`, `set_output_delay`, `set_driving_cell`, `set_input_transition`, `set_load`,
   `set_wire_load_model`, `set_wire_load_mode`, `set_case_analysis`, `set_logic_zero`,
   `set_logic_one`, `set_disable_timing`, `set_max_transition`, `set_max_capacitance`,
@@ -30,14 +38,32 @@
   applied by `ruststa run` and `ruststa update` (`STA-REQ-0271`), incremental cone invalidation in
   timing sessions (`TimingSession`), and engine-independent checking (`ruststa-check`) that also
   reports every endpoint check only one side times (`STA-REQ-0307`).
+- **Pin limit checks (0.4):** minimum pulse width and minimum period of clock pins, and the
+  design rules `max_transition`, `max_capacitance` and `max_fanout` from the library and the
+  constraints, in the `limits` table, with a hold-fix report for physical repair
+  ([limits](../specs/sta/limits.md)). The pulse rules are selectable: the largest constraint
+  over a pin's conditional groups and attributes and every clocked pin (the defaults), or the
+  last listed group and only the pins where a clock ends (`--pulse-groups last
+  --pulse-pins clock-ends`). The drivers of constant nets are not checked for capacitance and
+  fanout; the transitions of every pin, constant nets and unclocked sequential outputs included,
+  come from a delay calculation that ignores logic values (arcs that constants disable carry
+  their transition but no arrival), and only literals and their cones are checked with the
+  static transition 0; a latch whose enable a constant holds active is transparent and one
+  held inactive opaque; a flop or latch with a held clear or preset is not a constant, a clock
+  gate output follows its clock and enable pins, and a pin at a constant passes no arrival; an
+  ideal clock network, including the pins it reaches through arcs that constants disable, is
+  left out of the design rules (counted, the rules `partial`), and a clock's limits map to its
+  network and data pins (`--clock-limits paths`) or to its whole domain (`--clock-limits
+  domain`).
 
 ## Current limits
 
 The following capabilities sit behind explicit engine seams in Phase 2a and are scheduled for
 Phase 2b (see [scope](https://lab-emi.github.io/RustEDA/verification/)):
 
-- **Propagated and generated clocks:** `set_propagated_clock` and `create_generated_clock` are
-  diagnosed and rejected at constraint compilation; clocks are ideal in Phase 2a.
+- **Generated clocks:** `create_generated_clock` remains unsupported. Explicit
+  propagated primary-port clocks are supported on the bounded unate clock
+  network; internal sources and unsupported reconvergence fail explicitly.
 - **Timing derates and CPPR:** `set_timing_derate` and common-path pessimism removal (`--cppr
   violating|all`) are Phase 2b extensions (`cppr` is `"off"` in Phase 2a).
 - **Ordered `-through` exception hops in the engine:** `-through`, `-rise_through`, and
@@ -55,9 +81,14 @@ Phase 2b (see [scope](https://lab-emi.github.io/RustEDA/verification/)):
 - **Lumped wire-load model:** `WireloadLumped` adds the wire capacitance of the `wire_load` table
   to the net load and no wire resistance, so a library with a `default_wire_load` (such as
   `sky130_fd_sc_hd`) gives no wire delay; resistive tree models are a Phase 2b item.
-- **Distributed RC parasitics and tree wire loads:** `SPEF` parasitic annotation
-  (`rusteda import --spef`) and balanced/worst-case tree wire-load modes (`WireloadTree`) are
-  Phase 2b items; Phase 2a supports `WireloadLumped` and `Ideal`.
+- **Extracted model limits:** detailed SPEF uses a moment-matched pi,
+  charge-matched effective load, finite-ramp Thevenin driver and one-pole
+  receiver threshold/slew model. Driver resistance is an NLDM sensitivity proxy;
+  coupling is grounded. This is not CCS, transistor characterization or crosstalk. Resistor loops enter
+  through exact first moments and admittance coefficients, as trees do. Balanced/worst-case
+  estimated tree wire-load modes remain unsupported. The independent checker
+  returns undecided for extracted RC/propagated clocks; full consistency and
+  external comparisons are separate evidence.
 
 
 Use the [timing workflow](../guide/timing.md) to run an analysis and the [verification guide](../verification/index.md) to assess evidence.

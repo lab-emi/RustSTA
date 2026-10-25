@@ -858,7 +858,7 @@ pub struct NoteRec {
 const _: () = assert!(size_of::<NoteRec>() == 16);
 
 /// Scope and completeness metadata stored as canonical JSON in section 24 (`SCOPE`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ScopeReport {
     pub top: String,
     pub corners: Vec<String>,
@@ -870,6 +870,85 @@ pub struct ScopeReport {
     pub store_mode: StoreMode,
     pub exceptions_applied: Vec<String>,
     pub completeness: CompletenessReport,
+    /// The counts of the pin limit checks of each corner, in corner order; absent in a table
+    /// whose analysis did not check limits (`STA-REQ-0807`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<Vec<CornerLimitsReport>>,
+}
+
+/// The counts of the pin limit checks of one corner inside [`ScopeReport`] (`STA-REQ-0807`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CornerLimitsReport {
+    /// The corner.
+    pub corner: String,
+    /// Counts by check kind name (`max_transition`, `max_capacitance`, `max_fanout`,
+    /// `min_pulse_width_high`, `min_pulse_width_low`, `min_period`).
+    pub kinds: BTreeMap<String, LimitKindReport>,
+    /// Instance pins with pulse checks reached by no clock.
+    pub unclocked_pulse_pins: u64,
+    /// Clocked instance pins with pulse constraints that pass their clock on through their
+    /// cell, not checked under the pulse pin scope `clock-ends` (`STA-REQ-0817`).
+    #[serde(default)]
+    pub pass_through_pulse_pins: u64,
+    /// The pulse group rule of the analysis, `worst` or `last` (`STA-REQ-0816`).
+    #[serde(default = "default_pulse_groups")]
+    pub pulse_groups: String,
+    /// The pulse pin scope of the analysis, `all` or `clock-ends` (`STA-REQ-0817`).
+    #[serde(default = "default_pulse_pins")]
+    pub pulse_pins: String,
+    /// The clock limit scope of the design rules, `paths` or `domain` (`STA-REQ-0808`).
+    #[serde(default = "default_clock_limits")]
+    pub clock_limits: String,
+    /// Drivers of constant nets, not checked for capacitance and fanout (`STA-REQ-0809`).
+    #[serde(default)]
+    pub constant_drivers: u64,
+    /// Pins checked for transition with a static transition (`STA-REQ-0809`).
+    #[serde(default)]
+    pub static_transition_pins: u64,
+    /// Pins and drivers of ideal clock networks, not checked for the design rules
+    /// (`STA-REQ-0822`).
+    #[serde(default)]
+    pub ideal_clock_pins: u64,
+    /// Pins without any transition, whose transition check is not evaluated (`STA-REQ-0809`).
+    #[serde(default)]
+    pub untimed_pins: u64,
+    /// Checked pins of clock networks whose clock has different clock-path and data-path
+    /// limits, so that the clock limit scope decides their limit (`STA-REQ-0808`).
+    #[serde(default)]
+    pub clock_scope_pins: u64,
+    /// Output and inout pins of instances that the netlist leaves unconnected, not checked for
+    /// the design rules (`STA-REQ-0819`).
+    #[serde(default)]
+    pub unconnected_output_pins: u64,
+}
+
+fn default_clock_limits() -> String {
+    "paths".to_owned()
+}
+
+fn default_pulse_groups() -> String {
+    "worst".to_owned()
+}
+
+fn default_pulse_pins() -> String {
+    "all".to_owned()
+}
+
+/// The counts of one check kind in one corner (`STA-REQ-0807`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LimitKindReport {
+    /// Checked rows.
+    pub checked: u64,
+    /// Rows with a negative slack.
+    pub violating: u64,
+    /// Values without a limit (design rules).
+    pub unlimited: u64,
+    /// The worst slack, absent without a checked row.
+    pub worst_slack_ns: Option<f64>,
+    /// Checks that were not evaluated because a value, limit or slack is not finite
+    /// (`STA-REQ-0813`).
+    #[serde(default)]
+    pub unevaluated: u64,
 }
 
 /// Completeness breakdown inside [`ScopeReport`].

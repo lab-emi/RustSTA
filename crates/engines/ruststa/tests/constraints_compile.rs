@@ -568,9 +568,18 @@ fn compile_all_five_synthetic_sdc_fixtures() {
         assert_eq!(c.current_design.as_deref(), Some("synth_top"));
         assert_eq!(c.drc_constraints.len(), 6);
         assert_eq!(c.synth_constraints.len(), 7);
-        let d0021_count = c.diags.iter().filter(|d| d.code == "D0021").count();
+        // STA-REQ-0805: the limit checks analyze set_max_transition, set_max_capacitance,
+        // set_max_fanout and set_fanout_load; set_min_capacitance and set_port_fanout_number stay
+        // recorded with `D0021`.
+        let d0021: Vec<_> = c.diags.iter().filter(|d| d.code == "D0021").collect();
         let d0020_count = c.diags.iter().filter(|d| d.code == "D0020").count();
-        assert_eq!(d0021_count, 6);
+        assert_eq!(d0021.len(), 2, "{d0021:?}");
+        assert!(
+            d0021
+                .iter()
+                .all(|d| d.message.contains("set_min_capacitance")
+                    || d.message.contains("set_port_fanout_number"))
+        );
         assert_eq!(d0020_count, 7);
     }
 }
@@ -624,10 +633,10 @@ fn schema_table_driven_phase2a_coverage() {
             }
         }
     }
-    assert_eq!(interpreted_cmds, 26);
+    assert_eq!(interpreted_cmds, 28);
     assert_eq!(drc_cmds, 6);
     assert_eq!(synth_cmds, 7);
-    assert_eq!(phase2b_cmds, 12);
+    assert_eq!(phase2b_cmds, 10);
     assert_eq!(phase2b_opts, 22);
     assert!(phase2a_opts >= 130);
 
@@ -978,7 +987,7 @@ fn diagnostics_codes_severities_and_source_locations() {
     // 6. D0010 (Phase 2b command) and D0011 (Phase 2b option)
     {
         let script = "create_clock -name clk -period 2.0 [get_ports clk]\n\
-                      set_propagated_clock [get_clocks clk]\n\
+                      set_timing_derate -early 0.95\n\
                       set_false_path -through [get_pins u_buf/A]\n";
         let (sdc, _) = rusteda_formats::sdc::read_str(script);
         let corners = [CornerLibs::new("default", std::slice::from_ref(&lib_ns))];

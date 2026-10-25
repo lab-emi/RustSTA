@@ -14,6 +14,9 @@ recovery, removal, latch and clock-gating slacks of every timing endpoint, and t
 | Binary timing result store (`sta.rbin`) and mapped queries | [store.md](store.md) |
 | Incremental timing (`TimingSession` and `update_revision`) | [incremental.md](incremental.md) |
 | Propagation lowering and backends | [lowering.md](lowering.md) |
+| Detailed SPEF parasitics and first-moment RC timing | [parasitics.md](parasitics.md) |
+| Explicit propagated primary clocks | [propagated-clock.md](propagated-clock.md) |
+| Pulse width, period and design-rule checks, parasitics per corner, hold-fix report | [limits.md](limits.md) |
 | Verification | [verification.md](verification.md) |
 | Superseded Phase 1 requirements (legacy engine, removed by Z1) | [legacy.md](legacy.md) |
 
@@ -42,3 +45,5 @@ delay model and timing checks of the Liberty format [@liberty2017] and the const
   exceptions (`-from`/`-to`, multicycle, `set_max_delay`/`set_min_delay`, `set_clock_groups`).
 - Phase 2b additions (propagated and generated clocks, timing derates, CPPR, `-through` exceptions,
   balanced-tree RC wire loads and SPEF parasitics) sit behind explicit engine traits.
+
+[Effective RC loads and waveforms](rc-waveforms.md) specify version 0.3 timing.

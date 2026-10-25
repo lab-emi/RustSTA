@@ -73,20 +73,26 @@ When `T_L == T_C` and the waveforms are identical, `D_s = T_C` and `D_h = 0`. Wh
 `D_h` is in general strictly greater than `D_s - T_C` (for example, `T_L = 3 ns, T_C = 2 ns` with
 `t_L = t_C = 0` has `D_s = 1 ns` at `l = 3, c = 4` and `D_h = 0 ns` at `l = 0, c = 0`).
 
-**STA-REQ-0211** Setup and hold checks. For a check arc between a constrained pin `D` and a related
-clock pin `CK` in the network of clock `C`, the capture edge is the source edge of `C` that makes
-the arc's active edge at `CK` (`*_rising`: a rise at `CK`; `*_falling`: a fall at `CK`). For each
-launch tag reaching `D` and each transition `x` of `D`:
+**STA-REQ-0229** Setup and hold checks (replaces STA-REQ-0211). For a check arc between a
+constrained pin `D` and a related clock pin `CK` in the network of clock `C`, the capture edge is
+the source edge of `C` that makes the arc's active edge at `CK` (`*_rising`: a rise at `CK`;
+`*_falling`: a fall at `CK`). The related pin transition of a check is the transition of the
+capture clock path, which the opposite analysis of the data path times. For each launch tag
+reaching `D` and each transition `x` of `D`:
 - setup time `s` = `rise_constraint` (`x` rise) or `fall_constraint` (`x` fall) of the `setup_*`
-  arc evaluated at `(related_pin_transition = slew_CK_late, constrained_pin_transition =
+  arc evaluated at `(related_pin_transition = slew_CK_early, constrained_pin_transition =
   slew[D][x][late])`;
   setup slack = `D_s + lat_C(early) - s - u_setup - arr[D][tag][x][late]`;
-- hold time `h` from the `hold_*` arc evaluated at `(related_pin_transition = slew_CK_early,
+- hold time `h` from the `hold_*` arc evaluated at `(related_pin_transition = slew_CK_late,
   constrained_pin_transition = slew[D][x][early])`;
   hold slack = `arr[D][tag][x][early] - (D_h + lat_C(late) + h + u_hold)`.
 Here `lat_C` is the capture clock latency (`-min` for setup, `-max` for hold) and `u` the clock
 uncertainty (`set_clock_uncertainty`) of the capture clock. A data transition whose constraint
-table is absent from the check arc is not checked.
+table is absent from the check arc is not checked. Recovery checks take the setup rule and removal
+checks the hold rule; the setup check of a latch (STA-REQ-0221) takes the early transition of its
+closing edge, and its hold check the late one. When the early and late transitions of `CK` are
+equal (one arc into each clock pin, no capacitance ranges) the rule gives the values of
+STA-REQ-0211.
 
 **STA-REQ-0212** Output ports with `set_output_delay -clock C value` are endpoints captured by
 `(C, rise)`, or `(C, fall)` with `-clock_fall`: setup slack = `D_s + lat_C(early) - v_max - u_setup
@@ -130,6 +136,14 @@ combinational arc is a tag-mapping arc that maps every borrowing arrival at `D` 
   when the latch opens and are represented by the `G -> Q` launch arc;
 - the pin transition `slew[Q][tr_Q][an]` at `Q` is the transition of the `G -> Q` enable arc.
 
+**STA-REQ-0230** Sense of the latch `D -> Q` arc. The `D -> Q` arc of a latch, transparent by
+its clock (STA-REQ-0222) or by a constant enable (STA-REQ-0163), is timed with the `timing_sense`
+of its library arc. A latch group that stores the inverted data pin (`data_in : "!D"`, the output
+then reading the inverted state, for example `function : "IQN"`) keeps that sense: the functional
+description agrees with it, and the arc is not inverted. The latch instances of such cells are
+counted in note `T0150` with up to five cell names, so that a comparison with a tool that derives
+the sense from `data_in` alone knows where the two differ.
+
 **STA-REQ-0223** Three-state enable/disable propagation and bus merging
 ([`tristate_bus`](../../../verification/analytic/sta/tristate_bus/DERIVATION.md))
 [@liberty2017; @bhasker2009static, ch. 3]. On a three-state output pin `Z` (`three_state` in
@@ -146,7 +160,7 @@ transition) across all enabled drivers.
 ([`recovery_removal`](../../../verification/analytic/sta/recovery_removal/DERIVATION.md))
 [@liberty2017; @bhasker2009static, ch. 8]. `recovery_rising` / `recovery_falling` and
 `removal_rising` / `removal_falling` check arcs on asynchronous control pins (`clear`, `preset`)
-are evaluated with the setup (`recovery`) and hold (`removal`) formulas of STA-REQ-0211 for the
+are evaluated with the setup (`recovery`) and hold (`removal`) formulas of STA-REQ-0229 for the
 deasserting transition(s) present in the constraint tables. Their endpoints carry check roles
 `recovery` and `removal` in the `async_default` path group, and contribute to the overall late
 (`setup`) and early (`hold`) WNS, TNS and violating-endpoint counts.
@@ -189,9 +203,9 @@ per path group.
 status:
 - `constrained`: at least one timed check (setup/recovery or hold/removal) applies to the endpoint;
 - `unclocked`: sequential check pin whose related clock pin is not in any clock network (including
-  a clock pin held constant, STA-REQ-0154);
+  a clock pin held constant, STA-REQ-0163);
 - `no_data_arrival`: clocked check pin that no launch tag reaches (for example, fed by a primary
-  input without `set_input_delay`, by a constant pin of STA-REQ-0154, or by arcs disabled by
+  input without `set_input_delay`, by a constant pin of STA-REQ-0163, or by arcs disabled by
   constants);
 - `false_path_only`: every path reaching the endpoint is excluded by `set_false_path` or
   `set_clock_groups` (`exceptions.md`);

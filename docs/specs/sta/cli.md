@@ -9,9 +9,15 @@ codes, and exit codes are specified in [`docs/specs/cli/README.md`](../cli/READM
 ```text
 ruststa [GLOBAL] run         -w <WS> --base-rev <REV> [--corner <NAME>]... [--backend cpu|cuda|gpu]
                              [--precision f64|f32] [--max-paths <N>] [--max-state-gib <GIB>]
+                             [--max-limit-rows <N>] [--require-wire-model <MODEL>]
+                             [--pulse-groups worst|last] [--pulse-pins all|clock-ends]
+                             [--clock-limits paths|domain]
                              [--sta-store full|summary] [--check [--tolerance <NS>]] [-m <TEXT>]
 ruststa [GLOBAL] update      -w <WS> --base-rev <REV> [--corner <NAME>]... [--backend cpu|cuda|gpu]
                              [--precision f64|f32] [--max-paths <N>] [--max-state-gib <GIB>]
+                             [--max-limit-rows <N>] [--require-wire-model <MODEL>]
+                             [--pulse-groups worst|last] [--pulse-pins all|clock-ends]
+                             [--clock-limits paths|domain]
                              [--sta-store full|summary] [--check [--tolerance <NS>]] [--verify-full]
                              [-m <TEXT>]
 ruststa [GLOBAL] check       -w <WS> --base-rev <REV> [--method independent|full|both]
@@ -22,10 +28,16 @@ ruststa [GLOBAL] inspect     -w <WS> [--rev <REV|HEAD>] (--target <HANDLE>... | 
                              | --net <NAME> | --pin <NAME>) [--corner <NAME>]
 ruststa [GLOBAL] report      -w <WS> [--rev <REV|HEAD>] [--section <SECTION>...]
                              [--kind setup|hold|both] [--corner <NAME>] [--sort <KEY>]
-                             [--reverse] [--filter <EXPR>] [--limit <N>] [--exact]
+                             [--reverse] [--filter <EXPR>] [--limit <N>] [--target-margin <NS>]
+                             [--exact]
 ruststa [GLOBAL] completions [<SHELL>]
 ```
 
+`--max-limit-rows`, `--require-wire-model`, `--pulse-groups`, `--pulse-pins`, `--clock-limits`
+(STA-REQ-0808), the report sections
+`limits`, `pulse_width`,
+`min_period`, `drv`, `max_transition`, `max_capacitance`, `max_fanout` and `hold_fix`, and
+`--target-margin` are specified in [limits.md](limits.md) (STA-REQ-0806 to STA-REQ-0832).
 `--max-paths` sets the number of worst setup/hold paths included in `top_paths` (default `5`);
 `--max-state-gib` limits the estimated propagation state of one corner (default `16`, STA-REQ-0024);
 `--backend` selects the propagation backend (`cpu`, `cuda`, `gpu`, STA-REQ-0400; default `cpu`).

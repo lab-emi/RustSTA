@@ -155,6 +155,8 @@ pub struct ExplicitUnits {
 /// `set_clock_uncertainty`; `STA-REQ-0021`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledClock {
+    /// Explicit set/unset_propagated_clock selection (STA-REQ-0710).
+    pub propagated: bool,
     /// Dense clock identifier (`ClockId(0..)`).
     pub id: ClockId,
     /// Clock name.

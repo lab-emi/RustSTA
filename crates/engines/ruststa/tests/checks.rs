@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! Suite `sta-checks` (`STA-REQ-0015`, `STA-REQ-0200`, `STA-REQ-0201`, `STA-REQ-0211`,
+//! Suite `sta-checks` (`STA-REQ-0015`, `STA-REQ-0200`, `STA-REQ-0201`, `STA-REQ-0229`,
 //! `STA-REQ-0212`, `STA-REQ-0214`, `STA-REQ-0216` to `STA-REQ-0226`):
 //! ideal clock networks, launch tags, input/output delay latency flags, `set_driving_cell`,
 //! one-sided I/O delays, LCM setup/hold relations, latch transparency and `D -> Q` re-launch,
@@ -451,7 +451,7 @@ fn node_id(analysis: &EngineAnalysis<'_>, name: &str) -> NodeId {
         .unwrap_or_else(|| panic!("missing node '{name}'"))
 }
 
-// STA-REQ-0217, STA-REQ-0218, STA-REQ-0211, STA-REQ-0212: input/output delay clock latencies,
+// STA-REQ-0217, STA-REQ-0218, STA-REQ-0229, STA-REQ-0212: input/output delay clock latencies,
 // -source_latency_included, -network_latency_included, and set_driving_cell.
 #[test]
 fn io_delay_latency_base_and_rf() {
@@ -610,7 +610,7 @@ set_output_delay -clock clk -max 0.4 [get_ports p]
     );
 }
 
-// STA-REQ-0220, STA-REQ-0211: setup (D_s) and hold (D_h) relations over the common period.
+// STA-REQ-0220, STA-REQ-0229: setup (D_s) and hold (D_h) relations over the common period.
 #[test]
 fn two_clocks_hold_relations_and_ratio_limit() {
     let exp = load_expected("two_clocks_hold");
@@ -661,7 +661,7 @@ create_clock -name B -period 1.003 [get_ports cb]
     );
 }
 
-// STA-REQ-0221, STA-REQ-0211: latch transparency window, opening-edge uncertainty, and
+// STA-REQ-0221, STA-REQ-0229: latch transparency window, opening-edge uncertainty, and
 // set_max_time_borrow.
 #[test]
 fn latch_open_uncertainty_and_max_time_borrow() {

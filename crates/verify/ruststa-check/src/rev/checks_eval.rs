@@ -16,7 +16,7 @@ use super::lib_model::{Analysis, CheckArcKind, LatchDef, Trans};
 
 const FS_PER_NS: f64 = 1_000_000.0;
 
-/// Kind of endpoint check (`STA-REQ-0211`, `0212`, `0216`, `0221`, `0224`).
+/// Kind of endpoint check (`STA-REQ-0229`, `0212`, `0216`, `0221`, `0224`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CheckKindEval {
     SetupHold,
@@ -260,7 +260,7 @@ pub(crate) struct ClockGateCheckInfo {
 }
 
 impl TimingSolver<'_> {
-    /// Evaluates all potential endpoints in canonical order (`STA-REQ-0211`, `0212`, `0216`,
+    /// Evaluates all potential endpoints in canonical order (`STA-REQ-0229`, `0212`, `0216`,
     /// `0221`, `0224`, `0225`, `0226`).
     pub(crate) fn evaluate_endpoints(&mut self) -> Result<(), Unsupported> {
         let mut endpoints = Vec::new();
@@ -470,7 +470,7 @@ impl TimingSolver<'_> {
                         else {
                             continue;
                         };
-                        let s_ck = cap_clk.transition(w.pin_edge, Analysis::Late);
+                        let s_ck = cap_clk.transition(w.pin_edge, Analysis::Early);
                         let Some(s_val) = chk.constraint_opt(data_tr, s_d, s_ck, rel_out_cap)
                         else {
                             continue;
@@ -504,7 +504,7 @@ impl TimingSolver<'_> {
                         else {
                             continue;
                         };
-                        let s_ck = cap_clk.transition(w.pin_edge, Analysis::Early);
+                        let s_ck = cap_clk.transition(w.pin_edge, Analysis::Late);
                         let Some(h_val) = chk.constraint_opt(data_tr, s_d, s_ck, rel_out_cap)
                         else {
                             continue;
@@ -672,7 +672,7 @@ impl TimingSolver<'_> {
             for data_tr in Trans::ALL {
                 // Latch setup check with transparent window `[R_open, R_close]` (STA-REQ-0221).
                 if let Some(s_d) = self.slews[d_node][data_tr.idx()][Analysis::Late.idx()] {
-                    let s_g = cap_clk.transition(close_edge, Analysis::Late);
+                    let s_g = cap_clk.transition(close_edge, Analysis::Early);
                     let s_val = setup_chk
                         .and_then(|chk| chk.constraint_opt(data_tr, s_d, s_g, 0.0))
                         .unwrap_or(0.0);
@@ -722,7 +722,7 @@ impl TimingSolver<'_> {
 
                 // Latch hold check against closing edge `D_h((L, e_L) -> (C, e_close))` (STA-REQ-0221).
                 if let Some(s_d) = self.slews[d_node][data_tr.idx()][Analysis::Early.idx()] {
-                    let s_g = cap_clk.transition(close_edge, Analysis::Early);
+                    let s_g = cap_clk.transition(close_edge, Analysis::Late);
                     let h_val = hold_chk
                         .and_then(|chk| chk.constraint_opt(data_tr, s_d, s_g, 0.0))
                         .unwrap_or(0.0);

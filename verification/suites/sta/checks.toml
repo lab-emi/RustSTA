@@ -8,7 +8,7 @@ requirement = [
     "STA-REQ-0015",
     "STA-REQ-0200",
     "STA-REQ-0201",
-    "STA-REQ-0211",
+    "STA-REQ-0229",
     "STA-REQ-0212",
     "STA-REQ-0214",
     "STA-REQ-0216",
@@ -31,7 +31,7 @@ description = "ideal clock network senses, launch tags, input/output delay laten
 name = "sta-engine-known-answer"
 requirement = [
     "STA-REQ-0015",
-    "STA-REQ-0211",
+    "STA-REQ-0229",
     "STA-REQ-0212",
     "STA-REQ-0214",
     "STA-REQ-0216",
@@ -56,7 +56,7 @@ name = "sta-engine-legacy-equiv"
 requirement = [
     "STA-REQ-0200",
     "STA-REQ-0201",
-    "STA-REQ-0211",
+    "STA-REQ-0229",
     "STA-REQ-0212",
     "STA-REQ-0214",
     "STA-REQ-0216",

@@ -25,6 +25,15 @@ use super::model::{
 use super::query::{NameLookupHint, QueryContext, resolve_obj};
 use crate::engine::types::{ClockId, CornerId, NodeId, Tr};
 
+/// The design-rule commands that the limit checks analyze (`STA-REQ-0805`); the others
+/// (`set_min_capacitance`, `set_port_fanout_number`) stay recorded with `D0021`.
+pub const ANALYZED_DRC_COMMANDS: [&str; 4] = [
+    "set_max_transition",
+    "set_max_capacitance",
+    "set_max_fanout",
+    "set_fanout_load",
+];
+
 /// Compiles `sdc` against `netlist` and `corners`, returning `Ok(CompiledConstraints)` when no
 /// [`Severity::Error`] diagnostic is present, or `Err(CompileError)` otherwise.
 pub fn compile_sdc(
@@ -99,6 +108,12 @@ pub fn compile_sdc_lenient(
                         ));
                     }
                     continue;
+                }
+                // The limit checks analyze these design rules (`STA-REQ-0805`): the `D0021` of
+                // the import, which says they are only recorded, does not apply to this analysis.
+                CmdStatus::RecordedDrc if ANALYZED_DRC_COMMANDS.contains(&cmd.name()) => {
+                    out.diags
+                        .retain(|d| !(d.code == "D0021" && d.location == loc));
                 }
                 CmdStatus::RecordedDrc => {
                     if !has_diag_at(&out.diags, "D0021", &loc) {
@@ -252,6 +267,7 @@ fn compile_one_cmd(
             } else {
                 let id = ClockId(out.clocks.len() as u32);
                 out.clocks.push(CompiledClock {
+                    propagated: false,
                     id,
                     name: clk_name,
                     period_ns,
@@ -548,6 +564,14 @@ fn compile_one_cmd(
                         );
                     }
                 }
+            }
+        }
+        CmdKind::SetPropagatedClock { objects } | CmdKind::UnsetPropagatedClock { objects } => {
+            let ids =
+                resolve_clock_list(objects, index, &out.clocks, loc, cmd.name(), &mut out.diags);
+            for id in ids {
+                out.clocks[id.index()].propagated =
+                    matches!(cmd.kind, CmdKind::SetPropagatedClock { .. });
             }
         }
         CmdKind::SetClockTransition {

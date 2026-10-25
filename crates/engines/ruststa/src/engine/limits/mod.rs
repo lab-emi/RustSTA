@@ -1,0 +1,819 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 RustSTA contributors
+
+//! Pin limit checks of a corner (owner: S1; `STA-REQ-0800` to `STA-REQ-0812`, `STA-REQ-0822`,
+//! `STA-REQ-0819`).
+//!
+//! After the propagation of a corner, every clock pin with `min_pulse_width` or `minimum_period`
+//! timing groups is checked against the propagated clock waveform at the pin ([`pulse`]), and every
+//! pin and net driver against the electrical design rules `max_transition`, `max_capacitance` and
+//! `max_fanout` of the corner's libraries and of the constraints ([`drv`]). The checks visit each
+//! node, net and clock pin once (`O(V + E)`); the rows they report are kept in a bounded heap per
+//! kind (AGENTS rule 3.4), worst slack first, while the counts cover every check. The rows of all
+//! corners form the `limits` table of a revision ([`table`]).
+
+mod drv;
+mod pulse;
+pub mod statics;
+pub mod status;
+pub mod table;
+
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
+
+use rusteda_core::job::Diag;
+
+use crate::engine::delay::load::NetLoads;
+use crate::engine::delay::lut::RangeTracker;
+use crate::engine::input::NetlistView;
+use crate::engine::input::constr::CompiledConstraints;
+use crate::engine::input::libview::TimingLib;
+use crate::engine::prop::clocks::ideal::IdealClockModel;
+use crate::engine::prop::lower::TimingValues;
+use crate::engine::prop::tags::TagTable;
+use crate::engine::types::{ClockId, NodeId, Tr};
+
+pub use statics::{StaticTransition, StaticTransitions, static_transitions};
+
+/// Default number of rows kept per corner and check kind (`STA-REQ-0810`).
+pub const DEFAULT_MAX_LIMIT_ROWS: usize = 100_000;
+
+/// Largest accepted number of rows kept per corner and check kind (`STA-REQ-0810`).
+pub const MAX_LIMIT_ROWS_CEILING: usize = 10_000_000;
+
+/// Bytes of the rows that the limit checks of one corner keep at most: the row budget, or the
+/// node count when smaller, per kind (`STA-REQ-0810`; part of the state budget of a corner).
+#[must_use]
+pub fn retained_bytes(num_nodes: usize, max_rows: usize) -> u64 {
+    (max_rows.min(num_nodes) as u64)
+        .saturating_mul(LimitKind::ALL.len() as u64)
+        .saturating_mul(size_of::<LimitRow>() as u64)
+}
+
+/// How the constraint of a pulse check is chosen among the `min_pulse_width` or `minimum_period`
+/// groups of a pin and its pulse attributes (`STA-REQ-0801`, `STA-REQ-0816`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum PulseGroupRule {
+    /// The largest constraint of every group and of the attribute: every `when` condition is
+    /// taken as possible, and the result does not depend on the order of the groups (default).
+    #[default]
+    Worst,
+    /// Per transition, the last listed group that states its constraint, else the attribute; a
+    /// minimum period uses the `rise_constraint` only (`STA-REQ-0816`).
+    Last,
+}
+
+impl PulseGroupRule {
+    /// The name of the rule in reports and on the command line.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Worst => "worst",
+            Self::Last => "last",
+        }
+    }
+}
+
+/// Which clock pins with pulse constraints are checked (`STA-REQ-0802`, `STA-REQ-0817`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum PulsePinScope {
+    /// Every pin with pulse constraints that a clock reaches (default).
+    #[default]
+    All,
+    /// Only the pins where the clock ends: a pin whose clock passes on through its cell to an
+    /// output pin (a clock gater or buffer input) is not checked and is counted instead
+    /// (`STA-REQ-0817`).
+    ClockEnds,
+}
+
+impl PulsePinScope {
+    /// The name of the scope in reports and on the command line.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::ClockEnds => "clock-ends",
+        }
+    }
+}
+
+/// The rules of the pulse checks (`STA-REQ-0801`, `STA-REQ-0816`, `STA-REQ-0817`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct PulseRules {
+    /// The choice among the groups and the attribute of a pin.
+    pub groups: PulseGroupRule,
+    /// The pins that are checked.
+    pub pins: PulsePinScope,
+}
+
+impl PulseRules {
+    /// The rules as the bits of the `limits` table (`STA-REQ-0806`): bit 0 set for
+    /// [`PulseGroupRule::Last`], bit 1 for [`PulsePinScope::ClockEnds`].
+    #[must_use]
+    pub fn bits(self) -> u32 {
+        u32::from(self.groups == PulseGroupRule::Last)
+            | (u32::from(self.pins == PulsePinScope::ClockEnds) << 1)
+    }
+
+    /// The rules of `bits` ([`Self::bits`]); `None` when a bit other than these and the clock
+    /// limit scope ([`ClockLimitScope::bits`]) is set.
+    #[must_use]
+    pub fn from_bits(bits: u32) -> Option<Self> {
+        (bits & !7 == 0).then_some(Self {
+            groups: if bits & 1 == 0 {
+                PulseGroupRule::Worst
+            } else {
+                PulseGroupRule::Last
+            },
+            pins: if bits & 2 == 0 {
+                PulsePinScope::All
+            } else {
+                PulsePinScope::ClockEnds
+            },
+        })
+    }
+}
+
+/// How the design-rule limits of a clock map to pins (`STA-REQ-0805`, `STA-REQ-0808`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum ClockLimitScope {
+    /// A `-clock_path` limit applies to the clock network, a `-data_path` limit to the data pins
+    /// that the clock launches, and a limit without either to both (default).
+    #[default]
+    Paths,
+    /// The data-path limit of a clock (`-data_path`, or neither option) applies to every pin of
+    /// its domain, the clock network included; a limit with `-clock_path` alone applies nowhere
+    /// and is counted (`STA-REQ-0808`).
+    Domain,
+}
+
+impl ClockLimitScope {
+    /// The name of the scope in reports and on the command line.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Paths => "paths",
+            Self::Domain => "domain",
+        }
+    }
+
+    /// The scope as bit 2 of the rules of the `limits` table (`STA-REQ-0806`).
+    #[must_use]
+    pub fn bits(self) -> u32 {
+        u32::from(self == Self::Domain) << 2
+    }
+
+    /// The scope of the rules `bits` of the `limits` table.
+    #[must_use]
+    pub fn from_bits(bits: u32) -> Self {
+        if bits & 4 == 0 {
+            Self::Paths
+        } else {
+            Self::Domain
+        }
+    }
+}
+
+/// The kind of a pin limit check (`STA-REQ-0800`, `STA-REQ-0803`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
+pub enum LimitKind {
+    /// Transition time of a pin against its `max_transition` limit.
+    MaxTransition = 0,
+    /// Capacitance of the net of a driver against its `max_capacitance` limit.
+    MaxCapacitance = 1,
+    /// Fanout of the net of a driver against its `max_fanout` limit.
+    MaxFanout = 2,
+    /// Width of the high pulse of a clock at a pin against its `min_pulse_width` rise constraint.
+    MinPulseWidthHigh = 3,
+    /// Width of the low pulse of a clock at a pin against its `min_pulse_width` fall constraint.
+    MinPulseWidthLow = 4,
+    /// Period of a clock at a pin against its `minimum_period` constraint.
+    MinPeriod = 5,
+}
+
+impl LimitKind {
+    /// Every kind, in table order.
+    pub const ALL: [LimitKind; 6] = [
+        LimitKind::MaxTransition,
+        LimitKind::MaxCapacitance,
+        LimitKind::MaxFanout,
+        LimitKind::MinPulseWidthHigh,
+        LimitKind::MinPulseWidthLow,
+        LimitKind::MinPeriod,
+    ];
+
+    /// The index of the kind in [`LimitKind::ALL`].
+    #[inline]
+    #[must_use]
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// The kind stored as `v`, if any.
+    #[must_use]
+    pub fn from_u8(v: u8) -> Option<Self> {
+        Self::ALL.get(v as usize).copied()
+    }
+
+    /// The name of the kind in reports.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::MaxTransition => "max_transition",
+            Self::MaxCapacitance => "max_capacitance",
+            Self::MaxFanout => "max_fanout",
+            Self::MinPulseWidthHigh => "min_pulse_width_high",
+            Self::MinPulseWidthLow => "min_pulse_width_low",
+            Self::MinPeriod => "min_period",
+        }
+    }
+
+    /// The kind named `name` in reports.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|k| k.name() == name)
+    }
+
+    /// True for the electrical design rules (`max_transition`, `max_capacitance`, `max_fanout`).
+    #[must_use]
+    pub fn is_drv(self) -> bool {
+        matches!(
+            self,
+            Self::MaxTransition | Self::MaxCapacitance | Self::MaxFanout
+        )
+    }
+}
+
+/// Where the limit of a row comes from (`STA-REQ-0805`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
+pub enum LimitSource {
+    /// The library: a pin attribute, a library default or a pulse-check table.
+    Liberty = 0,
+    /// A design-rule command on the current design.
+    SdcDesign = 1,
+    /// A design-rule command on a port.
+    SdcPort = 2,
+    /// A design-rule command on a clock.
+    SdcClock = 3,
+}
+
+impl LimitSource {
+    /// The source stored as `v`, if any.
+    #[must_use]
+    pub fn from_u8(v: u8) -> Option<Self> {
+        [
+            Self::Liberty,
+            Self::SdcDesign,
+            Self::SdcPort,
+            Self::SdcClock,
+        ]
+        .get(v as usize)
+        .copied()
+    }
+
+    /// The name of the source in reports.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Liberty => "liberty",
+            Self::SdcDesign => "sdc_design",
+            Self::SdcPort => "sdc_port",
+            Self::SdcClock => "sdc_clock",
+        }
+    }
+}
+
+/// One checked limit of a corner (`STA-REQ-0803`, `STA-REQ-0806`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LimitRow {
+    /// The checked pin or port (for the capacitance and the fanout: the driver of the net).
+    pub node: NodeId,
+    /// The check.
+    pub kind: LimitKind,
+    /// The transition of the worst slack: of the pin (transition), of the net (capacitance), of
+    /// the edge that opens the pulse (pulse width) or of the period's edges (period); `None` for
+    /// the fanout.
+    pub tr: Option<Tr>,
+    /// The clock of a pulse or period check.
+    pub clock: Option<ClockId>,
+    /// The checked value: ns, pF, fanout load, pulse width in ns or period in ns.
+    pub value: f64,
+    /// The limit: the maximum of a design rule, or the minimum width or period.
+    pub limit: f64,
+    /// `limit - value` for the design rules and `value - limit` for pulse width and period:
+    /// negative when violated.
+    pub slack: f64,
+    /// Where the limit comes from.
+    pub source: LimitSource,
+}
+
+/// The counts of one check kind in a corner (`STA-REQ-0806`).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct KindSummary {
+    /// Checked rows (pins, drivers, or pin and clock pairs).
+    pub checked: u64,
+    /// Checked rows with a negative slack.
+    pub violating: u64,
+    /// The worst slack, `None` without a checked row.
+    pub worst_slack: Option<f64>,
+    /// Pins or drivers with a value but no limit (design rules only).
+    pub unlimited: u64,
+    /// Rows kept in [`CornerLimits::rows`] (at most the row budget).
+    pub stored: u64,
+    /// Checks whose value, limit or slack is not a finite number: not evaluated, so neither
+    /// checked nor violating, and reported as unchecked (`STA-REQ-0813`).
+    pub unevaluated: u64,
+}
+
+impl KindSummary {
+    /// Rows counted but not kept because of the row budget.
+    #[must_use]
+    pub fn truncated(&self) -> u64 {
+        self.checked - self.stored
+    }
+}
+
+/// The limit checks of one corner (`STA-REQ-0806`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CornerLimits {
+    /// Kept rows, by kind, worst slack first, ties by node and clock.
+    pub rows: Vec<LimitRow>,
+    /// Counts per kind, indexed by [`LimitKind::index`].
+    pub kinds: [KindSummary; 6],
+    /// Instance pins with pulse checks that no clock reaches: their checks are not evaluated.
+    pub unclocked_pulse_pins: u64,
+    /// Conditional (`when`) pulse groups on the checked instance pins.
+    pub conditional_pulse_groups: u64,
+    /// Checked instance pins reached by an ideal clock, whose pulse widths come from the declared
+    /// waveform and clock latencies (`STA-REQ-0815`).
+    pub ideal_clock_pulse_pins: u64,
+    /// Clocked instance pins with pulse constraints that pass their clock on through their cell,
+    /// not checked under [`PulsePinScope::ClockEnds`] (`STA-REQ-0817`).
+    pub pass_through_pulse_pins: u64,
+    /// `fall_constraint` tables of `minimum_period` groups on checked pins that
+    /// [`PulseGroupRule::Last`] does not use (`STA-REQ-0816`).
+    pub unused_period_fall_tables: u64,
+    /// The rules the pulse checks ran with.
+    pub rules: PulseRules,
+    /// The clock limit scope the design rules ran with (`STA-REQ-0808`).
+    pub clock_limits: ClockLimitScope,
+    /// Drivers of constant nets, not checked for `max_capacitance` and `max_fanout`
+    /// (`STA-REQ-0809`).
+    pub constant_drivers: u64,
+    /// Pins without a propagated transition checked for `max_transition` with their static
+    /// transition (`STA-REQ-0809`).
+    pub static_transition_pins: u64,
+    /// Pins and drivers of ideal clock networks, not checked for the design rules
+    /// (`STA-REQ-0822`).
+    pub ideal_clock_pins: u64,
+    /// Pins without any transition: their `max_transition` check is not evaluated
+    /// (`STA-REQ-0809`).
+    pub untimed_pins: u64,
+    /// Checked pins of clock networks whose clock has different clock-path and data-path
+    /// limits: the clock limit scope decides their limit (`STA-REQ-0808`).
+    pub clock_scope_pins: u64,
+    /// Output and inout pins of instances that the netlist leaves unconnected, not checked for
+    /// the design rules (`STA-REQ-0819`).
+    pub unconnected_output_pins: u64,
+}
+
+impl CornerLimits {
+    /// The counts of `kind`.
+    #[must_use]
+    pub fn kind(&self, kind: LimitKind) -> &KindSummary {
+        &self.kinds[kind.index()]
+    }
+
+    /// The kept rows of `kind`.
+    pub fn rows_of(&self, kind: LimitKind) -> impl Iterator<Item = &LimitRow> + '_ {
+        self.rows.iter().filter(move |r| r.kind == kind)
+    }
+}
+
+/// The inputs of the limit checks of one corner.
+pub struct LimitInputs<'a> {
+    /// The netlist.
+    pub netview: &'a NetlistView<'a>,
+    /// The libraries of the corner.
+    pub lib: &'a TimingLib,
+    /// The compiled constraints.
+    pub constraints: &'a CompiledConstraints,
+    /// The clock model of the corner.
+    pub clock_model: &'a IdealClockModel,
+    /// The propagation tags of the corner.
+    pub tags: &'a TagTable,
+    /// The propagated values of the corner in node order.
+    pub node_values: &'a TimingValues,
+    /// The net loads of the corner.
+    pub net_loads: &'a NetLoads,
+    /// The rules of the pulse checks.
+    pub pulse_rules: PulseRules,
+    /// The clock limit scope of the design rules (`STA-REQ-0808`).
+    pub clock_limits: ClockLimitScope,
+    /// Per node, true when its logic value is constant (`STA-REQ-0150`).
+    pub constant: &'a [bool],
+    /// The static transitions of the pins without a propagated transition (`STA-REQ-0809`).
+    pub statics: &'a StaticTransitions,
+}
+
+impl std::fmt::Debug for LimitInputs<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LimitInputs")
+            .field("corner", &self.lib.corner)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Checks the pulse widths, periods and electrical design rules of one corner
+/// (`STA-REQ-0800` to `STA-REQ-0810`). At most `max_rows` rows are kept per kind; the
+/// diagnostics of the constraints are added to `diags` when `constraint_diags` is set (once per
+/// analysis), the aggregated notes of the corner always.
+pub fn check_corner_limits(
+    inputs: &LimitInputs<'_>,
+    max_rows: usize,
+    constraint_diags: bool,
+    tracker: &mut RangeTracker,
+    diags: &mut Vec<Diag>,
+) -> CornerLimits {
+    let mut rows = RowCollector::new(max_rows);
+    let mut out = CornerLimits {
+        rules: inputs.pulse_rules,
+        clock_limits: inputs.clock_limits,
+        ..CornerLimits::default()
+    };
+    pulse::check_pulses(inputs, tracker, &mut rows, &mut out);
+    let mut sdc_diags = Vec::new();
+    let drv = drv::check_design_rules(inputs, &mut rows, &mut sdc_diags);
+    out.constant_drivers = drv.constant_drivers;
+    out.static_transition_pins = drv.static_transition_pins;
+    out.ideal_clock_pins = drv.ideal_clock_pins;
+    out.untimed_pins = drv.untimed_pins;
+    out.clock_scope_pins = drv.clock_scope_pins;
+    out.unconnected_output_pins = drv.unconnected_output_pins;
+    if constraint_diags {
+        diags.extend(sdc_diags);
+        if drv.clock_path_skipped > 0 {
+            diags.push(Diag::warning(
+                "T0144",
+                format!(
+                    "{} clock design-rule command(s) with -clock_path alone are not applied: the \
+                     clock limit scope 'domain' applies the data-path limit of a clock to its \
+                     whole domain (STA-REQ-0808)",
+                    drv.clock_path_skipped
+                ),
+            ));
+        }
+    }
+    let corner = &inputs.lib.corner;
+    if drv.constant_drivers + drv.static_transition_pins > 0 {
+        diags.push(Diag::note(
+            "T0143",
+            format!(
+                "corner '{corner}': {} driver(s) of constant nets are not checked for \
+                 max_capacitance and max_fanout; {} pin(s) without a propagated transition (on \
+                 constant nets or in their cones) are checked for max_transition with their \
+                 static transition (STA-REQ-0809)",
+                drv.constant_drivers, drv.static_transition_pins
+            ),
+        ));
+    }
+    if drv.untimed_pins > 0 {
+        diags.push(Diag::warning(
+            "T0145",
+            format!(
+                "corner '{corner}': {} pin(s) have no transition (no start, constant or tie cell \
+                 reaches them); their max_transition checks are not evaluated (STA-REQ-0809)",
+                drv.untimed_pins
+            ),
+        ));
+    }
+    if drv.unconnected_output_pins > 0 {
+        let more = drv.unconnected_output_pins - drv.unconnected_samples.len() as u64;
+        diags.push(Diag::note(
+            "T0148",
+            format!(
+                "corner '{corner}': {} unconnected instance output pin(s) drive no net and are not \
+                 checked for the design rules: {}{} (STA-REQ-0819)",
+                drv.unconnected_output_pins,
+                drv.unconnected_samples.join(", "),
+                if more > 0 {
+                    format!(" (and {more} more)")
+                } else {
+                    String::new()
+                }
+            ),
+        ));
+    }
+    if drv.clock_scope_pins > 0 {
+        let (scope, limit) = match inputs.clock_limits {
+            ClockLimitScope::Paths => ("paths", "clock-path"),
+            ClockLimitScope::Domain => ("domain", "data-path"),
+        };
+        diags.push(Diag::note(
+            "T0147",
+            format!(
+                "corner '{corner}': {} pin(s) of clock networks have a clock whose -clock_path and \
+                 -data_path limits differ; the clock limit scope '{scope}' checks them against \
+                 the {limit} limit (STA-REQ-0808)",
+                drv.clock_scope_pins
+            ),
+        ));
+    }
+    if drv.ideal_clock_pins > 0 {
+        diags.push(Diag::warning(
+            "T0146",
+            format!(
+                "corner '{corner}': {} pin(s) of ideal clock networks are not checked for the \
+                 design rules; their limited checks are unevaluated until the clocks are \
+                 propagated (STA-REQ-0822)",
+                drv.ideal_clock_pins
+            ),
+        ));
+    }
+    if out.unclocked_pulse_pins > 0 {
+        diags.push(Diag::warning(
+            "T0133",
+            format!(
+                "corner '{corner}': {} pin(s) with min_pulse_width or minimum_period checks are \
+                 reached by no clock; their pulse checks are unchecked (STA-REQ-0802)",
+                out.unclocked_pulse_pins
+            ),
+        ));
+    }
+    if out.ideal_clock_pulse_pins > 0 {
+        diags.push(Diag::note(
+            "T0139",
+            format!(
+                "corner '{corner}': {} pin(s) with pulse checks are reached by an ideal clock; their \
+                 pulse widths are the declared waveform with the clock latencies, without the \
+                 transition distortion of the clock network (STA-REQ-0815)",
+                out.ideal_clock_pulse_pins
+            ),
+        ));
+    }
+    if out.conditional_pulse_groups > 0 {
+        let rule = match inputs.pulse_rules.groups {
+            PulseGroupRule::Worst => "combined as the worst group of their pin (STA-REQ-0801)",
+            PulseGroupRule::Last => {
+                "resolved per transition by the last listed group of their pin (STA-REQ-0816)"
+            }
+        };
+        diags.push(Diag::note(
+            "T0132",
+            format!(
+                "corner '{corner}': {} conditional (when) pulse group(s) {rule}",
+                out.conditional_pulse_groups
+            ),
+        ));
+    }
+    if out.pass_through_pulse_pins > 0 {
+        diags.push(Diag::warning(
+            "T0141",
+            format!(
+                "corner '{corner}': {} clocked pin(s) with pulse constraints pass their clock on \
+                 through their cell and are not checked (pulse pins 'clock-ends'); the pulse \
+                 checks are partial (STA-REQ-0817)",
+                out.pass_through_pulse_pins
+            ),
+        ));
+    }
+    if out.unused_period_fall_tables > 0 {
+        diags.push(Diag::note(
+            "T0142",
+            format!(
+                "corner '{corner}': {} minimum_period fall_constraint table(s) not used (pulse \
+                 groups 'last' read the rise_constraint; STA-REQ-0816)",
+                out.unused_period_fall_tables
+            ),
+        ));
+    }
+    let skipped = rows.skipped;
+    let (kept, kinds) = rows.finish();
+    for kind in LimitKind::ALL {
+        let k = &kinds[kind.index()];
+        let untimed = skipped[kind.index()];
+        if k.unevaluated > untimed {
+            diags.push(Diag::warning(
+                "T0137",
+                format!(
+                    "corner '{corner}': {} {} check(s) have a value, limit or slack that is not a \
+                     finite number; they are not evaluated and reported as unchecked \
+                     (STA-REQ-0813)",
+                    k.unevaluated - untimed,
+                    kind.name()
+                ),
+            ));
+        }
+        if k.truncated() > 0 {
+            diags.push(Diag::warning(
+                "T0134",
+                format!(
+                    "corner '{corner}': {} of {} {} row(s) kept (row budget {max_rows}); the counts \
+                     cover every check (STA-REQ-0810)",
+                    k.stored,
+                    k.checked,
+                    kind.name()
+                ),
+            ));
+        }
+    }
+    out.rows = kept;
+    out.kinds = kinds;
+    out
+}
+
+/// A row in the bounded heap of its kind: the greatest row (largest slack, then node and clock)
+/// is evicted first.
+#[derive(Debug, Clone, Copy)]
+struct HeapRow(LimitRow);
+
+impl HeapRow {
+    fn key(&self) -> (f64, u32, u32) {
+        (
+            self.0.slack,
+            self.0.node.0,
+            self.0.clock.map_or(u32::MAX, |c| c.0),
+        )
+    }
+}
+
+impl PartialEq for HeapRow {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+impl Eq for HeapRow {}
+impl PartialOrd for HeapRow {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for HeapRow {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let (a, b) = (self.key(), other.key());
+        a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2))
+    }
+}
+
+/// Counts every row and keeps the `cap` worst rows of each kind (`STA-REQ-0810`).
+struct RowCollector {
+    cap: usize,
+    heaps: [BinaryHeap<HeapRow>; 6],
+    kinds: [KindSummary; 6],
+    /// Per kind, the checks not evaluated by a rule: a pin without a transition, or a pin of an
+    /// ideal clock network (`STA-REQ-0809`, `STA-REQ-0822`).
+    skipped: [u64; 6],
+}
+
+impl RowCollector {
+    fn new(cap: usize) -> Self {
+        Self {
+            cap,
+            heaps: Default::default(),
+            kinds: [KindSummary::default(); 6],
+            skipped: [0; 6],
+        }
+    }
+
+    fn unlimited(&mut self, kind: LimitKind) {
+        self.kinds[kind.index()].unlimited += 1;
+    }
+
+    /// A limited check that a rule leaves unevaluated, an untimed pin or a pin of an ideal clock
+    /// network: counted as unevaluated (`STA-REQ-0809`, `STA-REQ-0813`, `STA-REQ-0822`).
+    fn unevaluated(&mut self, kind: LimitKind) {
+        self.kinds[kind.index()].unevaluated += 1;
+        self.skipped[kind.index()] += 1;
+    }
+
+    fn push(&mut self, mut row: LimitRow) {
+        if !(row.value.is_finite() && row.limit.is_finite() && row.slack.is_finite()) {
+            self.kinds[row.kind.index()].unevaluated += 1;
+            return;
+        }
+        row.value = canon(row.value);
+        row.limit = canon(row.limit);
+        row.slack = canon(row.slack);
+        let k = &mut self.kinds[row.kind.index()];
+        k.checked += 1;
+        if row.slack < 0.0 {
+            k.violating += 1;
+        }
+        k.worst_slack = Some(k.worst_slack.map_or(row.slack, |w| w.min(row.slack)));
+        let heap = &mut self.heaps[row.kind.index()];
+        let item = HeapRow(row);
+        if heap.len() < self.cap {
+            heap.push(item);
+        } else if self.cap > 0 && heap.peek().is_some_and(|top| item < *top) {
+            heap.pop();
+            heap.push(item);
+        }
+    }
+
+    fn finish(self) -> (Vec<LimitRow>, [KindSummary; 6]) {
+        let mut kinds = self.kinds;
+        let mut rows = Vec::new();
+        for (i, heap) in self.heaps.into_iter().enumerate() {
+            let sorted = heap.into_sorted_vec();
+            kinds[i].stored = sorted.len() as u64;
+            rows.extend(sorted.into_iter().map(|h| h.0));
+        }
+        (rows, kinds)
+    }
+}
+
+/// `-0.0` as `+0.0`.
+#[inline]
+fn canon(x: f64) -> f64 {
+    if x == 0.0 { 0.0 } else { x }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(kind: LimitKind, node: u32, slack: f64) -> LimitRow {
+        LimitRow {
+            node: NodeId(node),
+            kind,
+            tr: None,
+            clock: None,
+            value: 1.0,
+            limit: 1.0 + slack,
+            slack,
+            source: LimitSource::Liberty,
+        }
+    }
+
+    // STA-REQ-0810: the counts cover every row, the kept rows are the worst `cap` of each kind,
+    // in slack order with ties by node.
+    #[test]
+    fn bounded_rows_keep_the_worst_and_count_all() {
+        let mut c = RowCollector::new(2);
+        for (node, slack) in [(5, 0.3), (1, -0.2), (4, 0.1), (2, -0.2), (3, 0.0)] {
+            c.push(row(LimitKind::MaxTransition, node, slack));
+        }
+        c.push(row(LimitKind::MaxFanout, 9, 1.0));
+        c.unlimited(LimitKind::MaxFanout);
+        let (rows, kinds) = c.finish();
+        let t = &kinds[LimitKind::MaxTransition.index()];
+        assert_eq!(
+            (t.checked, t.violating, t.stored, t.truncated()),
+            (5, 2, 2, 3)
+        );
+        assert_eq!(t.worst_slack, Some(-0.2));
+        let kept: Vec<(u32, f64)> = rows
+            .iter()
+            .filter(|r| r.kind == LimitKind::MaxTransition)
+            .map(|r| (r.node.0, r.slack))
+            .collect();
+        assert_eq!(kept, vec![(1, -0.2), (2, -0.2)]);
+        let f = &kinds[LimitKind::MaxFanout.index()];
+        assert_eq!((f.checked, f.unlimited, f.stored), (1, 1, 1));
+    }
+
+    // STA-REQ-0810, STA-REQ-0813: a budget of zero keeps no row and still counts; a row that is
+    // not finite is counted as unevaluated, never as checked.
+    #[test]
+    fn zero_budget_counts_only() {
+        let mut c = RowCollector::new(0);
+        c.push(row(LimitKind::MinPeriod, 1, -1.0));
+        c.push(row(LimitKind::MinPeriod, 2, f64::NAN));
+        let mut inf = row(LimitKind::MinPeriod, 3, 1.0);
+        inf.value = f64::INFINITY;
+        c.push(inf);
+        let (rows, kinds) = c.finish();
+        assert!(rows.is_empty());
+        let p = &kinds[LimitKind::MinPeriod.index()];
+        assert_eq!(
+            (p.checked, p.violating, p.stored, p.unevaluated),
+            (1, 1, 0, 2)
+        );
+    }
+
+    // STA-REQ-0810: the kept rows of a corner are bounded by the budget or the node count.
+    #[test]
+    fn retained_rows_are_bounded() {
+        assert!(size_of::<LimitRow>() <= 48);
+        let row = size_of::<LimitRow>() as u64;
+        assert_eq!(retained_bytes(10, DEFAULT_MAX_LIMIT_ROWS), 10 * 6 * row);
+        assert_eq!(retained_bytes(usize::MAX, 100), 100 * 6 * row);
+        assert_eq!(retained_bytes(5, 0), 0);
+    }
+
+    #[test]
+    fn kind_and_source_names_round_trip() {
+        for k in LimitKind::ALL {
+            assert_eq!(LimitKind::from_name(k.name()), Some(k));
+            assert_eq!(LimitKind::from_u8(k as u8), Some(k));
+        }
+        for v in 0..4u8 {
+            let s = LimitSource::from_u8(v).unwrap();
+            assert_eq!(s as u8, v);
+            assert!(!s.name().is_empty());
+        }
+        assert_eq!(LimitSource::from_u8(4), None);
+    }
+}

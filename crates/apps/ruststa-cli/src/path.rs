@@ -27,7 +27,7 @@ fn format_path_json(p: &QueriedPath, v: &StaStoreView<'_>) -> Result<JsonObject,
     let (logic_levels, cell_delay_ns, wire_delay_ns, cell_pct, wire_pct) = path_delay_breakdown(p);
 
     let mut points_json = Vec::with_capacity(p.points.len());
-    for pt in &p.points {
+    for (index, pt) in p.points.iter().enumerate() {
         let pt_handle = node_handle_string(pt.node, num_port_bits);
         let (inst_opt, cell_opt) = if pt.node.0 < num_port_bits {
             (None::<String>, None::<String>)
@@ -46,7 +46,8 @@ fn format_path_json(p: &QueriedPath, v: &StaStoreView<'_>) -> Result<JsonObject,
 
         let arc_str = match pt.kind {
             PathPointKind::ClockLaunch => "launch",
-            PathPointKind::Port => "input",
+            PathPointKind::Port if index == 0 => "input",
+            PathPointKind::Port => "net",
             PathPointKind::Cell => "cell",
             PathPointKind::Net => "net",
         };
@@ -172,6 +173,39 @@ fn resolve_node_name_from_store(
 }
 
 /// Executes `ruststa path`.
+/// Warns `T0138` for each requested check family of endpoint `name` without a path (in
+/// `--corner` when given), so that an empty answer is never silent (`STA-REQ-0814`).
+fn warn_without_path(
+    diags: &mut Vec<Diagnostic>,
+    name: &str,
+    paths: &[QueriedPath],
+    args: &PathArgs,
+    corner_name: &str,
+) {
+    let families: &[(&str, bool)] = match args.kind {
+        PathKind::Setup => &[("setup", false)],
+        PathKind::Hold => &[("hold", true)],
+        PathKind::Both => &[("setup", false), ("hold", true)],
+    };
+    for &(family, hold) in families {
+        let found = paths
+            .iter()
+            .any(|p| matches!(p.check_kind.as_str(), "hold" | "removal") == hold);
+        if !found {
+            let scope = if args.corner.is_some() {
+                format!(" in corner '{corner_name}'")
+            } else {
+                String::new()
+            };
+            diags.push(Diagnostic::new(
+                Severity::Warning,
+                DiagCode::of("T0138"),
+                format!("endpoint '{name}' has no {family} path{scope} (STA-REQ-0814)"),
+            ));
+        }
+    }
+}
+
 pub fn exec_path(
     ws: &Workspace,
     ws_arg: &str,
@@ -193,7 +227,10 @@ pub fn exec_path(
     let revision = ws.revision(rev)?;
     let store = StaStore::open_rev(&revision).map_err(map_store_error)?;
     let v = store.view().map_err(map_store_error)?;
-    let (corner_idx, _) = resolve_store_corner(&store, args.corner.as_deref(), diags)?;
+    // `--to` and pin or port targets give the worst path over all corners, or in `--corner`
+    // when given (`STA-REQ-0814`).
+    let (corner_idx, corner_name) = resolve_store_corner(&store, args.corner.as_deref(), diags)?;
+    let to_corner = args.corner.is_some().then_some(corner_idx);
 
     let check_filter: Option<CheckKind> = match args.kind {
         PathKind::Setup => Some(CheckKind::Setup),
@@ -264,8 +301,9 @@ pub fn exec_path(
                 let node = NodeId(v.meta.num_port_bits + pin_row);
                 let pin_name = resolve_node_name_from_store(&v, &revision, node)?;
                 let mut paths = store
-                    .query_path_to(&pin_name, Some(corner_idx), check_filter)
+                    .query_path_to(&pin_name, to_corner, check_filter)
                     .map_err(map_store_error)?;
+                warn_without_path(diags, &pin_name, &paths, args, &corner_name);
                 queried_paths.append(&mut paths);
             }
             "port" => {
@@ -288,8 +326,9 @@ pub fn exec_path(
                 let node = NodeId(port_row);
                 let port_name = resolve_node_name_from_store(&v, &revision, node)?;
                 let mut paths = store
-                    .query_path_to(&port_name, Some(corner_idx), check_filter)
+                    .query_path_to(&port_name, to_corner, check_filter)
                     .map_err(map_store_error)?;
+                warn_without_path(diags, &port_name, &paths, args, &corner_name);
                 queried_paths.append(&mut paths);
             }
             _ => {
@@ -302,7 +341,7 @@ pub fn exec_path(
 
     for endpoint_name in &args.to {
         let mut paths = store
-            .query_path_to(endpoint_name, Some(corner_idx), check_filter)
+            .query_path_to(endpoint_name, to_corner, check_filter)
             .map_err(|e| {
                 if matches!(
                     e,
@@ -317,6 +356,7 @@ pub fn exec_path(
                 }
                 map_store_error(e)
             })?;
+        warn_without_path(diags, endpoint_name, &paths, args, &corner_name);
         queried_paths.append(&mut paths);
     }
 

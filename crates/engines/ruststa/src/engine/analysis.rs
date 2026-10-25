@@ -11,6 +11,8 @@
 //! loads and propagation state belong to one corner. The orchestrator wires every seam: the wire
 //! model, the gate delay, derates, the clock model, CPPR and the exception state machine.
 
+use crate::engine::delay::spef::{ParasiticInput, Spef};
+use std::sync::Arc;
 use std::time::Instant;
 
 use rustc_hash::FxHashMap;
@@ -30,6 +32,10 @@ use crate::engine::incr::{NodeMapping, PriorAnalysis, into_owned_lowered, propag
 use crate::engine::input::constr::{CompiledConstraints, CornerLibs, ExceptionKind};
 use crate::engine::input::libview::TimingLib;
 use crate::engine::input::{NetTarget, NetlistView};
+use crate::engine::limits::{
+    ClockLimitScope, CornerLimits, DEFAULT_MAX_LIMIT_ROWS, LimitInputs, PulseRules,
+    check_corner_limits, static_transitions,
+};
 use crate::engine::prop::checks::evaluate_all_checks;
 use crate::engine::prop::clocks::ClockModel;
 use crate::engine::prop::clocks::ideal::IdealClockModel;
@@ -37,7 +43,7 @@ use crate::engine::prop::cppr::NoCppr;
 use crate::engine::prop::endpoints::{CornerEndpoints, EndpointRecord};
 use crate::engine::prop::exceptions::ExceptionContext;
 use crate::engine::prop::gating::{ClockGatingSite, discover_gating_sites};
-use crate::engine::prop::latch::{build_latch_tag_maps, pin_latch_gq_slews};
+use crate::engine::prop::latch::{build_latch_tag_maps, lower_corner};
 use crate::engine::prop::lower::{
     self, ArcTagMaps, BackendKind, LoweredCorner, LoweredResult, Precision, TimingValues,
 };
@@ -51,6 +57,8 @@ use crate::engine::scope::{
 use crate::engine::types::{An, CornerId, NetRow, NodeId, TagId, Tr};
 
 mod electrical;
+mod loads;
+use loads::{build_net_load_overrides, build_wireload_config};
 
 use electrical::check_max_transitions;
 
@@ -71,7 +79,7 @@ pub enum WireModelOption {
 
 /// Options controlling [`EngineAnalysis::analyze`] (`STA-REQ-0015`, `STA-REQ-0125`,
 /// `STA-REQ-0400`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnalysisOptions {
     /// Compute propagation backend (`Cpu`, `Gpu`, `Cuda`).
     pub backend: BackendKind,
@@ -79,11 +87,21 @@ pub struct AnalysisOptions {
     pub precision: Precision,
     /// Wire-model selection policy.
     pub wire_model: WireModelOption,
+    /// Immutable extracted parasitics, each bound to one named corner (STA-REQ-0700,
+    /// `STA-REQ-0820`). When it is not empty, every analyzed corner must have its own.
+    pub parasitics: Vec<Arc<ParasiticInput>>,
     /// Maximum number of propagation tags per corner (`DEFAULT_TAG_BUDGET` by default).
     pub tag_budget: usize,
     /// Maximum estimated bytes of the propagation state of one corner
     /// ([`DEFAULT_MAX_STATE_BYTES`] by default; `STA-REQ-0024`).
     pub max_state_bytes: u64,
+    /// Rows kept per corner and kind by the pin limit checks
+    /// ([`DEFAULT_MAX_LIMIT_ROWS`] by default; `STA-REQ-0810`).
+    pub max_limit_rows: usize,
+    /// The rules of the pulse checks (`STA-REQ-0816`, `STA-REQ-0817`).
+    pub pulse_rules: PulseRules,
+    /// How the design-rule limits of a clock map to pins (`STA-REQ-0808`).
+    pub clock_limits: ClockLimitScope,
 }
 
 /// Default limit of the propagation state of one corner: 16 GiB (`STA-REQ-0024`).
@@ -99,13 +117,38 @@ impl Default for AnalysisOptions {
             backend: BackendKind::Cpu,
             precision: Precision::F64,
             wire_model: WireModelOption::Auto,
+            parasitics: Vec::new(),
             tag_budget: DEFAULT_TAG_BUDGET,
             max_state_bytes: DEFAULT_MAX_STATE_BYTES,
+            max_limit_rows: DEFAULT_MAX_LIMIT_ROWS,
+            pulse_rules: PulseRules::default(),
+            clock_limits: ClockLimitScope::default(),
         }
     }
 }
 
 impl AnalysisOptions {
+    /// The extracted parasitics of `corner`: `None` without parasitics, an error `T0070` when the
+    /// parasitics are bound to other corners only (`STA-REQ-0820`).
+    pub fn parasitics_for(&self, corner: &str) -> Result<Option<&Arc<ParasiticInput>>, Diag> {
+        if self.parasitics.is_empty() {
+            return Ok(None);
+        }
+        if let Some(p) = self.parasitics.iter().find(|p| p.corner == corner) {
+            return Ok(Some(p));
+        }
+        let bound: Vec<&str> = self.parasitics.iter().map(|p| p.corner.as_str()).collect();
+        Err(Diag::error(
+            "T0070",
+            format!(
+                "SPEF corner {} does not annotate requested corner {corner}: every analyzed corner \
+                 needs its own extracted parasitics (import --spef FILE --spef-corner {corner}), \
+                 or select the annotated corners with --corner (STA-REQ-0820)",
+                bound.join(",")
+            ),
+        ))
+    }
+
     /// Returns default options with [`WireModelOption::Ideal`].
     #[must_use]
     pub fn ideal() -> Self {
@@ -146,7 +189,7 @@ pub struct PropagationRecord {
     pub evaluated: Vec<u64>,
 }
 
-/// Compiles the library view of every corner (`STA-REQ-0013`).
+/// Compiles the library view of every corner (`STA-REQ-0017`).
 pub fn compile_corner_libs(corners: &[CornerLibs<'_>]) -> Result<Vec<TimingLib>, Diag> {
     corners
         .iter()
@@ -190,9 +233,11 @@ pub struct CornerAnalysis {
     pub node_values: TimingValues,
     /// Aggregated endpoint records, path groups, unconstrained counts, and corner summary.
     pub endpoints: CornerEndpoints,
-    /// Count of unanalyzed library arcs across instantiated cells in this corner (`STA-REQ-0013`,
+    /// Count of unanalyzed library arcs across instantiated cells in this corner (`STA-REQ-0017`,
     /// `STA-REQ-0015`).
     pub unanalyzed_arcs: usize,
+    /// Pulse width, period and electrical design-rule checks of the corner (`STA-REQ-0806`).
+    pub limits: CornerLimits,
     /// Non-fatal diagnostics (warnings and notes) emitted while analyzing this corner.
     pub diags: Vec<Diag>,
 }
@@ -353,7 +398,7 @@ impl<'a> EngineAnalysis<'a> {
             lower::with_prewarm(options.backend, options.precision, || {
                 build_shared_and_libs(netlist, corners, timing_libs, &constraints, ctx)
             });
-        let (netview, graph, timing_libs, mut all_diags) = setup_res?;
+        let (netview, graph, timing_libs, constant, mut all_diags) = setup_res?;
         if let Err(err) = prewarm_res {
             return Err(vec![lower::compute_error_diag(&err)]);
         }
@@ -369,6 +414,7 @@ impl<'a> EngineAnalysis<'a> {
                 tlib,
                 &netview,
                 &graph,
+                &constant,
                 &constraints,
                 options,
                 ctx,
@@ -578,7 +624,16 @@ fn build_shared_and_libs<'a>(
     timing_libs: Option<Vec<TimingLib>>,
     constraints: &CompiledConstraints,
     ctx: Ctx<'_>,
-) -> Result<(NetlistView<'a>, TimingGraph, Vec<TimingLib>, Vec<Diag>), Vec<Diag>> {
+) -> Result<
+    (
+        NetlistView<'a>,
+        TimingGraph,
+        Vec<TimingLib>,
+        Vec<bool>,
+        Vec<Diag>,
+    ),
+    Vec<Diag>,
+> {
     let clock = PhaseClock::start(ctx, "compile_libraries");
     let timing_libs = match timing_libs {
         Some(libs) if libs.len() == corners.len() => libs,
@@ -607,6 +662,7 @@ fn build_shared_and_libs<'a>(
     let clock = PhaseClock::start(ctx, "constants");
     let consts =
         ConstantPropagation::apply(&netview, corners[0].libs, Some(constraints), &mut graph);
+    let constant = consts.constant_nodes();
     clock.finish();
 
     let mut diags = constraints.diags.clone();
@@ -644,7 +700,7 @@ fn build_shared_and_libs<'a>(
         }
     }
 
-    Ok((netview, graph, timing_libs, diags))
+    Ok((netview, graph, timing_libs, constant, diags))
 }
 
 /// The analysis of one corner up to its lowered problem: steps 1 to 7 of [`analyze_one_corner`].
@@ -677,7 +733,7 @@ fn setup_corner<'l>(
 
     // 1. Resolve wire model (`STA-REQ-0122`..`0125`).
     let wl_cfg = build_wireload_config(netview, constraints);
-    let (wire_model, wl_diags) = match options.wire_model {
+    let (mut wire_model, wl_diags) = match options.wire_model {
         WireModelOption::Ideal => (ResolvedWireModel::Ideal(Ideal), Vec::new()),
         WireModelOption::Auto => ResolvedWireModel::resolve(netlist, corner_libs, &wl_cfg),
         WireModelOption::WireloadLumped => {
@@ -688,11 +744,50 @@ fn setup_corner<'l>(
     diags.extend(wl_diags);
 
     // 2. Compute per-net capacitive loads (`STA-REQ-0110`, `STA-REQ-0121`).
-    let load_overrides = build_net_load_overrides(netview, constraints, wire_model.is_ideal());
+    let corner_rc = options.parasitics_for(corner_name)?;
+    let load_overrides = build_net_load_overrides(
+        netview,
+        constraints,
+        wire_model.is_ideal() || corner_rc.is_some(),
+    );
+    if let Some(input) = corner_rc {
+        if !constraints.driving_cells.is_empty() {
+            return Err(Diag::error(
+                "T0077",
+                "set_driving_cell is unsupported in extracted waveform mode; use port transition annotations",
+            ));
+        }
+        if options.wire_model != WireModelOption::Auto {
+            return Err(Diag::error(
+                "T0070",
+                "an explicit wire model cannot override extracted parasitics",
+            ));
+        }
+        let max = options.max_state_bytes;
+        let bound = Spef::bind(&input.data, netview, lib, &load_overrides, max)?;
+        diags.clear();
+        diags.extend(bound.topology().diagnostics(corner_name));
+        wire_model = ResolvedWireModel::Extracted(bound);
+        if input.data.coupling_records > 0 {
+            diags.push(Diag::warning(
+                "T0074",
+                "inter-net coupling grounded at factor 1; crosstalk not analyzed",
+            ));
+        }
+    }
     let net_loads = NetLoads::compute(netlist, lib, &wire_model, &load_overrides);
 
     // 3. Build ideal clock network (`STA-REQ-0200`).
-    let clock_model = IdealClockModel::build(graph, constraints);
+    let clock_model = crate::engine::prop::clocks::propagated::build_model(
+        netview,
+        graph,
+        lib,
+        &net_loads,
+        &wire_model,
+        constraints,
+        options,
+        &mut diags,
+    )?;
 
     // 4. Initialize the tag table and the timing exceptions (`STA-REQ-0217`, `STA-REQ-0220`,
     // `STA-REQ-0271`).
@@ -705,7 +800,30 @@ fn setup_corner<'l>(
     // Memory budget of the propagation state, checked before any of it is allocated (AGENTS
     // rule 9.2, `STA-REQ-0024`).
     let state_bytes =
-        graph.num_nodes() as u64 * u64::from(tags.ntags_for_compute()) * STATE_BYTES_PER_NODE_TAG;
+        (graph.num_nodes() as u64 * u64::from(tags.ntags_for_compute()) * STATE_BYTES_PER_NODE_TAG)
+            .saturating_add(
+                graph.num_nodes() as u64
+                    * constraints
+                        .clocks
+                        .iter()
+                        .filter(|c| c.propagated && !c.is_virtual())
+                        .count() as u64
+                    * 128,
+            )
+            .saturating_add(crate::engine::limits::retained_bytes(
+                graph.num_nodes(),
+                options.max_limit_rows,
+            ))
+            // The parsed parasitics of every analyzed corner stay resident while any corner is
+            // analyzed, so each corner counts all of them (`STA-REQ-0820`).
+            .saturating_add(options.parasitics.iter().fold(0u64, |n, p| {
+                n.saturating_add(p.data.estimated_state_bytes())
+            }))
+            .saturating_add(if corner_rc.is_some() {
+                graph.arcs().len() as u64 * 192
+            } else {
+                0
+            });
     if state_bytes > options.max_state_bytes {
         let gib = |b: u64| b as f64 / f64::from(1u32 << 30);
         return Err(Diag::error(
@@ -748,16 +866,19 @@ fn setup_corner<'l>(
     // 7. Lower onto `rusteda_compute::timing` and pin latch `G -> Q` slews (`STA-REQ-0222`,
     // `STA-REQ-0401`).
     let ntags = tags.len().max(1) as u32;
-    let mut lowered = LoweredCorner::lower(
+    let lowered = lower_corner(
         netview,
         graph,
         lib,
         &net_loads,
         ntags,
         start_build.rows,
+        &start_build.launch_slews,
+        &start_build.launch_drives,
         &latch_maps,
+        &wire_model,
+        options.max_state_bytes,
     )?;
-    pin_latch_gq_slews(graph, &start_build.launch_slews, &mut lowered);
 
     Ok(CornerSetup {
         wire_model,
@@ -821,6 +942,7 @@ fn analyze_one_corner(
     lib: TimingLib,
     netview: &NetlistView<'_>,
     graph: &TimingGraph,
+    constant: &[bool],
     constraints: &CompiledConstraints,
     options: &AnalysisOptions,
     ctx: Ctx<'_>,
@@ -895,23 +1017,54 @@ fn analyze_one_corner(
     record.evaluated.push(propagated.stats.nodes_evaluated);
     let node_values = propagated.to_node_order(graph);
     clock.finish();
+    // Static transitions of the pins without a propagated one, for the design rules (STA-REQ-0809).
+    let statics = static_transitions(
+        graph,
+        netview,
+        &lib,
+        &lowered,
+        &wire_model,
+        &net_loads,
+        &node_values,
+        constant,
+    );
     if keep_lowered {
         record.lowered.push(into_owned_lowered(lowered));
     } else {
         drop(lowered);
     }
 
-    // 9. Check unanalyzed arcs, max capacitance, and max transition (`STA-REQ-0013`,
+    // 9. Check unanalyzed arcs, max capacitance, and max transition (`STA-REQ-0017`,
     // `STA-REQ-0015`, `STA-REQ-0120`).
     let clock = PhaseClock::start(ctx, "electrical_checks");
     let (unanalyzed_arcs, unanalyzed_diags) = lib.unanalyzed_arc_warnings(netlist);
     diags.extend(unanalyzed_diags);
     net_loads.check_max_capacitance(netlist, &lib, &mut range_tracker);
     check_max_transitions(netview, &lib, &node_values, &mut range_tracker);
+    // Pulse widths, periods and design rules of the pins (`STA-REQ-0800` to `STA-REQ-0810`).
+    let limits = check_corner_limits(
+        &LimitInputs {
+            netview,
+            lib: &lib,
+            constraints,
+            clock_model: &clock_model,
+            tags: &tags,
+            node_values: &node_values,
+            net_loads: &net_loads,
+            pulse_rules: options.pulse_rules,
+            clock_limits: options.clock_limits,
+            constant,
+            statics: &statics,
+        },
+        options.max_limit_rows,
+        corner_id.index() == 0,
+        &mut range_tracker,
+        &mut diags,
+    );
     clock.finish();
 
     // 10. Discover clock-gating sites, evaluate all timing checks, and classify endpoints
-    // (`STA-REQ-0211`..`0226`).
+    // (`STA-REQ-0229`..`0226`).
     let clock = PhaseClock::start(ctx, "timing_checks");
     let gating_sites = discover_gating_sites(netview, graph, &lib, &clock_model);
     let check_records = evaluate_all_checks(
@@ -965,110 +1118,9 @@ fn analyze_one_corner(
         node_values,
         endpoints,
         unanalyzed_arcs,
+        limits,
         diags,
     })
-}
-
-fn build_wireload_config(
-    netview: &NetlistView<'_>,
-    constraints: &CompiledConstraints,
-) -> WireloadConfig {
-    let mut cfg = WireloadConfig::new();
-    if let Some(m) = constraints
-        .wire_load
-        .model_max
-        .as_ref()
-        .or(constraints.wire_load.model_min.as_ref())
-    {
-        cfg.wire_load_model = Some(m.clone());
-    }
-    if let Some(lib) = constraints
-        .wire_load
-        .models
-        .last()
-        .and_then(|m| m.library.clone())
-        .or_else(|| {
-            constraints
-                .wire_load
-                .selection_groups
-                .last()
-                .and_then(|s| s.library.clone())
-        })
-    {
-        cfg.wire_load_library = Some(lib);
-    }
-    if let Some(sel) = constraints
-        .wire_load
-        .selection_max
-        .as_ref()
-        .or(constraints.wire_load.selection_min.as_ref())
-    {
-        cfg.wire_load_selection_group = Some(sel.clone());
-    }
-    if let Some(mode) = constraints.wire_load.mode {
-        cfg.wire_load_mode = Some(mode.as_str().to_string());
-    }
-
-    // Explicit `set_load -wire_load` on nets or ports.
-    for (&net_row, nl) in &constraints.net_loads {
-        if nl.wire_load {
-            let target = match netview.resolve_net(net_row) {
-                NetTarget::Net(canon) => canon,
-                NetTarget::Const(_) => net_row,
-            };
-            let entry = cfg
-                .net_wire_load_overrides
-                .entry(target)
-                .or_insert([0.0, 0.0]);
-            entry[0] += nl.load_pf[0];
-            entry[1] += nl.load_pf[1];
-        }
-    }
-    for (&port_node, pl) in &constraints.port_loads {
-        if pl.wire_load
-            && !pl.pin_load
-            && let NetTarget::Net(canon) = netview.node_net(port_node)
-        {
-            let entry = cfg
-                .net_wire_load_overrides
-                .entry(canon)
-                .or_insert([0.0, 0.0]);
-            entry[0] += pl.load_pf[0];
-            entry[1] += pl.load_pf[1];
-        }
-    }
-    cfg
-}
-
-fn build_net_load_overrides(
-    netview: &NetlistView<'_>,
-    constraints: &CompiledConstraints,
-    wire_is_ideal: bool,
-) -> NetLoadOverrides {
-    let mut ov = NetLoadOverrides::new();
-    for (&port_node, pl) in &constraints.port_loads {
-        if pl.wire_load && !pl.pin_load {
-            if wire_is_ideal && let NetTarget::Net(canon) = netview.node_net(port_node) {
-                ov.add_net_wire_load(canon, pl.load_pf[0], pl.load_pf[1]);
-            }
-        } else {
-            ov.add_port_bit_load(port_node.index() as u32, pl.load_pf[0], pl.load_pf[1]);
-        }
-    }
-    for (&net_row, nl) in &constraints.net_loads {
-        let target = match netview.resolve_net(net_row) {
-            NetTarget::Net(canon) => canon,
-            NetTarget::Const(_) => net_row,
-        };
-        if nl.wire_load && !nl.pin_load {
-            if wire_is_ideal {
-                ov.add_net_wire_load(target, nl.load_pf[0], nl.load_pf[1]);
-            }
-        } else {
-            ov.add_net_pin_load(target, nl.load_pf[0], nl.load_pf[1]);
-        }
-    }
-    ov
 }
 
 fn count_applied_exceptions(constraints: &CompiledConstraints) -> ScopeExceptions {

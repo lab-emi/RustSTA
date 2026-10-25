@@ -181,7 +181,11 @@ pub fn evaluate_all_checks<C: Cppr>(
 
     // 1. Sequential setup, hold, recovery, removal, and latch data checks (`graph.checks()`).
     for (check_idx, ch) in g_checks.iter().enumerate() {
-        if is_check_disabled(netview, ch, &constraints.disabled_timing) {
+        // A check that a false `when`, a constant or case analysis disables is not timed even
+        // where arrivals reach its pins (`STA-REQ-0155`, `STA-REQ-0163`).
+        if graph.is_check_disabled(check_idx)
+            || is_check_disabled(netview, ch, &constraints.disabled_timing)
+        {
             continue;
         }
         let cell_row = netview.frozen().instances[ch.inst as usize].cell as usize;
@@ -274,7 +278,7 @@ pub fn evaluate_all_checks<C: Cppr>(
                             let s_setup = lib.eval_check_tracked(
                                 cell_check,
                                 data_tr,
-                                win.close_slew_late,
+                                win.close_slew_early,
                                 slew_l,
                                 0.0,
                                 range_tracker,
@@ -355,9 +359,9 @@ pub fn evaluate_all_checks<C: Cppr>(
                     else {
                         continue;
                     };
-                    let ck_slew_late = clock_model
-                        .arrival(capture_clock, e_c, ch.clock_pin, ch.edge, An::Late)
-                        .map_or(ck_arr.slew, |a| a.slew);
+                    // The related pin transition is the one of the capture clock path, the
+                    // early analysis of a setup-family check (`STA-REQ-0229`).
+                    let ck_slew = ck_arr.slew;
                     for (tid, tag) in tags.iter() {
                         let (d_s, _) = rel_table.get_or_compute(
                             constraints,
@@ -401,7 +405,7 @@ pub fn evaluate_all_checks<C: Cppr>(
                             let s_setup = lib.eval_check_tracked(
                                 cell_check,
                                 data_tr,
-                                ck_slew_late,
+                                ck_slew,
                                 slew_l,
                                 0.0,
                                 range_tracker,
@@ -443,9 +447,9 @@ pub fn evaluate_all_checks<C: Cppr>(
                     else {
                         continue;
                     };
-                    let ck_slew_early = clock_model
-                        .arrival(capture_clock, e_c, ch.clock_pin, ch.edge, An::Early)
-                        .map_or(ck_arr.slew, |a| a.slew);
+                    // The related pin transition is the one of the capture clock path, the
+                    // late analysis of a hold-family check (`STA-REQ-0229`).
+                    let ck_slew = ck_arr.slew;
                     for (tid, tag) in tags.iter() {
                         let (_, d_h) = rel_table.get_or_compute(
                             constraints,
@@ -489,7 +493,7 @@ pub fn evaluate_all_checks<C: Cppr>(
                             let s_hold = lib.eval_check_tracked(
                                 cell_check,
                                 data_tr,
-                                ck_slew_early,
+                                ck_slew,
                                 slew_e,
                                 0.0,
                                 range_tracker,

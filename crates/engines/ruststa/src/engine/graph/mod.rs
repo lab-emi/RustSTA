@@ -15,6 +15,6 @@ pub mod levels;
 
 pub use build::{
     ArcKind, ArcSense, CheckArc, CheckKind, DisableReason, GraphArc, GraphBuildError,
-    GraphDiagnostic, LaunchArc, TimingGraph,
+    GraphDiagnostic, LaunchArc, TimingGraph, carries_transition,
 };
 pub use levels::Levels;

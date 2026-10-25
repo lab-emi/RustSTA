@@ -342,6 +342,9 @@ impl<'a> SearchCtx<'a> {
 
         for (csr_off, in_arc) in in_arcs[arc_lo..arc_hi].iter().enumerate() {
             let csr_k = arc_lo + csr_off;
+            if self.lowered.is_slew_only(csr_k) {
+                continue;
+            }
             let graph_arc_idx = self.lowered.csr_arc_to_graph_arc[csr_k];
             let src_pos = in_arc.src as usize;
             let src_node = self.graph.order()[src_pos];

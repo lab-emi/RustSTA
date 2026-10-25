@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use rayon::prelude::*;
-use rusteda_compute::timing::{TimingValues, absent};
+use rusteda_compute::timing::{NONE, TimingValues, absent};
 use rusteda_core::job::Ctx;
 use rusteda_core::liberty::Direction;
 
@@ -988,6 +988,7 @@ pub fn build_sta_store(
             disabled_arcs_by_reason: disabled_by_reason,
             unanalyzed_arcs_by_type: BTreeMap::new(),
         },
+        limits: None,
     };
     let scope_bytes = serde_json::to_vec(&scope_report).unwrap_or_else(|_| b"{}".to_vec());
 
@@ -1077,6 +1078,10 @@ fn propagate_backward_required(
         }
         let dst_load = lowered.load[dst_pos];
         for in_arc in &in_arcs[in_ptr[dst_pos] as usize..in_ptr[dst_pos + 1] as usize] {
+            // An arc that carries only a transition carries no required time (`STA-REQ-0117`).
+            if lowered.slew_only_map != NONE && in_arc.map == lowered.slew_only_map {
+                continue;
+            }
             let (src_pos, cls) = (in_arc.src as usize, &classes[in_arc.class as usize]);
             let src_node = order[src_pos].index();
             let is_wire = in_arc.class == tlib.wire_class;

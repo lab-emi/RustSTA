@@ -59,12 +59,7 @@ fn temp_dir(tag: &str) -> PathBuf {
 }
 
 fn run_cmd(args: &[&str]) -> Output {
-    Command::new(bin())
-        .args(args)
-        .env_remove("NO_COLOR")
-        .stdin(Stdio::null())
-        .output()
-        .expect("spawn ruststa")
+    run_cmd_in(Path::new("."), args)
 }
 
 fn run_cmd_in(cwd: &Path, args: &[&str]) -> Output {
@@ -375,6 +370,8 @@ fn counter_flow_and_envelope_key_order() {
             "cppr",
             "backend",
             "precision",
+            "pulse_rules",
+            "drv_rules",
         ]
     );
 
@@ -390,14 +387,25 @@ fn counter_flow_and_envelope_key_order() {
             "unconstrained_inputs",
             "disabled_arcs",
             "unanalyzed_arcs",
+            "unchecked_pulse_width_pins",
+            "pass_through_pulse_pins",
+            "unevaluated_limit_checks",
+            "drv_constant_drivers",
+            "drv_static_transition_pins",
+            "drv_ideal_clock_pins",
+            "drv_untimed_pins",
+            "drv_clock_scope_pins",
+            "drv_unconnected_output_pins",
+            "drv_unlimited",
         ]
     );
 
     let raw_met_start = raw_stdout.find("  \"metrics\": {").unwrap();
     let raw_met_end = raw_stdout[raw_met_start..].find("\n  },").unwrap() + raw_met_start;
+    let metric_keys = nested_object_keys(&raw_stdout[raw_met_start..raw_met_end], "    ");
     assert_eq!(
-        nested_object_keys(&raw_stdout[raw_met_start..raw_met_end], "    "),
-        vec![
+        metric_keys[..8],
+        [
             "wns_ns",
             "tns_ns",
             "violating_endpoints",
@@ -408,6 +416,8 @@ fn counter_flow_and_envelope_key_order() {
             "worst_hold_slack_ns",
         ]
     );
+    // The fifteen pin limit metrics follow (STA-REQ-0807; their order: `tests/signoff_cli.rs`).
+    assert_eq!(metric_keys.len(), 23);
 
     let top_paths = env["top_paths"].as_array().expect("top_paths array");
     assert!(!top_paths.is_empty());

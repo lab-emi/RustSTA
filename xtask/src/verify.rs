@@ -154,7 +154,22 @@ fn target_exists(root: &Path, pkg_dir: &Path, target: &str) -> bool {
     tests.join(format!("{target}.rs")).is_file() || tests.join(target).join("main.rs").is_file()
 }
 
+fn source_path(root: &Path, common: Option<&Path>, relative: &str) -> PathBuf {
+    let local = root.join(relative);
+    if local.is_file() {
+        return local;
+    }
+    let shared = crate::shared::CRATES
+        .iter()
+        .any(|(group, package)| relative.starts_with(&format!("crates/{group}/{package}/")));
+    if shared && let Some(common) = common {
+        return common.join(relative);
+    }
+    local
+}
+
 fn plan_sta(root: &Path, o: Options) -> Result<Vec<Vec<String>>, String> {
+    let common = crate::foundation::root(root)?;
     let suites = load_domain(root, "sta")?;
     let cli_dir = root.join("crates/apps/ruststa-cli");
     let mut cli_targets: Vec<String> = CLI_SUITES
@@ -166,7 +181,9 @@ fn plan_sta(root: &Path, o: Options) -> Result<Vec<Vec<String>>, String> {
     let mut extra_crates: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for s in &suites {
         if let Some((pkg, target)) = integration_target(&s.test) {
-            if root.join("crates").is_dir() && !root.join(&s.test).is_file() {
+            if root.join("crates").is_dir()
+                && !source_path(root, common.as_deref(), &s.test).is_file()
+            {
                 continue;
             }
             if pkg == "ruststa-cli" {
@@ -246,6 +263,7 @@ fn plan_sta(root: &Path, o: Options) -> Result<Vec<Vec<String>>, String> {
 }
 
 fn plan_compute(root: &Path, o: Options) -> Result<Vec<Vec<String>>, String> {
+    let common = crate::foundation::root(root)?;
     let suites = load_domain(root, "compute")?;
     let mut steps = Vec::new();
     if o.gpu {
@@ -272,7 +290,8 @@ fn plan_compute(root: &Path, o: Options) -> Result<Vec<Vec<String>>, String> {
     let mut extra: Vec<String> = Vec::new();
     for s in &suites {
         if let Some(("rusteda-compute", target)) = integration_target(&s.test)
-            && (!root.join("crates").is_dir() || root.join(&s.test).is_file())
+            && (!root.join("crates").is_dir()
+                || source_path(root, common.as_deref(), &s.test).is_file())
             && !extra.iter().any(|t| t == target)
         {
             extra.push(target.to_string());
@@ -293,11 +312,13 @@ fn plan_compute(root: &Path, o: Options) -> Result<Vec<Vec<String>>, String> {
 }
 
 fn plan_sdc(root: &Path) -> Result<Vec<Vec<String>>, String> {
+    let common = crate::foundation::root(root)?;
     let suites = load_domain(root, "sdc")?;
     let mut by_pkg: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for s in &suites {
         if let Some((pkg, target)) = integration_target(&s.test)
-            && (!root.join("crates").is_dir() || root.join(&s.test).is_file())
+            && (!root.join("crates").is_dir()
+                || source_path(root, common.as_deref(), &s.test).is_file())
         {
             let list = by_pkg.entry(pkg.to_string()).or_default();
             if !list.iter().any(|t| t == target) {

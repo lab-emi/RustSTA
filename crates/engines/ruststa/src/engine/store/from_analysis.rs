@@ -25,18 +25,22 @@ use crate::engine::graph::{CheckKind, DisableReason, TimingGraph};
 use crate::engine::input::NetlistView;
 use crate::engine::input::constr::CompiledConstraints;
 use crate::engine::input::netview::NodeKind;
+use crate::engine::limits::LimitKind;
 use crate::engine::prop::backward::{BackwardPass, ByNode};
 use crate::engine::prop::checks::{EndpointCheckKind, SlackRecord};
+use crate::engine::prop::clocks::ClockModel;
 use crate::engine::prop::endpoints::EndpointStatus;
+use crate::engine::prop::latch::lower_corner;
 use crate::engine::prop::lower::LoweredCorner;
 use crate::engine::prop::starts::build_start_rows;
 use crate::engine::store::{
-    ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport, CornerRec,
-    DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec, InstHashBuilder, NO_INDEX, NO_PRED,
-    NameHashBuilder, NodeRec, NoteRec, NoteSeverity, PATH_CHAIN_HEADER_WORDS, PathHeaderRec,
-    PathPointRec, PathRankRec, ScopeReport, StaMeta, StaStoreData, StoreMode, StorePrecision,
-    StringTableBuilder, SummaryRec, TagExtraRec, TagRec, UnconstrainedReasonTag, UnconstrainedRec,
-    canon_f32, canon_f64, hash_node_name, pack_chain_step, pack_f64_words,
+    ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport,
+    CornerLimitsReport, CornerRec, DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec,
+    InstHashBuilder, LimitKindReport, NO_INDEX, NO_PRED, NameHashBuilder, NodeRec, NoteRec,
+    NoteSeverity, PATH_CHAIN_HEADER_WORDS, PathHeaderRec, PathPointRec, PathRankRec, ScopeReport,
+    StaMeta, StaStoreData, StoreMode, StorePrecision, StringTableBuilder, SummaryRec, TagExtraRec,
+    TagRec, UnconstrainedReasonTag, UnconstrainedRec, canon_f32, canon_f64, hash_node_name,
+    pack_chain_step, pack_f64_words,
 };
 use crate::engine::types::{An, NodeId, Tr};
 
@@ -873,8 +877,19 @@ pub fn build_store_with_ctx(
                 setup_endpoints,
                 hold_violating,
                 hold_endpoints,
-                max_trans_violating: 0,
-                max_cap_violating: 0,
+                // Corner-wide design-rule counts on every row of the corner (`STA-REQ-0807`).
+                max_trans_violating: sat_u32(
+                    analysis.corners[c_idx]
+                        .limits
+                        .kind(LimitKind::MaxTransition)
+                        .violating,
+                ),
+                max_cap_violating: sat_u32(
+                    analysis.corners[c_idx]
+                        .limits
+                        .kind(LimitKind::MaxCapacitance)
+                        .violating,
+                ),
                 total_endpoints: n_endpoints as u32,
                 unconstrained_endpoints: unconstrained.len() as u32,
                 reserved0: 0,
@@ -935,7 +950,7 @@ pub fn build_store_with_ctx(
         top: nv.module_name().to_owned(),
         corners: corner_names,
         wire_model: wire_scope.wire_model.to_owned(),
-        clock_model: String::from("ideal"),
+        clock_model: analysis.corners[0].clock_model.scope_name().to_owned(),
         cppr: String::from("off"),
         backend: backend_name.to_owned(),
         precision,
@@ -948,6 +963,7 @@ pub fn build_store_with_ctx(
             disabled_arcs_by_reason: disabled_by_reason,
             unanalyzed_arcs_by_type: unanalyzed_by_type,
         },
+        limits: Some(analysis.corners.iter().map(corner_limits_report).collect()),
     };
     let scope_bytes = serde_json::to_vec(&scope_report).unwrap_or_else(|_| b"{}".to_vec());
 
@@ -1064,15 +1080,23 @@ fn compute_corner_backward_pass(
         &ca.exceptions,
         &ca.net_loads,
         &NoDerate,
-    ) && let Ok(lowered) = LoweredCorner::lower(
-        analysis.netview,
-        analysis.graph,
-        &ca.lib,
-        &ca.net_loads,
-        ntags as u32,
-        start_build.rows,
-        &ca.latch_maps,
     ) {
+        // The same graph, starts and RC data passed analysis preflight already; the lowering is
+        // the analysis's own (`lower_corner`), so the arc values equal those of a kept problem.
+        let lowered = lower_corner(
+            analysis.netview,
+            analysis.graph,
+            &ca.lib,
+            &ca.net_loads,
+            ntags as u32,
+            start_build.rows,
+            &start_build.launch_slews,
+            &start_build.launch_drives,
+            &ca.latch_maps,
+            &ca.wire_model,
+            u64::MAX,
+        )
+        .expect("the lowering of a validated analysis is deterministic");
         bp.propagate(analysis.graph, &lowered, &values);
     }
     bp
@@ -1084,5 +1108,46 @@ fn cmp_slack_nan_last(a: f64, b: f64) -> std::cmp::Ordering {
         (true, false) => std::cmp::Ordering::Greater,
         (false, true) => std::cmp::Ordering::Less,
         (false, false) => a.total_cmp(&b),
+    }
+}
+
+/// `v` as `u32`, saturated.
+fn sat_u32(v: u64) -> u32 {
+    u32::try_from(v).unwrap_or(u32::MAX)
+}
+
+/// The counts of the pin limit checks of `ca` as the `SCOPE` of `sta.rbin` records them
+/// (`STA-REQ-0807`).
+#[must_use]
+pub fn corner_limits_report(ca: &CornerAnalysis) -> CornerLimitsReport {
+    CornerLimitsReport {
+        corner: ca.corner_name.clone(),
+        kinds: LimitKind::ALL
+            .iter()
+            .map(|&k| {
+                let s = ca.limits.kind(k);
+                (
+                    k.name().to_owned(),
+                    LimitKindReport {
+                        checked: s.checked,
+                        violating: s.violating,
+                        unlimited: s.unlimited,
+                        worst_slack_ns: s.worst_slack,
+                        unevaluated: s.unevaluated,
+                    },
+                )
+            })
+            .collect(),
+        unclocked_pulse_pins: ca.limits.unclocked_pulse_pins,
+        pass_through_pulse_pins: ca.limits.pass_through_pulse_pins,
+        pulse_groups: ca.limits.rules.groups.name().to_owned(),
+        pulse_pins: ca.limits.rules.pins.name().to_owned(),
+        clock_limits: ca.limits.clock_limits.name().to_owned(),
+        constant_drivers: ca.limits.constant_drivers,
+        static_transition_pins: ca.limits.static_transition_pins,
+        ideal_clock_pins: ca.limits.ideal_clock_pins,
+        untimed_pins: ca.limits.untimed_pins,
+        clock_scope_pins: ca.limits.clock_scope_pins,
+        unconnected_output_pins: ca.limits.unconnected_output_pins,
     }
 }

@@ -107,6 +107,8 @@ pub struct NetLoads {
     pub driver_loads: Vec<[[DriverLoad; 2]; 2]>,
     /// Total lumped capacitance `driver_load.total()` per net `[tr][an]`, in pF.
     pub totals: Vec<[[f64; 2]; 2]>,
+    /// Canonical physical loads, separate from alias-aggregated capacitance totals.
+    pub physical: Vec<Option<[DriverLoad; 4]>>,
 }
 
 impl NetLoads {
@@ -192,7 +194,28 @@ impl NetLoads {
             pin_loads,
             driver_loads,
             totals,
+            physical: (0..n_nets)
+                .map(|i| {
+                    wire.physical_load(NetRow(i as u32), Tr::Rise, An::Early)
+                        .map(|_| {
+                            std::array::from_fn(|k| {
+                                wire.physical_load(NetRow(i as u32), Tr::ALL[k / 2], An::ALL[k % 2])
+                                    .unwrap()
+                            })
+                        })
+                })
+                .collect(),
         }
+    }
+
+    pub fn physical_load(&self, net: NetRow, tr: Tr, an: An, fallback: f64) -> DriverLoad {
+        self.physical
+            .get(net.index())
+            .copied()
+            .flatten()
+            .map_or(DriverLoad::Lumped { c: fallback }, |p| {
+                p[tr.index() * 2 + an.index()]
+            })
     }
 
     /// Returns the [`DriverLoad`] on `net` for transition `tr` and bound `an`.

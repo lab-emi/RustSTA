@@ -212,7 +212,7 @@ words that the rules keep out.
 
 ### Dependencies
 
-- Dependencies come from crates.io only, are pinned to exact versions (`=x.y.z`) in the root
+- Third-party dependencies come from crates.io only, are pinned to exact versions (`=x.y.z`) in the root
   `[workspace.dependencies]`, and must pass `cargo deny check`.
 - The pins follow a list that the RustEDA tools share. A third-party crate that is not on it is
   not added in a change; propose it with a justification first.
@@ -306,3 +306,20 @@ reuse lint
 - The body explains what changed and why, in terms of specifications and tests.
 - Contributions are accepted under the Developer Certificate of Origin: sign off every commit
   (`git commit -s`).
+
+
+### Canonical first-party foundation (2026-10-25)
+
+The four shared library implementations and the workspace CLI implementation are owned by
+lab-emi/RustEDA-Common, the public first-party foundation. Workspace dependencies and Cargo.lock
+pin one exact revision over HTTPS; no GitHub credentials are required. The local rusteda-cli package is a
+product adapter and retains its package version in command output and revision history.
+
+This supersedes the legacy requirement to copy shared implementation files between tool
+repositories, and is the sole first-party exception to the crates.io-only source policy.
+Third-party package versions, licenses and source restrictions are unchanged. Shared specification
+and automation manifests still require deliberate updates. Canonical core tests run in the
+foundation repository; product adapters and engines retain their local tests.
+
+Cross-repository validation uses the pinned foundation source. The historical public main
+branch retains its existing build policy until a reviewed migration is merged.

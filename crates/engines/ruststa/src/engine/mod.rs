@@ -25,6 +25,7 @@
 //! | [`graph`] | The timing graph, its levels and constant propagation | E1, E7 |
 //! | [`delay`] | Delay calculation, wire models and derates | E3, E4, E9, E14 |
 //! | [`prop`] | Propagation: tags, start rows, relations, checks, clocks, exceptions | E5, E6, E8, E9, E13, C2 |
+//! | [`limits`] | Pulse width, period and electrical design-rule checks of pins | S1 |
 //! | [`paths`] | Worst paths and their handles | E6 |
 //! | [`store`] | The timing table `sta.rbin` (STA v2) | E10 |
 //! | [`incr`] | Incremental timing: timing sessions and the update of a revision | E11 |
@@ -35,6 +36,7 @@ pub mod delay;
 pub mod graph;
 pub mod incr;
 pub mod input;
+pub mod limits;
 pub mod paths;
 pub mod prop;
 pub mod scope;

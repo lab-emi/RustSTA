@@ -90,6 +90,7 @@ nav:
       - Your first timing run: guide/quickstart.md
   - Workflows:
       - Analyze a design: guide/timing.md
+      - Import SPEF parasitics: guide/spef.md
       - Automate with an agent: guide/agents.md
       - Check timing results: guide/checking.md
       - CPU and CUDA backends: guide/backends.md
@@ -103,6 +104,9 @@ nav:
           - Static timing analysis: specs/sta/README.md
           - Inputs and corners: specs/sta/inputs.md
           - Delay and wire load: specs/sta/delay.md
+          - Detailed parasitics: specs/sta/parasitics.md
+          - RC waveforms and effective load: specs/sta/rc-waveforms.md
+          - Propagated primary clocks: specs/sta/propagated-clock.md
           - Constant propagation: specs/sta/constants.md
           - Clocks and checks: specs/sta/checks.md
           - Timing exceptions: specs/sta/exceptions.md
@@ -119,6 +123,7 @@ nav:
           - Library storage: specs/workspace/rlib.md
           - Shared timing reader: specs/workspace/sta.md
           - RustEDA CLI: specs/rusteda-cli/README.md
+          - Detailed parasitic import: specs/rusteda-cli/spef.md
           - Core structures: specs/core/README.md
           - Netlist model: specs/core/netlist.md
           - Compute backends: specs/compute/README.md
@@ -128,9 +133,13 @@ nav:
           - Structural Verilog: specs/verilog/netlist.md
           - Liberty: specs/liberty/liberty.md
           - SDC: specs/sdc/sdc.md
+          - AIGER: specs/aiger/README.md
+          - BLIF: specs/blif/README.md
   - Evidence:
       - Verification scope: verification/index.md
       - Dual-PDK verification: verification/pdk.md
+      - SPEF verification: verification/spef.md
+      - RC waveform verification: verification/rc-waveforms.md
       - Timing verification specification: specs/sta/verification.md
       - Requirements and evidence: verification/requirements.md
   - Project:

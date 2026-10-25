@@ -246,6 +246,9 @@ fn evaluation_json(
     summary.insert("hold_violating_endpoints", &s.violating_hold)?;
     summary.insert("worst_setup_slack_ns", &worst_setup)?;
     summary.insert("worst_hold_slack_ns", &worst_hold)?;
+    // The pin limit counts, with the keys and rules of `ruststa run` (`STA-REQ-0807`).
+    let mut limit_completeness = JsonObject::new();
+    crate::ws_io::add_limit_headers(Some(&e.limits), None, &mut limit_completeness, &mut summary)?;
     let mut corners = Vec::with_capacity(e.corners.len());
     for c in &e.corners {
         let mut o = JsonObject::new();
@@ -345,10 +348,12 @@ pub fn exec_whatif(
     } else {
         Sdc::default()
     };
+    crate::ws_io::check_wire_model_inputs(&rev, args.require_wire_model, diags)?;
     let corner_libs = load_corner_libraries(ws, &rev, &args.corners, diags)?;
     let corner_names: Vec<String> = corner_libs.iter().map(|(n, _)| n.clone()).collect();
     let options = SessionOptions {
         analysis: AnalysisOptions {
+            parasitics: crate::ws_io::load_parasitics(&rev, &corner_names)?,
             max_state_bytes,
             ..AnalysisOptions::default()
         },
@@ -373,6 +378,16 @@ pub fn exec_whatif(
     }
     for d in &session.state().diags {
         diags.push(convert_job_diag(d));
+    }
+    if let Some(want) = args.require_wire_model
+        && session.state().scope.wire_model != want.as_str()
+    {
+        let msg = format!(
+            "--require-wire-model {}: the session is analyzed with wire model {}",
+            want.as_str(),
+            session.state().scope.wire_model
+        );
+        return Err(reject(diags, crate::ws_io::CODE_WIRE_MODEL, msg));
     }
 
     // Base edits, then the requested targets (`STA-REQ-0623`, `STA-REQ-0628`).
@@ -449,7 +464,18 @@ pub fn exec_whatif(
     let st = &session.state().scope;
     scope.insert("corners", &corner_names)?;
     scope.insert("wire_model", &st.wire_model)?;
-    scope.insert("parasitics", &"none")?;
+    scope.insert(
+        "parasitics",
+        &if st.wire_model == "spef_rc" {
+            "spef"
+        } else {
+            "none"
+        },
+    )?;
+    if st.wire_model == "spef_rc" {
+        scope.insert("delay_calculator", &"nldm_ceff_ramp")?;
+        scope.insert("coupling", &"grounded_factor_1")?;
+    }
     scope.insert("drc_status", &"unchecked")?;
     scope.insert("clock_model", &st.clock_model)?;
     scope.insert("cppr", &"off")?;
