@@ -3,14 +3,14 @@
 
 # Install from source
 
-RustSTA 0.4.1 is a development preview, built from this repository. It is not
+RustSTA 0.4.3 is a development preview on the RustEDA integration branch. It is not
 published on crates.io. Linux is the CI baseline; other platforms have no CI
 verification claim.
 
 Install Git and [Rust through rustup](https://rustup.rs/), then build both CLI tools:
 
 ```bash
-git clone https://github.com/lab-emi/RustSTA.git
+git clone --branch codex/unified-brand https://github.com/lab-emi/RustSTA.git
 cd RustSTA
 cargo build --locked --release -p rusteda-cli -p ruststa-cli
 export PATH="$PWD/target/release:$PATH"

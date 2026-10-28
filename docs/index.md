@@ -6,8 +6,18 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="assets/ruststa-banner.svg">
-  <img src="assets/ruststa-banner.gif" alt="Timing feedback for the next design iteration." width="1200" height="360">
+  <img src="assets/ruststa-banner.gif" alt="Timing feedback for the next design iteration." width="1200">
 </picture>
+
+## Development status · 2026-10-28
+
+**RustSTA 0.4.3** adds non-tree extracted RC networks to the integrated timing
+flow. SPEF import, effective-capacitance waveforms and propagated primary clocks
+are supported. Dual-PDK reference/circuit checks accompany full/incremental and
+CPU/CUDA consistency checks. Mixed-library SRAM timing and global derates remain
+experimental work outside this snapshot.
+
+[Progress, measured agreement and known residuals →](development-status.md)
 
 ## Analyze. Trace. Iterate.
 
@@ -91,11 +101,12 @@ complete import → analysis → report → check flow.
 | Contribute to RustSTA | [Architecture](architecture/index.md) → [contributing](contributing.md) |
 
 !!! note "Analysis scope"
-    RustSTA is a source preview. The current engine uses ideal clocks and ideal
-    or lumped wire-load models. Generated clocks, propagated clocks, CPPR and SPEF
-    annotation are outside the implemented scope. Check the
-    [support table](reference/scope.md) before interpreting a result.
+    RustSTA 0.4.3 is a source preview. It supports ideal and explicitly propagated
+    primary clocks, ideal/lumped wires and detailed SPEF RC networks. Generated
+    clocks, CPPR, CCS and crosstalk remain outside scope. The independent checker
+    returns `undecided` for extracted RC; full recomputation checks consistency.
+    Check the [support table](reference/scope.md) before interpreting a result.
 
 Part of the [RustEDA tool family](https://github.com/lab-emi).
-Use [RustSys](https://lab-emi.github.io/RustSys/) to synthesize RTL to standard cells,
+Use [RustSys](https://lab-emi.github.io/RustEDA/modules/rustsys/) to synthesize RTL to standard cells,
 then analyze the exported structural netlist with RustSTA.

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/ruststa-wordmark.svg" alt="RustSTA" width="440">
+  <img src="docs/assets/ruststa-wordmark.svg" alt="RustSTA" width="360">
 </p>
 
 <h1 align="center">Timing feedback for the next design iteration.</h1>
@@ -13,12 +13,27 @@
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/ruststa-banner.svg">
-  <img src="docs/assets/ruststa-banner.gif" alt="RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi-corner timing results, bounded queries and incremental updates" width="1200" height="360">
+  <img src="docs/assets/ruststa-banner.gif" alt="RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi-corner timing results, bounded queries and incremental updates" width="1200">
 </picture>
 
 RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi-corner timing results, bounded queries and incremental updates.
 
 Part of **[RustEDA](https://github.com/lab-emi/RustEDA)**, infrastructure for chip-design recursive self-improvement. Native tools shorten the work between inference steps; verified results guide the next iteration.
+
+## Development status · 2026-10-28
+
+The **RustEDA integration is at 0.4.3**: multi-corner NLDM timing, propagated
+primary clocks, bounded SPEF import, effective-capacitance waveforms and
+non-tree extracted RC networks. The verification record combines dual-PDK
+OpenSTA comparisons, independent circuit checks and full/incremental consistency.
+
+Mixed-library SRAM timing and global early/late derates are under development
+in a separate IHP checkout. They are not in this integration snapshot.
+The standalone `main` branch can lag the integration; use `codex/unified-brand`
+or RustEDA's pinned recursive checkout.
+
+[Development status, results and known residuals](docs/development-status.md) ·
+[RustEDA engine progress](https://lab-emi.github.io/RustEDA/engine-status/)
 
 ## Quick start
 
@@ -26,7 +41,7 @@ Install [Rust with rustup](https://rustup.rs/) and Git. The checkout pins Rust 1
 The default build needs no GPU or Python runtime.
 
 ```console,lab
-$ git clone https://github.com/lab-emi/RustSTA.git
+$ git clone --branch codex/unified-brand https://github.com/lab-emi/RustSTA.git
 $ cd RustSTA
 $ cargo build --locked --release -p rusteda-cli -p ruststa-cli
 ```
@@ -39,7 +54,7 @@ export PATH="$PWD/target/release:$PATH"
 
 ```console
 $ ruststa --version
-ruststa 0.4.1 (backends: cpu)
+ruststa 0.4.3 (backends: cpu)
 ```
 
 From the repository root, analyze the bundled eight-cell chain in a fresh workspace:
@@ -93,7 +108,7 @@ handles such as `path1` belong to the selected revision. Initialization creates
 | Multi-corner 1D/2D/3D Liberty NLDM tables | No CCS/ECSM or sign-off accuracy claim |
 | Setup/hold, latch borrowing, recovery/removal, gating checks | Ideal and explicit propagated primary clocks; generated clocks and CPPR remain outside scope |
 | Constants and supported `-from`/`-to` timing exceptions | Ordered `-through` exception hops are rejected by the engine |
-| Ideal, lumped wire-load and detailed SPEF RC trees | Moment-matched pi, charge-matched effective load and nonlinear driver slew; no crosstalk/CCS claim |
+| Ideal, lumped wire-load and detailed SPEF RC networks, including resistor loops | Moment-matched pi, effective load and driver waveforms; disconnected components emit `T0151`; no crosstalk/CCS claim |
 | CPU f64 and optional CUDA f64/f32 propagation | Metal/Accelerate is not a shipped backend |
 | Incremental `TimingSession` Rust API | The CLI `ruststa update` currently reports full recomputation |
 
