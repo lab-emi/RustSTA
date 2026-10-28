@@ -6,8 +6,19 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="assets/ruststa-banner.svg">
-  <img src="assets/ruststa-banner.gif" alt="Timing feedback for the next design iteration." width="1200" height="360">
+  <img src="assets/ruststa-banner.gif" alt="Timing feedback for the next design iteration." width="1200">
 </picture>
+
+
+## Latest RustEDA integration · 2026-10-28
+
+The integrated RustSTA development is documented in the
+[RustEDA module site](https://lab-emi.github.io/RustEDA/modules/ruststa/).
+This standalone site describes the older `main` source preview; it does not
+ship the integration branch's newer capabilities.
+
+[Development progress and evidence](development-status.md) ·
+[Use the integrated source](https://github.com/lab-emi/RustSTA/tree/codex/unified-brand)
 
 ## Analyze. Trace. Iterate.
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/ruststa-wordmark.svg" alt="RustSTA" width="440">
+  <img src="docs/assets/ruststa-wordmark.svg" alt="RustSTA" width="360">
 </p>
 
 <h1 align="center">Timing feedback for the next design iteration.</h1>
@@ -13,12 +13,29 @@
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/ruststa-banner.svg">
-  <img src="docs/assets/ruststa-banner.gif" alt="RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi-corner timing results, bounded queries and incremental updates" width="1200" height="360">
+  <img src="docs/assets/ruststa-banner.gif" alt="RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi-corner timing results, bounded queries and incremental updates" width="1200">
 </picture>
 
 RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi-corner timing results, bounded queries and incremental updates.
 
 Part of **[RustEDA](https://github.com/lab-emi/RustEDA)**, infrastructure for chip-design recursive self-improvement. Native tools shorten the work between inference steps; verified results guide the next iteration.
+
+
+## Development status · 2026-10-28
+
+The **RustEDA integration is at 0.4.3**: multi-corner NLDM timing, propagated
+primary clocks, bounded SPEF import, effective-capacitance waveforms and
+non-tree extracted RC networks. The verification record combines dual-PDK
+OpenSTA comparisons, independent circuit checks and full/incremental consistency.
+
+Mixed-library SRAM timing and global early/late derates are under development
+in a separate IHP checkout. They are not in this integration snapshot.
+The standalone `main` branch can lag the integration; use `codex/unified-brand`
+or RustEDA's pinned recursive checkout.
+
+[Development status, results and known residuals](docs/development-status.md) ·
+[RustEDA engine progress](https://lab-emi.github.io/RustEDA/engine-status/)
+
 
 ## Quick start
 

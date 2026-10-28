@@ -85,6 +85,7 @@ validation:
 nav:
   - RustEDA: https://lab-emi.github.io/RustEDA/
   - Home: index.md
+  - Development: development-status.md
   - Get started:
       - Install from source: guide/installation.md
       - Your first timing run: guide/quickstart.md
