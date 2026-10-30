@@ -134,6 +134,12 @@ unverified. No numerical RustSTA-vs-OpenSTA speedup is claimed by this release.
 Compare pinned reference executables as black boxes and report complete command
 wall time, peak memory, timing scope and numerical agreement together.
 
+In the RustEDA Ibex flow on IHP SG13G2 / EZ130 (two real SRAMs), RustSTA drives the
+frontend and post-route repairs and signs off TT/SS extracted timing beside OpenSTA. In run16
+(2026-10-30) the two agreed within 0.806 ps on identical SPEF, against a 1 ps gate. The
+whole-flow comparison with LibreLane is on the
+[RustEDA benchmarks page](https://lab-emi.github.io/RustEDA/benchmarks/).
+
 [Verification scope](docs/verification/index.md) · [Dual-PDK suite](docs/verification/pdk.md) ·
 [Performance and memory](docs/guide/performance.md)
 

@@ -60,11 +60,8 @@ after normalizing the version.
   loops and with unconnected parts.
 
 ### Performance
-- End-to-end `ruststa run` (three corners, two threads, median of seven sequential runs on a
-  shared machine) is unchanged on tree-only designs (0.178 s vs 0.180 s on a GF180 transmitter,
-  0.488 s vs 0.479 s on a GF180 register file, 0.390 s vs 0.410 s on a sky130 multiplier); peak
-  memory is unchanged (within 0.6 %). A net with `k` loops adds `8 (k^2 + k + 5 n)` bytes of
-  scratch while it is reduced.
+- End-to-end `ruststa run` time and peak memory are unchanged on tree-only designs. A net with
+  `k` loops adds `8 (k^2 + k + 5 n)` bytes of scratch while it is reduced.
 
 ### Known differences
 - On networks with resistor loops the reference timing tool's delays differ from the solved
@@ -101,10 +98,7 @@ improves from 6.5 ps to 0.64 ps mean error.
   exponential response. Sink transitions of shielded nets are larger (by up to 22 ps on the
   synthetic probes), and the sink arrival against the circuit improves as stated above.
 - The RC preparation is faster: the correction replaces the bounded bisection of the charge
-  solve. End-to-end `ruststa run` (three corners, two threads, median of seven sequential runs
-  on a shared machine) takes 0.17 s instead of 0.39 s on a GF180 transmitter, 0.39 s instead of
-  1.10 s on a GF180 register file and 0.40 s instead of 1.26 s on a sky130 multiplier; peak
-  memory is unchanged (within 1 %). The driver waveform record adds 96 bytes per pin.
+  solve. Peak memory is unchanged; the driver waveform record adds 96 bytes per pin.
 
 ### Added
 - `rusteda_compute::rc::gate_one_step` and `rusteda_compute::rc::wire_from_driver` (shared crate,
