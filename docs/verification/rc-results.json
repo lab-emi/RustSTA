@@ -1,0 +1,716 @@
+{
+  "schema": "ruststa.rc-waveform-evidence.v1",
+  "version": "0.3.0",
+  "date": "2026-10-23",
+  "base_commit": "4fa5e1837cf4bd3972e80c53ae4b8d8ce6dd639c",
+  "status": "passed",
+  "scope": {
+    "corner": "tt",
+    "wire_model": "spef_rc",
+    "delay_calculator": "nldm_ceff_ramp",
+    "coupling": "grounded_factor_1",
+    "clock_model": "propagated",
+    "cppr": "off",
+    "precision": "f64",
+    "driver_resistance": "nldm_delay_sensitivity_proxy",
+    "fabrication_signoff": "unverified"
+  },
+  "fixed_tolerance_ns": 0.001,
+  "previous_version_max_difference_ns": {
+    "sky130": 0.003148661183738244,
+    "gf180": 0.00679281354870831
+  },
+  "tests": {
+    "passed": 674,
+    "wall_time": "0:47.97",
+    "peak_rss_kib": 840368,
+    "exit_code": 0
+  },
+  "focused_rejection_tests": {
+    "status": "passed",
+    "wall_time": "0:13.02",
+    "peak_rss_kib": 842044,
+    "exit_code": 0
+  },
+  "clippy": {
+    "status": "passed",
+    "wall_time": "0:03.21",
+    "peak_rss_kib": 397332,
+    "exit_code": 0
+  },
+  "build": {
+    "wall_time": "0:25.08",
+    "peak_rss_kib": 812596,
+    "exit_code": 0
+  },
+  "oracle": {
+    "status": "passed",
+    "transient_circuits": 9,
+    "max_time_error_ns": 8.441179932816567e-08,
+    "max_charge_error_pf": 1.4921472911433309e-09,
+    "time_tolerance_ns": 1e-06,
+    "charge_tolerance_pf": 1e-08,
+    "driver_cases": [
+      {
+        "case": "case0",
+        "crossing_error_ns": 2.4369177009653242e-08,
+        "slew_error_ns": 5.379750689371576e-08,
+        "fit_error_ns": 7.150339764727676e-08,
+        "charge_error_pf": 1.2083275248431224e-09
+      },
+      {
+        "case": "case1",
+        "crossing_error_ns": 6.632691063046536e-09,
+        "slew_error_ns": 1.3370294316139564e-09,
+        "fit_error_ns": 2.531371617875422e-08,
+        "charge_error_pf": 2.4407477774990305e-10
+      },
+      {
+        "case": "case2",
+        "crossing_error_ns": 4.0604669793165016e-08,
+        "slew_error_ns": 4.035389467027528e-09,
+        "fit_error_ns": 1.0067862904472591e-08,
+        "charge_error_pf": 6.322871011488207e-10
+      },
+      {
+        "case": "case3",
+        "crossing_error_ns": 3.877692977827252e-08,
+        "slew_error_ns": 1.4475485254905607e-09,
+        "fit_error_ns": 8.441179932816567e-08,
+        "charge_error_pf": 1.4921472911433309e-09
+      },
+      {
+        "case": "case4",
+        "crossing_error_ns": 2.0526718880198302e-08,
+        "slew_error_ns": 6.416202097403456e-08,
+        "fit_error_ns": 6.003258440356873e-08,
+        "charge_error_pf": 4.945622592011922e-10
+      }
+    ],
+    "wire_cases": [
+      {
+        "case": "wire0",
+        "delay_error_ns": 4.361119890911036e-08,
+        "slew_error_ns": 1.2777602174246505e-08
+      },
+      {
+        "case": "wire1",
+        "delay_error_ns": 5.551115123125783e-17,
+        "slew_error_ns": 5.551115123125783e-17
+      },
+      {
+        "case": "wire2",
+        "delay_error_ns": 1.9770673181929155e-08,
+        "slew_error_ns": 3.6111989093479124e-08
+      },
+      {
+        "case": "wire3",
+        "delay_error_ns": 3.829275441180613e-08,
+        "slew_error_ns": 5.328556385020278e-08
+      }
+    ],
+    "tool": {
+      "file": "ngspice",
+      "sha256": "25b6a73fafd9b489b92347a6c55fe307db502c1638f53d7d0bf439b5f7c65e38",
+      "bytes": 8593080,
+      "version": "******\n** ngspice-45.2 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2025, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Fri Sep 12 11:58:13 UTC 2025\n******"
+    },
+    "wall_time": "0:00.57",
+    "peak_rss_kib": 18504,
+    "exit_code": 0
+  },
+  "actual_resize": {
+    "status": "passed",
+    "pdks": 2,
+    "wall_time": "0:00.44",
+    "peak_rss_kib": 138184,
+    "exit_code": 0
+  },
+  "gpu": {
+    "status": "passed",
+    "tests": 3,
+    "tolerance": "bitwise",
+    "waveform_preparation": "cpu_f64",
+    "engine": {
+      "wall_time": "0:00.41",
+      "peak_rss_kib": 244628,
+      "exit_code": 0
+    },
+    "prepared_abi": {
+      "wall_time": "0:00.21",
+      "peak_rss_kib": 243756,
+      "exit_code": 0
+    }
+  },
+  "acceptance": {
+    "status": "passed",
+    "receipts": 20,
+    "wall_time": "0:01.24",
+    "peak_rss_kib": 120312,
+    "exit_code": 0
+  },
+  "tools": {
+    "rusteda": {
+      "bytes": 29105896,
+      "sha256": "5f19144410590f1e922e74ea99691ec6c18369e4bb97205658ad33cb12591fdb",
+      "version": "rusteda 0.3.0"
+    },
+    "ruststa": {
+      "bytes": 59179088,
+      "sha256": "e9fd98be5db1c52e101a1e2ac8f5f8762bd333ba0a02cd765d3fc1ced276abc3",
+      "version": "ruststa 0.3.0 (backends: cpu)"
+    },
+    "opensta": {
+      "bytes": 9077264,
+      "sha256": "49ddbd40385e6b54152aed6d7435e4114e409e5f168884d8945374a42f00301b",
+      "version": "3.1.0"
+    }
+  },
+  "pdks": [
+    {
+      "pdk": "sky130",
+      "inputs": {
+        "library": {
+          "file": "sky130_fd_sc_hd__tt_025C_1v80.lib",
+          "sha256": "8e78e14442062dba34d414fca6490b2f6b96038d4510d1438ca44fee31487135",
+          "bytes": 12841637
+        },
+        "netlist": {
+          "file": "sky130_exported.v",
+          "sha256": "1ad8fa185c81674e73aced9f851af3a9c45bc15e18d9830e60e9ca5727041be9",
+          "bytes": 1277
+        },
+        "sdc": {
+          "file": "sky130_postroute.sdc",
+          "sha256": "f557ef93d45ea9e904843d478ff5691933f6ceb577e6e34e372676b14aa9bab6",
+          "bytes": 531
+        },
+        "spef": {
+          "file": "routing-sky130.spef.gz",
+          "sha256": "c6278709eb87ffff075457efc1a739f98edb3d503622415cca1482c6866d13db",
+          "bytes": 161145
+        }
+      },
+      "scope": {
+        "corner": "tt",
+        "wire_model": "spef_rc",
+        "parasitics": "spef",
+        "drc_status": "unchecked",
+        "wire_load": null,
+        "delay_calculator": "nldm_ceff_ramp",
+        "coupling": "grounded_factor_1",
+        "physical_clock_domains": 1,
+        "clock_model": "propagated",
+        "cppr": "off",
+        "backend": "cpu",
+        "precision": "f64"
+      },
+      "endpoints": 8,
+      "completeness": {
+        "constrained_endpoints": 8,
+        "unconstrained_endpoints": 0,
+        "clock_domains": [
+          "core"
+        ],
+        "unconstrained_by_reason": {},
+        "unconstrained_inputs": 0,
+        "disabled_arcs": 0,
+        "unanalyzed_arcs": {
+          "min_pulse_width": 4
+        }
+      },
+      "metrics": {
+        "wns_ns": 0.0,
+        "tns_ns": 0.0,
+        "violating_endpoints": 0,
+        "whs_ns": 0.0,
+        "ths_ns": 0.0,
+        "hold_violating_endpoints": 0,
+        "worst_setup_slack_ns": 8.945669658248658,
+        "worst_hold_slack_ns": 0.0002468887865704761
+      },
+      "diagnostic_codes": [
+        "D0021",
+        "T0015",
+        "T0074",
+        "T0076"
+      ],
+      "max_difference_ns": 0.0005490974976520846,
+      "tolerance_ns": 0.001,
+      "comparisons": [
+        {
+          "endpoint": "y[1]",
+          "kind": "setup",
+          "native_ns": 8.945669658248658,
+          "reference_ns": 8.945290565491,
+          "difference_ns": 0.0003790927576581282
+        },
+        {
+          "endpoint": "y[1]",
+          "kind": "hold",
+          "native_ns": 0.8786767440885196,
+          "reference_ns": 0.87910836935,
+          "difference_ns": 0.00043162526148043945
+        },
+        {
+          "endpoint": "y[0]",
+          "kind": "setup",
+          "native_ns": 8.997263983177987,
+          "reference_ns": 8.996977806091,
+          "difference_ns": 0.0002861770869877489
+        },
+        {
+          "endpoint": "y[0]",
+          "kind": "hold",
+          "native_ns": 0.851120691874627,
+          "reference_ns": 0.851447284222,
+          "difference_ns": 0.00032659234737297815
+        },
+        {
+          "endpoint": "z[0]",
+          "kind": "setup",
+          "native_ns": 9.270829935510653,
+          "reference_ns": 9.270280838013,
+          "difference_ns": 0.0005490974976520846
+        },
+        {
+          "endpoint": "z[0]",
+          "kind": "hold",
+          "native_ns": 0.5978013086851492,
+          "reference_ns": 0.598270237446,
+          "difference_ns": 0.00046892876085080637
+        },
+        {
+          "endpoint": "z[1]",
+          "kind": "setup",
+          "native_ns": 9.290287299108462,
+          "reference_ns": 9.290099143982,
+          "difference_ns": 0.00018815512646241928
+        },
+        {
+          "endpoint": "z[1]",
+          "kind": "hold",
+          "native_ns": 0.5641727844495252,
+          "reference_ns": 0.564393520355,
+          "difference_ns": 0.00022073590547477817
+        },
+        {
+          "endpoint": "r2/D",
+          "kind": "setup",
+          "native_ns": 9.314143084838824,
+          "reference_ns": 9.314030647278,
+          "difference_ns": 0.00011243756082279788
+        },
+        {
+          "endpoint": "r2/D",
+          "kind": "hold",
+          "native_ns": 0.03014988209920927,
+          "reference_ns": 0.030106863007,
+          "difference_ns": 4.301909220926978e-05
+        },
+        {
+          "endpoint": "r3/D",
+          "kind": "setup",
+          "native_ns": 9.366986280219564,
+          "reference_ns": 9.366862297058,
+          "difference_ns": 0.00012398316156314593
+        },
+        {
+          "endpoint": "r3/D",
+          "kind": "hold",
+          "native_ns": 0.003919835302834851,
+          "reference_ns": 0.00387931359,
+          "difference_ns": 4.0521712834851e-05
+        },
+        {
+          "endpoint": "r1/D",
+          "kind": "setup",
+          "native_ns": 9.7059894828045,
+          "reference_ns": 9.706031799316,
+          "difference_ns": 4.231651150021776e-05
+        },
+        {
+          "endpoint": "r1/D",
+          "kind": "hold",
+          "native_ns": 0.008185302141920425,
+          "reference_ns": 0.008136824705,
+          "difference_ns": 4.847743692042508e-05
+        },
+        {
+          "endpoint": "r0/D",
+          "kind": "setup",
+          "native_ns": 9.710117622855535,
+          "reference_ns": 9.710154533386,
+          "difference_ns": 3.691053046495085e-05
+        },
+        {
+          "endpoint": "r0/D",
+          "kind": "hold",
+          "native_ns": 0.0002468887865704761,
+          "reference_ns": 0.0001948719,
+          "difference_ns": 5.2016886570476075e-05
+        }
+      ],
+      "full": "agree",
+      "incremental_noop": "agree",
+      "timing_closure": "met",
+      "physical": {
+        "geometry": {
+          "status": "passed",
+          "routed_nets": 19,
+          "terminals": 46,
+          "wires": 4964,
+          "vias": 101,
+          "comparison_work": 4286,
+          "components": 120,
+          "subset_drc_status": "passed",
+          "full_drc_status": "unchecked",
+          "negative_controls": {
+            "missing_net_route": "rejected",
+            "supply_short": "rejected"
+          }
+        },
+        "cec": "equivalent",
+        "simulation": {
+          "status": "passed",
+          "vectors": 512,
+          "checked_pipeline_cycles": 511,
+          "initial_state": "unconstrained; y sampled after two edges"
+        },
+        "clock_skew_ns": [
+          0.043527822942,
+          0.02324673906
+        ],
+        "missing_annotation": "rejected",
+        "skew_negative": {
+          "status": "rejected",
+          "skew_ns": [
+            1.744396805763,
+            1.689478397369
+          ],
+          "resistance_scale": 10000
+        }
+      }
+    },
+    {
+      "pdk": "gf180",
+      "inputs": {
+        "library": {
+          "file": "gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib",
+          "sha256": "f9dee07cf158324934b0c59144d970a2e8313f43533ede6283ec3c136f82fe53",
+          "bytes": 20107439
+        },
+        "netlist": {
+          "file": "gf180_exported.v",
+          "sha256": "ed1022d774cfe365fb879344f013363e12ca122936003131a52c5f6e68d1d5a4",
+          "bytes": 1389
+        },
+        "sdc": {
+          "file": "gf180_postroute.sdc",
+          "sha256": "f557ef93d45ea9e904843d478ff5691933f6ceb577e6e34e372676b14aa9bab6",
+          "bytes": 531
+        },
+        "spef": {
+          "file": "routing-gf180.spef.gz",
+          "sha256": "47e7d23fb35bd807473b61014b5e66597e6615131360f6a8e08d48a2cd50ea9f",
+          "bytes": 181895
+        }
+      },
+      "scope": {
+        "corner": "tt",
+        "wire_model": "spef_rc",
+        "parasitics": "spef",
+        "drc_status": "unchecked",
+        "wire_load": null,
+        "delay_calculator": "nldm_ceff_ramp",
+        "coupling": "grounded_factor_1",
+        "physical_clock_domains": 1,
+        "clock_model": "propagated",
+        "cppr": "off",
+        "backend": "cpu",
+        "precision": "f64"
+      },
+      "endpoints": 8,
+      "completeness": {
+        "constrained_endpoints": 8,
+        "unconstrained_endpoints": 0,
+        "clock_domains": [
+          "core"
+        ],
+        "unconstrained_by_reason": {},
+        "unconstrained_inputs": 0,
+        "disabled_arcs": 0,
+        "unanalyzed_arcs": {
+          "min_pulse_width": 8,
+          "minimum_period": 8
+        }
+      },
+      "metrics": {
+        "wns_ns": 0.0,
+        "tns_ns": 0.0,
+        "violating_endpoints": 0,
+        "whs_ns": -0.6355345830601125,
+        "ths_ns": -2.1930445465871835,
+        "hold_violating_endpoints": 4,
+        "worst_setup_slack_ns": 7.315693878229817,
+        "worst_hold_slack_ns": -0.6355345830601125
+      },
+      "diagnostic_codes": [
+        "D0021",
+        "T0015",
+        "T0074",
+        "T0076"
+      ],
+      "max_difference_ns": 0.0003017938614919835,
+      "tolerance_ns": 0.001,
+      "comparisons": [
+        {
+          "endpoint": "y[0]",
+          "kind": "setup",
+          "native_ns": 7.315693878229817,
+          "reference_ns": 7.315430164337,
+          "difference_ns": 0.0002637138928172078
+        },
+        {
+          "endpoint": "y[0]",
+          "kind": "hold",
+          "native_ns": 2.3460684263225082,
+          "reference_ns": 2.346370220184,
+          "difference_ns": 0.0003017938614919835
+        },
+        {
+          "endpoint": "y[1]",
+          "kind": "setup",
+          "native_ns": 7.367095625808947,
+          "reference_ns": 7.366880893707,
+          "difference_ns": 0.0002147321019467796
+        },
+        {
+          "endpoint": "y[1]",
+          "kind": "hold",
+          "native_ns": 2.3145409814207656,
+          "reference_ns": 2.314773797989,
+          "difference_ns": 0.00023281656823437302
+        },
+        {
+          "endpoint": "r3/D",
+          "kind": "setup",
+          "native_ns": 7.949245911680734,
+          "reference_ns": 7.949203968048,
+          "difference_ns": 4.19436327341316e-05
+        },
+        {
+          "endpoint": "r3/D",
+          "kind": "hold",
+          "native_ns": -0.6355345830601125,
+          "reference_ns": -0.635652005672,
+          "difference_ns": 0.00011742261188751879
+        },
+        {
+          "endpoint": "r2/D",
+          "kind": "setup",
+          "native_ns": 8.003113330381105,
+          "reference_ns": 8.003061294556,
+          "difference_ns": 5.203582510482363e-05
+        },
+        {
+          "endpoint": "r2/D",
+          "kind": "hold",
+          "native_ns": -0.5817070466239314,
+          "reference_ns": -0.58172416687,
+          "difference_ns": 1.7120246068591527e-05
+        },
+        {
+          "endpoint": "z[0]",
+          "kind": "setup",
+          "native_ns": 9.028469824644679,
+          "reference_ns": 9.028297424316,
+          "difference_ns": 0.00017240032867960053
+        },
+        {
+          "endpoint": "z[0]",
+          "kind": "hold",
+          "native_ns": 0.794551517640249,
+          "reference_ns": 0.794724524021,
+          "difference_ns": 0.00017300638075101737
+        },
+        {
+          "endpoint": "z[1]",
+          "kind": "setup",
+          "native_ns": 9.087160527530877,
+          "reference_ns": 9.087084770203,
+          "difference_ns": 7.57573278757917e-05
+        },
+        {
+          "endpoint": "z[1]",
+          "kind": "hold",
+          "native_ns": 0.7583881898747445,
+          "reference_ns": 0.758463323116,
+          "difference_ns": 7.513324125540954e-05
+        },
+        {
+          "endpoint": "r1/D",
+          "kind": "setup",
+          "native_ns": 9.648640078683963,
+          "reference_ns": 9.6487159729,
+          "difference_ns": 7.589421603704238e-05
+        },
+        {
+          "endpoint": "r1/D",
+          "kind": "hold",
+          "native_ns": -0.48727764912250804,
+          "reference_ns": -0.487347573042,
+          "difference_ns": 6.992391949195431e-05
+        },
+        {
+          "endpoint": "r0/D",
+          "kind": "setup",
+          "native_ns": 9.649677472516432,
+          "reference_ns": 9.649753570557,
+          "difference_ns": 7.609804056762925e-05
+        },
+        {
+          "endpoint": "r0/D",
+          "kind": "hold",
+          "native_ns": -0.48852526778063154,
+          "reference_ns": -0.488595664501,
+          "difference_ns": 7.039672036845968e-05
+        }
+      ],
+      "full": "agree",
+      "incremental_noop": "agree",
+      "timing_closure": "violated",
+      "physical": {
+        "geometry": {
+          "status": "passed",
+          "routed_nets": 19,
+          "terminals": 46,
+          "wires": 4982,
+          "vias": 77,
+          "comparison_work": 3527,
+          "components": 96,
+          "subset_drc_status": "passed",
+          "full_drc_status": "unchecked",
+          "negative_controls": {
+            "missing_net_route": "rejected",
+            "supply_short": "rejected"
+          }
+        },
+        "cec": "equivalent",
+        "simulation": {
+          "status": "passed",
+          "vectors": 512,
+          "checked_pipeline_cycles": 511,
+          "initial_state": "unconstrained; y sampled after two edges"
+        },
+        "clock_skew_ns": [
+          0.074712350965,
+          0.065211392939
+        ],
+        "missing_annotation": "rejected",
+        "skew_negative": {
+          "status": "rejected",
+          "skew_ns": [
+            2.229317188263,
+            2.242554664612
+          ],
+          "resistance_scale": 10000
+        }
+      }
+    }
+  ],
+  "pipeline": {
+    "functional_status": "passed",
+    "timing_accuracy_status": "passed",
+    "overall_status": "partial",
+    "receipts": 90,
+    "measurement": {
+      "wall_time": "0:14.38",
+      "peak_rss_kib": 404008,
+      "exit_code": 3
+    },
+    "physical_binary_sha256": "07788f848ed292a470242fba5e551b9752f0871edd05e7373903128b477e77ca",
+    "reference_extractor": {
+      "image_id": "f152917ebc458bd015042e44d9dac5af69bcae9fb5657d5121cb4d7226ed0c67",
+      "sha256": "faf4843f6712e56507d1ee3db7c3984c8bc3c732af5c79ca0221b04c4ab150a2"
+    },
+    "full_drc_status": "unchecked",
+    "lvs_status": "unchecked",
+    "full_rtl_to_gds": "unverified"
+  },
+  "dependency_check": {
+    "status": "passed",
+    "mode": "offline cached advisory database",
+    "wall_time": "0:00.16",
+    "peak_rss_kib": 86988,
+    "exit_code": 0
+  },
+  "negative_controls": {
+    "missing_reference": "unverified"
+  },
+  "source_sha256": {
+    "Cargo.lock": "9c3e0c968e672e2ca3d38c20c1bfd7d403e7310bdd3b772ce576a4b829ccc5c1",
+    "Cargo.toml": "ec164c710b2c79e811abf8b3354fc1bb6e85c00ad4d7ef4b64a37e7590a6db9b",
+    "README.md": "bb1095a9fa860d0a4da05152bcb3a52383828179728c7c1d2944625960a68b39",
+    "crates/apps/ruststa-cli/src/whatif.rs": "1a0f2b0883f0467560d37224ebea7525a8934b43be7e6081a47231f060d88f1e",
+    "crates/apps/ruststa-cli/src/ws_io.rs": "b3f13ddb3dbf9fc7daa6451ac33a7d881b3de2539c475f481db5248234ed41d2",
+    "crates/core/rusteda-compute/src/lib.rs": "f651a75a81f6fb438bf64d4baa48f2451ab62f4477c142c7e3c1649ee51d7c70",
+    "crates/core/rusteda-compute/src/rc.rs": "3cd6ee42428dbe06151ea414684987725ace3efdcb7f192bf18695b8936e4d7d",
+    "crates/core/rusteda-compute/src/timing/abi.rs": "2185b7a81649244c10b6db436ec9604f5284c0eecbe9656e57ce60a2c1bab8b7",
+    "crates/core/rusteda-compute/src/timing/cpu.rs": "5db80c1d475645d75fe4346a3ef678b213cb424ce8ebe6a949e3aac821c38ad9",
+    "crates/core/rusteda-compute/src/timing/cuda.rs": "c89580e62748bdb78eb46db2ca955a5f64a7f9019e1b78132fbbe43bd41788d6",
+    "crates/core/rusteda-compute/src/timing/kernels/timing.cu": "ee120b63de24d009ff344b6aed88f5019bf3a1c73a74176a20211a2746f4a55d",
+    "crates/core/rusteda-compute/src/timing/mod.rs": "5bca94e335365b9d1f5e6cdeac68a39796eb88f2f11ce23cab6759ed7fae1683",
+    "crates/core/rusteda-compute/src/timing/tests/mod.rs": "a0fb8af237941fa1eea97da8e84a085a76fa03fee96034250caa99636545b59d",
+    "crates/core/rusteda-compute/src/timing/tests/prepared.rs": "b7f403ba4e69b0e08ba0f3ed31aa0fa9894ae75579068680778eacd2a48285a6",
+    "crates/core/rusteda-compute/src/timing/tests/random.rs": "f1768224d94512b54d2bc6840d0a5a3d2d31d20f80a73b0a00979f3fba5d6143",
+    "crates/core/rusteda-compute/src/timing/validate.rs": "4731a7e516bf3d21d3d4b278ddb2d5ed7c5aca9cd13fe18731ed058dc147adad",
+    "crates/core/rusteda-compute/tests/rc_transient.rs": "adc587c73edd1f58d25f3d539623a06a5a9a598ed9ad6b3b0c8ce6fd5a5c91e1",
+    "crates/engines/ruststa/src/engine/analysis.rs": "402de65c98fdb35ca53d1bf41a0835534dbdf0d0597810f94459b5bc92c9a48f",
+    "crates/engines/ruststa/src/engine/delay/gate.rs": "618c197d2fc9650f0850bb57e3d29d3cc2e495b739e055ae058f77b2a563f2ad",
+    "crates/engines/ruststa/src/engine/delay/load.rs": "975a184fb6ef413995d1a8917d6f720065a69e87f08379c8c4837c06400a8a7e",
+    "crates/engines/ruststa/src/engine/delay/spef.rs": "505b827afccbcf032e0b729beb535c366b7bc151f058ad5ff43f7f421fbaa12d",
+    "crates/engines/ruststa/src/engine/delay/spef/tree.rs": "2b618b61ecab1c99f9db73505f5f60bf3368bc092751747ebf44396c5e02b302",
+    "crates/engines/ruststa/src/engine/delay/wire.rs": "9f340ecbcb438064e7c4a686d0ead24babcadf6f5dcd021dc832a686e0de5f52",
+    "crates/engines/ruststa/src/engine/incr/cone.rs": "05649b2e03b9d4f5b3e4d550a77c5a00a755aa0c9dbf71d179be6fc9ee31b5bb",
+    "crates/engines/ruststa/src/engine/incr/mod.rs": "48d9c27f008f2a3d6bb1a2d3db96dd08559c67b464e033d2a507016c9b6a8e95",
+    "crates/engines/ruststa/src/engine/input/libview/mod.rs": "39d2bf197fbd1631ff86ec52d0f0fa3b741521a2958b6b40083ef564816820f6",
+    "crates/engines/ruststa/src/engine/input/libview/thresholds.rs": "22116b01fdafc7a8a5fd0def6025b85f3deee1650151f36fcc7b08dcb82f3bac",
+    "crates/engines/ruststa/src/engine/prop/backward/required.rs": "d8895fd318ec245d10424cc32f4dfad168921d8ab818174eff4b7e143dd02366",
+    "crates/engines/ruststa/src/engine/prop/clocks/propagated.rs": "94c305a4e20e0b26aa9734e88ba0b8a0d47c1bb6f5100e5d99ca017e43fcd63a",
+    "crates/engines/ruststa/src/engine/prop/lower.rs": "739a6dfd1b61aa6b58af525eb56e86632106c9cdc37d77149b4565156c59b90d",
+    "crates/engines/ruststa/src/engine/prop/lower/rc.rs": "b18b2464102f231d8460f39d5756e48b0b3e5bc3e2d5c6ff9b905ae4b7ba1c7a",
+    "crates/engines/ruststa/src/engine/prop/starts.rs": "3462a082e2dcb7863f8a608841a1e6bb0d751ed9ba528b261487bc75a0bd3aab",
+    "crates/engines/ruststa/src/engine/store/from_analysis.rs": "5e3ff03dc61bee612002d8b51b7daf1a9e35b11bad0da36cbfa349bfa4d4648f",
+    "crates/engines/ruststa/tests/extracted.rs": "a7d9b54ec47eb75685b1343f0fd740ba5d24f2295879b6dbf4a015413da7189a",
+    "crates/formats/rusteda-formats/src/spef/mod.rs": "f01cdaee31214bf67b53f768d9ab3d7da6ae5815914c33529ef28c1e6d374a7c",
+    "docs/_tools/rc_report.py": "18dc81fc74ea3f95d2e8bc92a1a10db338a1651b8e446399e9eec36f51e39b72",
+    "docs/_tools/site_hooks.py": "ebc646aae1f459e7f4f79e672289230d9112dc6eadc78b714ba1af446ea026dc",
+    "docs/guide/installation.md": "411163cfa77414f0befdaf2d20cf3154a5af28c5364409088f5113ffb7c763bd",
+    "docs/guide/spef.md": "1de755bd4e2e0a7a826c13a814968b00bc8e1978fc5e74a27caf960b8b3dc6d9",
+    "docs/mkdocs.yml": "60289afea7f9aef89dfd0a978223cb28c93f13d2743905541b8b8ef841cdbb15",
+    "docs/reference/scope.md": "5194d485aa31f785d7dd6a4a4faac1b1a6034106b2fd6aeba3ed218cf39393b8",
+    "docs/references.bib": "60e8d54b0c474f17a03be49a7badb896f9b16599450b8f3e3d15ac5a8f133b78",
+    "docs/specs/compute/timing.md": "73e58da3c98ea28123fdb1ca49ca75cd8be0103e489a82f186c48682fae9afc9",
+    "docs/specs/sta/README.md": "fefe02ce17abf4d8519bf20d556e40f3adf16b77a3686efb52c1af3ecffcfe1e",
+    "docs/specs/sta/parasitics.md": "38d35acf38f1697d0aabc1ea9c565e6c612465ae72821e614b1b508a4ce4932d",
+    "docs/specs/sta/rc-waveforms.md": "51f04fce6d1b24e097e95e209cb6a258507fc7af63d4ab3e81137fcf1fbf6acf",
+    "docs/verification/rc-waveforms.md": "92dbef87dea651fa63244a21ab44af8dee12da81ffd8ffe88f4f28eb1eb59bc4",
+    "docs/verification/requirements.md": "f69f6a3060eeba951d729a2535fdf5e4a1d7e8d8027335c3557b9561f736d915",
+    "rust-toolchain.toml": "24a5037a8f0a264369ef37bb46e019ade6c524beaead1c28f77a429f856a066b",
+    "verification/rc_waveforms.py": "5359b5c55b7cf86a8e5fd63110a3bf6ba5218fe6f7eb25f75d33ba72bb3e8a79",
+    "verification/shared.sha256": "634e3d715633a4e897cdb82b83fc036dd8a90e7cf3a7bcb90503fde20b45ca24",
+    "verification/spef_acceptance.py": "199586b80b4a17b09bb72f237ff5f09eb62c864575a7e5674341eeb1b0e34997",
+    "verification/suites/compute/timing.toml": "79c6d25fd60fa3a0f769f4de8174caaa69bb4d5506687deef361bfeed671b739",
+    "verification/suites/sta/spef.toml": "36b2a9395e3f19320c878f4564f70c05ae1359d912d23e79162da07f04dbf5eb"
+  },
+  "report_validation": {
+    "status": "passed",
+    "scope": "static HTML and links; no browser visual review",
+    "site_pages": 67,
+    "site_local_references": 6728,
+    "source_pages": 65,
+    "source_local_references": 287,
+    "failures": 0
+  }
+}

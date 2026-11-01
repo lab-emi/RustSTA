@@ -42,7 +42,7 @@ use crate::engine::store::writer::StaStoreData;
 use crate::engine::types::{An, NodeId, Tr};
 
 /// Options of a [`TimingSession`] (`STA-REQ-0450`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SessionOptions {
     /// Options of every analysis of the session: backend, precision, wire model and budgets.
     pub analysis: AnalysisOptions,

@@ -327,7 +327,7 @@ fn seed_dff_launch(nt: &NetlistTiming, lib: &TimingLib, sb: &mut StartBuilder, p
     );
 }
 
-// STA-REQ-0010, STA-REQ-0011, STA-REQ-0012, STA-REQ-0013, STA-REQ-0014, STA-REQ-0108,
+// STA-REQ-0010, STA-REQ-0011, STA-REQ-0012, STA-REQ-0017, STA-REQ-0014, STA-REQ-0108,
 // STA-REQ-0112, STA-REQ-0114: closed-form `wt_15` (1ns / 1pF) and `wt_units` (100ps / 10fF)
 // produce identical physical capacitances, delays, slews, and check constraints within 1e-12 ns.
 #[test]
@@ -539,7 +539,7 @@ fn closed_form_wt_3d_trilinear_lookup() {
     }
 }
 
-// STA-REQ-0012, STA-REQ-0013, STA-REQ-0016, STA-REQ-0113, STA-REQ-0223: `wt_gfconv`,
+// STA-REQ-0012, STA-REQ-0017, STA-REQ-0016, STA-REQ-0113, STA-REQ-0223: `wt_gfconv`,
 // `wt_tristate`, and `wt_thresholds`.
 #[test]
 fn closed_form_wt_gfconv_wt_tristate_and_wt_thresholds() {
@@ -925,7 +925,7 @@ endmodule
     );
 }
 
-// STA-REQ-0013, STA-REQ-0110, STA-REQ-0121, STA-REQ-0223: analytic case `tristate_bus`
+// STA-REQ-0017, STA-REQ-0110, STA-REQ-0121, STA-REQ-0223: analytic case `tristate_bus`
 // (`verification/analytic/sta/tristate_bus/DERIVATION.md` and `expected.json`).
 #[test]
 fn analytic_tristate_bus() {
@@ -1074,33 +1074,18 @@ endmodule
     }
 }
 
-// STA-REQ-0010, STA-REQ-0016: duplicate cell definition in a corner (`T0012`) and differing
-// thresholds within one corner (`T0013`) are rejected with errors.
+// Duplicate cell definitions and invalid threshold metadata fail; valid mixed libraries are supported.
 #[test]
-fn duplicate_cell_and_threshold_mismatch_errors() {
-    let text_15 = library(Variant::Wt15);
-    let text_thr = library(Variant::Thresholds);
-
-    let err_dup = TimingLib::from_liberty_texts("nom", &[("a.lib", &text_15), ("b.lib", &text_15)])
-        .unwrap_err();
-    assert_eq!(err_dup.code, "T0012");
-    assert!(
-        err_dup.message.contains("defined more than once"),
-        "{}",
-        err_dup.message
-    );
-
-    let err_thr = TimingLib::from_liberty_texts(
-        "nom",
-        &[("wt_15.lib", &text_15), ("wt_thresholds.lib", &text_thr)],
-    )
-    .unwrap_err();
-    assert_eq!(err_thr.code, "T0013");
-    assert!(
-        err_thr.message.contains("slew_derate_from_library"),
-        "{}",
-        err_thr.message
-    );
+fn duplicate_cell_and_invalid_threshold_errors() {
+    let text = library(Variant::Wt15);
+    let err =
+        TimingLib::from_liberty_texts("nom", &[("a.lib", &text), ("b.lib", &text)]).unwrap_err();
+    assert_eq!(err.code, "T0012");
+    let lib = read_text(&text, "a.lib").unwrap();
+    let mut invalid = CornerThresholds::from_library(&lib);
+    invalid.slew_derate_from_library = 0.0;
+    let err = TimingLib::from_corner_with_thresholds("nom", &[(&lib, invalid)]).unwrap_err();
+    assert_eq!(err.code, "T0013");
 }
 
 // STA-REQ-0015, STA-REQ-0120: aggregated warnings for unanalyzed arcs (`T0015`, once per type)
@@ -1124,7 +1109,18 @@ fn aggregated_unanalyzed_arc_and_out_of_range_warnings() {
         });
     }
     let lib = TimingLib::from_corner("nom", &[raw_lib.clone()]).unwrap();
-    assert_eq!(lib.cell("wt_buf_1").unwrap().unanalyzed_arcs, 3);
+    // STA-REQ-0800: pulse groups are pulse checks, never unanalyzed arcs; these two have no
+    // constraint table and are noted instead.
+    let buf = lib.cell("wt_buf_1").unwrap();
+    assert_eq!(buf.unanalyzed_arcs, 1);
+    assert!(buf.pulse_checks.is_empty());
+    assert_eq!(
+        buf.notes
+            .iter()
+            .filter(|n| n.contains("without a constraint table"))
+            .count(),
+        2
+    );
 
     let verilog = "
 module top (input a, output y);
@@ -1136,8 +1132,8 @@ endmodule
 ";
     let netlist = freeze_verilog("top.v", verilog, Some("top"), &[raw_lib]);
     let (total_unanalyzed, unanalyzed_diags) = lib.unanalyzed_arc_warnings(&netlist);
-    assert_eq!(total_unanalyzed, 9);
-    assert_eq!(unanalyzed_diags.len(), 3);
+    assert_eq!(total_unanalyzed, 3);
+    assert_eq!(unanalyzed_diags.len(), 1);
     assert!(unanalyzed_diags.iter().all(|d| d.code == "T0015"));
 
     let mut overrides = NetLoadOverrides::new();

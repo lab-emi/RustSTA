@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
-//! Seeded structural Verilog and `GateNetlist` generators (`net_gen`), re-exporting [`crate::r#gen`].
+//! Seeded structural Verilog and `GateNetlist` generators (`net_gen`), re-exporting `crate::r#gen`.
 
 pub use crate::r#gen::{
     CellCatalog, CellSpec, InstSpec, Mutation, NetlistFixture, SplitMix64, apply_mutations,

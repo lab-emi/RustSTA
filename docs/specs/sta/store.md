@@ -59,10 +59,10 @@ Every `STA v2` file contains the 24 sections below in ascending section ID order
 | 18 | `PATH_POINTS` | 32 | `PathPointRec` slices referenced by `PathHeaderRec.{point_begin, point_end}`. |
 | 19 | `NAME_HASH` | 4 | Open-addressed `xxh3_64` hash table (`4 * u32` per bucket) mapping port names and `"inst/pin"` names to `(NodeId, prefix_str, leaf_str)`. |
 | 20 | `INST_HASH` | 4 | Open-addressed `xxh3_64` hash table (`4 * u32` per bucket) mapping instance names to `(inst_str, cell_str, pin_node_begin, pin_count)`. |
-| 21 | `SUMMARY` | 80 | `SummaryRec` per `(corner, path_group)` with `setup_wns`, `setup_tns`, `setup_violating`, `hold_wns`, `hold_tns`, `hold_violating`, DRV counts, and endpoint counts. |
+| 21 | `SUMMARY` | 80 | `SummaryRec` per `(corner, path_group)` with `setup_wns`, `setup_tns`, `setup_violating`, `hold_wns`, `hold_tns`, `hold_violating`, the corner's `max_transition` and `max_capacitance` violations (the same on every row of the corner, STA-REQ-0807), and endpoint counts. |
 | 22 | `UNCONSTRAINED` | 12 | `UnconstrainedRec` per unconstrained endpoint (`node`, `reason`, `reserved` name bucket), sorted by `(node, reason)`. |
 | 23 | `NOTES` | 16 | `NoteRec` (`code_str`, `message_str`, `severity`, `count`) for aggregated diagnostics and notes. |
-| 24 | `SCOPE` | 1 | Canonical JSON bytes of `ScopeReport` (top module, corners, wire/clock/CPPR models, backend, precision, `store_mode`, exceptions, and `CompletenessReport`). |
+| 24 | `SCOPE` | 1 | Canonical JSON bytes of `ScopeReport` (top module, corners, wire/clock/CPPR models, backend, precision, `store_mode`, exceptions, `CompletenessReport`, and `limits`: the counts of the pin limit checks of every corner, absent in a table whose analysis did not check them, STA-REQ-0807). |
 
 ## 3. Record layouts and canonicalization
 
@@ -157,5 +157,20 @@ not be stored.
 `StaStoreData::stage_to_txn(txn, upstream)` writes `sta.rbin` into a workspace transaction (`Txn`)
 alongside `upstream` artifact hashes and populates `summary.sta` (`setup_wns_ns`, `setup_tns_ns`,
 `setup_violating_endpoints`, `hold_wns_ns`, `hold_tns_ns`, `hold_violating_endpoints`,
-`max_trans_violating`, `max_cap_violating`, `total_endpoints`, `unconstrained_endpoints`,
-`corners`) and `status.sta` (`timing = "met" | "violated"`) (`WS-REQ-0038`, `WS-REQ-0045`).
+`max_trans_violating`, `max_cap_violating`, `max_fanout_violating`, `drv_status`,
+`min_pulse_width_violating`, `min_period_violating`, `pulse_width_status`, `total_endpoints`,
+`unconstrained_endpoints`, `corners`) and `status.sta` (`timing = "met" | "violated"`, `drv`,
+`pulse_width`) (`WS-REQ-0038`, `WS-REQ-0045`, STA-REQ-0807).
+
+## 8. The `limits` table
+
+The pin limit checks of the same analysis are a separate table, `limits.rbin` (rbin kind `LIMITS`,
+version 1), committed with `sta.rbin` with the same upstream tables, so that the 24 sections of
+`STA v2` and their shared readers are unchanged (STA-REQ-0806). Its sections are `STR_BYTES` (1),
+`STR_OFFS` (2), `META` (3, 16 bytes: corners, rows, row budget), `CORNERS` (4, 24 bytes: name and
+the unclocked and conditional pulse counts), `KINDS` (5, 56 bytes per corner and kind: checked,
+violating, unlimited and kept rows, the first kept row, the worst slack or NaN, and the checks
+that were not evaluated) and `ROWS` (6,
+48 bytes: value, limit, slack, node, pin, net and clock strings, corner, kind and flags with the
+transition in bits 0 and 1 and the source in bits 2 and 3), the rows of each corner and kind
+contiguous and in slack order. A reader checks every count, range and string index before use.

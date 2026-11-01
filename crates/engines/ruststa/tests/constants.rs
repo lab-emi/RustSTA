@@ -365,6 +365,22 @@ fn find_comb_arc(nv: &NetlistView<'_>, graph: &TimingGraph, src: &str, dst: &str
         .unwrap_or_else(|| panic!("cell arc {src} -> {dst} not found"))
 }
 
+/// The disable reasons of the arcs `g/A0 -> g/Y`, `g/A1 -> g/Y` and `g/S -> g/Y` of a mux `g`.
+fn mux_reasons(nv: &NetlistView<'_>, g: &TimingGraph) -> [Option<DisableReason>; 3] {
+    ["g/A0", "g/A1", "g/S"].map(|p| g.arc_disable_reason(find_comb_arc(nv, g, p, "g/Y")))
+}
+
+/// The disable reason of the wire `src -> dst` (STA-REQ-0164).
+fn wire(nv: &NetlistView<'_>, g: &TimingGraph, src: &str, dst: &str) -> Option<DisableReason> {
+    let (s, d) = (find_node(nv, src), find_node(nv, dst));
+    let net = |a: &&ruststa::engine::graph::GraphArc| matches!(a.kind, ArcKind::Net { .. });
+    let i = g
+        .arcs()
+        .iter()
+        .position(|a| a.src == s && a.dst == d && net(&a));
+    g.arc_disable_reason(i.expect("wire"))
+}
+
 fn propagate_with_inputs(
     nv: &NetlistView<'_>,
     graph: &TimingGraph,
@@ -418,7 +434,7 @@ fn worst_arr(res: &LoweredResult, graph: &TimingGraph, node: NodeId, an: An) -> 
     }
 }
 
-// STA-REQ-0150, STA-REQ-0151, STA-REQ-0152: Analytic case `const_tielo_and2`
+// STA-REQ-0150, STA-REQ-0162, STA-REQ-0159: Analytic case `const_tielo_and2`
 #[test]
 fn analytic_const_tielo_and2() {
     let exp = analytic_expected("const_tielo_and2");
@@ -483,7 +499,10 @@ endmodule
     assert_eq!(g.arc_disable_reason(g1_by), Some(DisableReason::Constant));
     assert_eq!(g.arc_disable_reason(g2_ay), Some(DisableReason::Constant));
     assert_eq!(g.arc_disable_reason(g2_by), None);
-    assert_eq!(cp.disabled_arc_counts().constant, 3);
+    // STA-REQ-0164: the wires of the constant nets `lo` and `n1` pass no arrival.
+    assert_eq!(wire(&nv, &g, "t0/Y", "g1/B"), Some(DisableReason::Constant));
+    assert_eq!(wire(&nv, &g, "g1/Y", "g2/A"), Some(DisableReason::Constant));
+    assert_eq!(cp.disabled_arc_counts().constant, 5);
 
     let res = propagate_with_inputs(
         &nv,
@@ -639,13 +658,11 @@ endmodule
     // 2. With constant S = 0: A1 -> Y and S -> Y disabled with `constant`, A0 -> Y enabled.
     let mut g = TimingGraph::build(&nv, &libs).expect("build graph");
     let cp = ConstantPropagation::apply_netlist_only(&nv, &libs, &mut g);
-    let a0_y = find_comb_arc(&nv, &g, "g/A0", "g/Y");
-    let a1_y = find_comb_arc(&nv, &g, "g/A1", "g/Y");
-    let s_y = find_comb_arc(&nv, &g, "g/S", "g/Y");
-    assert_eq!(g.arc_disable_reason(a0_y), None);
-    assert_eq!(g.arc_disable_reason(a1_y), Some(DisableReason::Constant));
-    assert_eq!(g.arc_disable_reason(s_y), Some(DisableReason::Constant));
-    assert_eq!(cp.disabled_arc_counts().constant, 2);
+    let k = Some(DisableReason::Constant);
+    assert_eq!(mux_reasons(&nv, &g), [None, k, k]);
+    // STA-REQ-0164: the wire of the constant select net passes no arrival.
+    assert_eq!(wire(&nv, &g, "t0/Y", "g/S"), Some(DisableReason::Constant));
+    assert_eq!(cp.disabled_arc_counts().constant, 3);
 
     let res = propagate_with_inputs(
         &nv,
@@ -685,20 +702,18 @@ endmodule
     let nv_w = NetlistView::new(&frozen_w, &libs).expect("netlist view");
     let mut g_w = TimingGraph::build(&nv_w, &libs).expect("build graph");
     let cp_w = ConstantPropagation::apply_netlist_only(&nv_w, &libs, &mut g_w);
-    let w_a0_y = find_comb_arc(&nv_w, &g_w, "g/A0", "g/Y");
-    let w_a1_y = find_comb_arc(&nv_w, &g_w, "g/A1", "g/Y");
-    let w_s_y = find_comb_arc(&nv_w, &g_w, "g/S", "g/Y");
-    assert_eq!(
-        g_w.arc_disable_reason(w_a0_y),
-        Some(DisableReason::FalseWhen)
+    let (fw, k) = (
+        Some(DisableReason::FalseWhen),
+        Some(DisableReason::Constant),
     );
-    assert_eq!(g_w.arc_disable_reason(w_a1_y), None);
-    assert_eq!(g_w.arc_disable_reason(w_s_y), Some(DisableReason::Constant));
+    assert_eq!(mux_reasons(&nv_w, &g_w), [fw, None, k]);
     assert_eq!(cp_w.disabled_arc_counts().false_when, 1);
-    assert_eq!(cp_w.disabled_arc_counts().constant, 1);
+    assert_eq!(wire(&nv_w, &g_w, "t1/Y", "g/S"), k); // the tie-high net, STA-REQ-0164
+    assert_eq!(cp_w.disabled_arc_counts().constant, 2);
 }
 
-// STA-REQ-0154: Analytic case `const_flop_d` and sequential async clear/preset constants
+// STA-REQ-0163, STA-REQ-0162: Analytic case `const_flop_d` and sequential async clear/preset
+// held active
 #[test]
 fn analytic_const_flop_d_and_sequential_async() {
     let exp = analytic_expected("const_flop_d");
@@ -772,10 +787,20 @@ endmodule
     let mut g_a = TimingGraph::build(&nv_a, &libs).expect("build graph");
     let cp_a = ConstantPropagation::apply_netlist_only(&nv_a, &libs, &mut g_a);
 
-    // f_clr has RN = 0 (clear active) -> f_clr/Q is constant 0, its launch is disabled (`FalseWhen`
-    // because `when : "RN & SN"` is false), and its setup/hold checks on D have `when` false (`Disabled(FalseWhen)`).
-    assert_eq!(cp_a.node_val(find_node(&nv_a, "f_clr/Q")), LogicVal::Zero);
-    assert_eq!(cp_a.node_val(find_node(&nv_a, "q_clr")), LogicVal::Zero);
+    // f_clr has RN = 0 (clear active): its stored state is not a constant (STA-REQ-0162), so
+    // f_clr/Q stays X; its launch is disabled (`FalseWhen` because `when : "RN & SN"` is false)
+    // and carries its transition, and its setup/hold checks on D have `when` false
+    // (`Disabled(FalseWhen)`).
+    assert_eq!(cp_a.node_val(find_node(&nv_a, "f_clr/Q")), LogicVal::X);
+    assert_eq!(cp_a.node_val(find_node(&nv_a, "q_clr")), LogicVal::X);
+    let clr_q = find_node(&nv_a, "f_clr/Q");
+    let li = g_a.launches().iter().position(|l| l.out_pin == clr_q);
+    let li = li.expect("f_clr launch");
+    assert_eq!(
+        g_a.launch_disable_reason(li),
+        Some(DisableReason::FalseWhen)
+    );
+    assert!(g_a.launch_carries_transition(li));
     // f_live has RN = 1, SN = 1 (neither active) -> f_live/Q is X, D checks are Active, RN recovery/removal is NoDataArrival.
     assert_eq!(cp_a.node_val(find_node(&nv_a, "f_live/Q")), LogicVal::X);
     for (ci, ch) in g_a.checks().iter().enumerate() {
@@ -862,16 +887,11 @@ endmodule
     // Variant 2: `case1` (`set_case_analysis 1 [get_ports s]`)
     {
         let (g, cp, res) = run_variant("set_case_analysis 1 [get_ports s]\n");
-        let a0_y = find_comb_arc(&nv, &g, "g/A0", "g/Y");
-        let a1_y = find_comb_arc(&nv, &g, "g/A1", "g/Y");
-        let s_y = find_comb_arc(&nv, &g, "g/S", "g/Y");
-        assert_eq!(
-            g.arc_disable_reason(a0_y),
-            Some(DisableReason::CaseAnalysis)
-        );
-        assert_eq!(g.arc_disable_reason(a1_y), None);
-        assert_eq!(g.arc_disable_reason(s_y), Some(DisableReason::CaseAnalysis));
-        assert_eq!(cp.disabled_arc_counts().case_analysis, 2);
+        let ca = Some(DisableReason::CaseAnalysis);
+        assert_eq!(mux_reasons(&nv, &g), [ca, None, ca]);
+        // STA-REQ-0164: the wire of the port under case analysis passes no arrival.
+        assert_eq!(wire(&nv, &g, "s", "g/S"), Some(DisableReason::CaseAnalysis));
+        assert_eq!(cp.disabled_arc_counts().case_analysis, 3);
 
         let f_setup = 2.0 - 0.10 - worst_arr(&res, &g, f_d, An::Late);
         let f_hold = worst_arr(&res, &g, f_d, An::Early) - 0.05;
@@ -882,16 +902,9 @@ endmodule
     // Variant 3: `logic0` (`set_logic_zero [get_ports s]`)
     {
         let (g, cp, res) = run_variant("set_logic_zero [get_ports s]\n");
-        let a0_y = find_comb_arc(&nv, &g, "g/A0", "g/Y");
-        let a1_y = find_comb_arc(&nv, &g, "g/A1", "g/Y");
-        let s_y = find_comb_arc(&nv, &g, "g/S", "g/Y");
-        assert_eq!(g.arc_disable_reason(a0_y), None);
-        assert_eq!(
-            g.arc_disable_reason(a1_y),
-            Some(DisableReason::CaseAnalysis)
-        );
-        assert_eq!(g.arc_disable_reason(s_y), Some(DisableReason::CaseAnalysis));
-        assert_eq!(cp.disabled_arc_counts().case_analysis, 2);
+        let ca = Some(DisableReason::CaseAnalysis);
+        assert_eq!(mux_reasons(&nv, &g), [None, ca, ca]);
+        assert_eq!(cp.disabled_arc_counts().case_analysis, 3); // and the wire, STA-REQ-0164
 
         let f_setup = 2.0 - 0.10 - worst_arr(&res, &g, f_d, An::Late);
         let f_hold = worst_arr(&res, &g, f_d, An::Early) - 0.05;
@@ -905,21 +918,12 @@ endmodule
             "set_case_analysis 1 [get_ports s]\n\
              set_disable_timing -from A1 -to Y [get_cells g]\n",
         );
-        let a0_y = find_comb_arc(&nv, &g, "g/A0", "g/Y");
-        let a1_y = find_comb_arc(&nv, &g, "g/A1", "g/Y");
-        let s_y = find_comb_arc(&nv, &g, "g/S", "g/Y");
-        assert_eq!(
-            g.arc_disable_reason(a0_y),
-            Some(DisableReason::CaseAnalysis)
-        );
-        assert_eq!(
-            g.arc_disable_reason(a1_y),
-            Some(DisableReason::UserDisabled)
-        );
-        assert_eq!(g.arc_disable_reason(s_y), Some(DisableReason::CaseAnalysis));
-        assert_eq!(cp.disabled_arc_counts().case_analysis, 2);
+        let ca = Some(DisableReason::CaseAnalysis);
+        let user = Some(DisableReason::UserDisabled);
+        assert_eq!(mux_reasons(&nv, &g), [ca, user, ca]);
+        assert_eq!(cp.disabled_arc_counts().case_analysis, 3); // and the wire, STA-REQ-0164
         assert_eq!(cp.disabled_arc_counts().user_disabled, 1);
-        assert_eq!(cp.disabled_arc_counts().total(), 3);
+        assert_eq!(cp.disabled_arc_counts().total(), 4);
 
         assert_eq!(exp["case1dis"]["f/D"].as_str(), Some("no arrival"));
         assert!(worst_arr(&res, &g, f_d, An::Late).is_infinite());
@@ -933,7 +937,7 @@ endmodule
     }
 }
 
-// STA-REQ-0150, STA-REQ-0151, STA-REQ-0156, STA-REQ-0157: Netlist 1'b0/1'b1 literals,
+// STA-REQ-0150, STA-REQ-0162, STA-REQ-0156, STA-REQ-0157: Netlist 1'b0/1'b1 literals,
 // continuous assigns, transition case analysis, and disable_reason_str taxonomy.
 #[test]
 fn verilog_literals_assigns_and_disable_taxonomy() {
@@ -1042,6 +1046,33 @@ fn full_analysis_slacks(
     pins.iter()
         .map(|p| (ea.setup_slack_for(p), ea.hold_slack_for(p)))
         .collect()
+}
+
+// STA-REQ-0117: analytic case `const_mux_select`: the transition of g/Y merges the arcs that the
+// tied select disables (A1 -> Y and S -> Y, with the tie transition 0) with the enabled A0 -> Y.
+#[test]
+fn analytic_const_mux_select_transitions() {
+    let exp = analytic_expected("const_mux_select");
+    let libs = [analytic_library()];
+    let verilog = "module m (input clk, input a, input b, output q);\n wire lo, qa, qb, nb, n1;\n \
+         TIELO t0 (.Y(lo));\n DFF ra (.D(a), .CK(clk), .Q(qa));\n DFF rb (.D(b), .CK(clk), .Q(qb));\n \
+         INV i (.A(qb), .Y(nb));\n MUX2 g (.A0(qa), .A1(nb), .S(lo), .Y(n1));\n \
+         DFF f (.D(n1), .CK(clk), .Q(q));\nendmodule\n";
+    let sdc = "create_clock -name clk -period 2 [get_ports clk]\n\
+               set_input_delay -clock clk 0.1 [get_ports {a b}]\n";
+    let frozen = parse_verilog(verilog, &libs[0]);
+    let ea = EngineAnalysis::analyze_single_corner(&frozen, &libs, sdc, &AnalysisOptions::ideal())
+        .expect("full analysis");
+    let y = ea.find_node("g/Y").expect("g/Y");
+    for (an, an_name) in [(An::Late, "late"), (An::Early, "early")] {
+        for (tr, tr_name) in [(Tr::Rise, "rise"), (Tr::Fall, "fall")] {
+            check_exp(
+                ea.corners[0].slew(y, tr, an),
+                &exp,
+                &format!("g/Y {an_name} {tr_name} transition"),
+            );
+        }
+    }
 }
 
 fn check_full(actual: (Option<f64>, Option<f64>), exp: &serde_json::Value, pin: &str) {

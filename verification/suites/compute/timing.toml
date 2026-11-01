@@ -25,3 +25,9 @@ name = "compute-timing-gpu"
 requirement = ["COMPUTE-REQ-0019", "COMPUTE-REQ-0021", "COMPUTE-REQ-0022", "COMPUTE-REQ-0023", "COMPUTE-REQ-0024", "COMPUTE-REQ-0028", "COMPUTE-REQ-0029"]
 test = "crates/core/rusteda-compute/src/timing/tests/gpu.rs"
 description = "CUDA f64 bitwise identity with CPU on >= 100 random problems, f32 within decision-1 envelope, cones, readback and prewarm"
+
+[[suite]]
+name = "compute-prepared-arcs"
+requirement = ["COMPUTE-REQ-0030"]
+test = "crates/core/rusteda-compute/src/timing/tests/prepared.rs"
+description = "Prepared nonlinear arc values, frozen-input rejection and CPU/CUDA f64 identity."

@@ -29,13 +29,13 @@ pub use hash::{
     hash_node_name,
 };
 pub use layout::{
-    ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport, CornerRec,
-    DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec, FORMAT_VERSION, KIND, NO_INDEX,
-    NO_PRED, NodeRec, NoteRec, NoteSeverity, PATH_CHAIN_HEADER_WORDS, PathHeaderRec, PathPointKind,
-    PathPointRec, PathRankRec, ScopeReport, StaMeta, StoreMode, StorePrecision, SummaryRec,
-    TABLE_NAME, TABLE_PATH, TagExtraRec, TagRec, UnconstrainedReasonTag, UnconstrainedRec,
-    VERSIONS, canon_f32, canon_f64, canon_grid, pack_chain_step, pack_f64_words, section,
-    unpack_chain_step, unpack_f64_words,
+    ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport,
+    CornerLimitsReport, CornerRec, DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec,
+    FORMAT_VERSION, KIND, LimitKindReport, NO_INDEX, NO_PRED, NodeRec, NoteRec, NoteSeverity,
+    PATH_CHAIN_HEADER_WORDS, PathHeaderRec, PathPointKind, PathPointRec, PathRankRec, ScopeReport,
+    StaMeta, StoreMode, StorePrecision, SummaryRec, TABLE_NAME, TABLE_PATH, TagExtraRec, TagRec,
+    UnconstrainedReasonTag, UnconstrainedRec, VERSIONS, canon_f32, canon_f64, canon_grid,
+    pack_chain_step, pack_f64_words, section, unpack_chain_step, unpack_f64_words,
 };
 pub use query::{
     CompactEndpointEntry, InspectedInstance, InspectedInstancePin, InspectedNode,

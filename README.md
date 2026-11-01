@@ -20,22 +20,16 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
 
 Part of **[RustEDA](https://github.com/lab-emi/RustEDA)**, infrastructure for chip-design recursive self-improvement. Native tools shorten the work between inference steps; verified results guide the next iteration.
 
+## Latest development · 2026-11-01
 
-## Development status · 2026-10-28
+The source now includes mixed standard-cell/SRAM Liberty conventions, explicit
+global early/late timing derates and driving-cell waveforms on extracted and
+propagated-clock paths. RC preparation runs independent nodes within each graph
+level on a bounded rayon pool, then commits results in topological order. The
+memory estimate includes an additional 184 bytes per node for jobs/results.
 
-The **RustEDA integration is at 0.4.3**: multi-corner NLDM timing, propagated
-primary clocks, bounded SPEF import, effective-capacitance waveforms and
-non-tree extracted RC networks. The verification record combines dual-PDK
-OpenSTA comparisons, independent circuit checks and full/incremental consistency.
-
-Mixed-library SRAM timing and global early/late derates are under development
-in a separate IHP checkout. They are not in this integration snapshot.
-The standalone `main` branch can lag the integration; use `codex/unified-brand`
-or RustEDA's pinned recursive checkout.
-
-[Development status, results and known residuals](docs/development-status.md) ·
-[RustEDA engine progress](https://lab-emi.github.io/RustEDA/engine-status/)
-
+[Current source and qualification](docs/development-status.md) ·
+[Latest complete-flow evidence](https://lab-emi.github.io/RustEDA/benchmarks/)
 
 ## Quick start
 
@@ -56,7 +50,7 @@ export PATH="$PWD/target/release:$PATH"
 
 ```console
 $ ruststa --version
-ruststa 0.1.0 (backends: cpu)
+ruststa 0.4.3 (backends: cpu)
 ```
 
 From the repository root, analyze the bundled eight-cell chain in a fresh workspace:
@@ -89,7 +83,7 @@ For your own design, follow [the timing workflow](docs/guide/timing.md).
 
 | Command | Result |
 |---|---|
-| `rusteda init` / `import` | Create a workspace and import Verilog, Liberty and SDC |
+| `rusteda init` / `import` | Create a workspace and import Verilog, Liberty, SDC and SPEF |
 | `ruststa run` / `update` | Analyze a revision and persist `sta.rbin` |
 | `ruststa path` / `inspect` / `report` | Read timing paths, pins, endpoints and summaries |
 | `ruststa check` | Compare saved timing with an independent checker, a full rerun, or both |
@@ -108,9 +102,9 @@ handles such as `path1` belong to the selected revision. Initialization creates
 | Available now | Current boundary |
 |---|---|
 | Multi-corner 1D/2D/3D Liberty NLDM tables | No CCS/ECSM or sign-off accuracy claim |
-| Setup/hold, latch borrowing, recovery/removal, gating checks | Ideal clocks; generated/propagated clocks and CPPR are outside current scope |
+| Setup/hold, latch borrowing, recovery/removal, gating checks | Ideal and explicit propagated primary clocks; generated clocks and CPPR remain outside scope |
 | Constants and supported `-from`/`-to` timing exceptions | Ordered `-through` exception hops are rejected by the engine |
-| Ideal or lumped wire-load models | No SPEF annotation or distributed RC timing |
+| Ideal, lumped wire-load and detailed SPEF RC networks, including resistor loops | Moment-matched pi, effective load and driver waveforms; disconnected components emit `T0151`; no crosstalk/CCS claim |
 | CPU f64 and optional CUDA f64/f32 propagation | Metal/Accelerate is not a shipped backend |
 | Incremental `TimingSession` Rust API | The CLI `ruststa update` currently reports full recomputation |
 
@@ -136,6 +130,12 @@ unverified. No numerical RustSTA-vs-OpenSTA speedup is claimed by this release.
 Compare pinned reference executables as black boxes and report complete command
 wall time, peak memory, timing scope and numerical agreement together.
 
+In the RustEDA Ibex flow on IHP SG13G2 / EZ130 (two real SRAMs), RustSTA drives the
+frontend and post-route repairs and signs off TT/SS extracted timing beside OpenSTA. In run16
+(2026-10-30) the two agreed within 0.806 ps on identical SPEF, against a 1 ps gate. The
+whole-flow comparison with LibreLane is on the
+[RustEDA benchmarks page](https://lab-emi.github.io/RustEDA/benchmarks/).
+
 [Verification scope](docs/verification/index.md) · [Dual-PDK suite](docs/verification/pdk.md) ·
 [Performance and memory](docs/guide/performance.md)
 
@@ -157,3 +157,24 @@ crates, fixtures and tests. Everyone participating follows the
 Report vulnerabilities according to [SECURITY.md](SECURITY.md).
 RustSTA is licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE) and
 [REUSE.toml](REUSE.toml).
+
+### Extracted RC timing
+
+`rusteda import --spef routed.spef.gz --spef-corner tt --base-rev rev1 -w work`
+imports a bounded detailed RC extraction for a previously imported netlist and
+corner. It can also be combined with `--lib`, `--netlist` and `--sdc` in one
+transaction. Run the usual `ruststa run` and `ruststa check --method full` on the
+returned revisions. The scope reports `spef_rc`, `spef` and
+`nldm_ceff_ramp`; missing extraction and a different corner are errors. Resistor
+loops are solved on the nodal conductance system, and a part of a net without a
+resistor path to its driver joins the driver with warning `T0151`.
+
+Plain text and gzip are accepted under the same encoded/decoded byte cap. CRC
+errors, missing annotation and budget overruns fail
+explicitly without committing a partial revision. This uses moment-matched pi loads, charge-matched effective capacitance,
+a finite-ramp Thevenin driver and RC threshold/slew propagation, with
+factor-one grounded coupling. Explicit propagated primary clocks are supported; crosstalk and CCS current tables are not. The independent checker currently reports extracted RC as
+undecided; use full recomputation and the measured dual-PDK black-box suite.
+See [the SPEF workflow](docs/guide/spef.md),
+[parasitic timing](docs/specs/sta/parasitics.md) and
+[the verification report](docs/verification/rc-report.html).

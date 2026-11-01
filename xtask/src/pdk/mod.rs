@@ -19,7 +19,7 @@
 //! library scan ([`scan`]) belong to this repository.
 
 mod fetch;
-mod json;
+pub(crate) mod json;
 pub(crate) mod manifest;
 mod run;
 mod scan;

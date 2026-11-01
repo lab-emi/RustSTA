@@ -11,7 +11,7 @@ joins the nets. Constants `1'b0`/`1'b1` are nets without transitions ([constants
 
 **STA-REQ-0002** Every net has at most one non-three-state driver: a top-level input or inout port,
 a cell output pin, or a constant. Multiple drivers on a net are a T error unless all cell drivers
-on the net are three-state outputs (`three_state`, STA-REQ-0013). A net without a driver is
+on the net are three-state outputs (`three_state`, STA-REQ-0017). A net without a driver is
 reported and its loads receive no arrival (`no_data_arrival`).
 
 **STA-REQ-0003** A cell instance must use a cell of the libraries, and each connected pin's
@@ -33,9 +33,10 @@ it is derived from the output function (unate in the related pin if the function
 it), else `non_unate`. Constant inputs refine a `non_unate` sense when the residual function becomes
 monotone (STA-REQ-0153). Edge arcs (`rising_edge`, `falling_edge`) launch both output transitions.
 
-**STA-REQ-0013** Supported `timing_type` values and arc classification
+**STA-REQ-0017** Supported `timing_type` values and arc classification, since version 0.4
 ([`tristate_bus`](../../../verification/analytic/sta/tristate_bus/DERIVATION.md)) [@liberty2017;
-@bhasker2009static, ch. 3]:
+@bhasker2009static, ch. 3]. It replaces STA-REQ-0013 (kept in [legacy.md](legacy.md)), which
+counted `min_pulse_width` and `minimum_period` as unanalyzed arcs:
 - combinational data arcs: `combinational` (also when `timing_type` is absent),
   `combinational_rise`, `combinational_fall`;
 - sequential launch arcs: `rising_edge`, `falling_edge`;
@@ -48,9 +49,12 @@ monotone (STA-REQ-0153). Edge arcs (`rising_edge`, `falling_edge`) launch both o
 - asynchronous preset/clear arcs: `clear` and `preset` are retained in the library view and are not
   propagated as combinational data arcs (asynchronous controls are checked by `recovery_*` and
   `removal_*`, STA-REQ-0224);
-- unanalyzed arc kinds (`non_seq_setup_*`, `non_seq_hold_*`, `min_pulse_width`, `minimum_period`,
-  `skew_*`) are counted per instantiated cell in `completeness.unanalyzed_arcs` and reported as one
-  aggregated T warning per kind rather than per-library-cell notes.
+- pulse checks: `min_pulse_width` and `minimum_period` groups are the pulse checks of their pin
+  (STA-REQ-0800, STA-REQ-0801), not unanalyzed arcs;
+- unanalyzed arc kinds (`non_seq_setup_*`, `non_seq_hold_*`, `skew_*`, `nochange_*`,
+  `max_clock_tree_path`, `min_clock_tree_path`) are counted per instantiated cell in
+  `completeness.unanalyzed_arcs` and reported as one aggregated T warning per kind rather than
+  per-library-cell notes.
 
 **STA-REQ-0014** Lookup table axes and index overrides
 ([`tristate_bus`](../../../verification/analytic/sta/tristate_bus/DERIVATION.md)) [@liberty2017].
@@ -75,11 +79,15 @@ corner.
 `input_threshold_pct_fall`, `output_threshold_pct_rise`, `output_threshold_pct_fall`,
 `slew_lower_threshold_pct_rise`, `slew_lower_threshold_pct_fall`, `slew_upper_threshold_pct_rise`,
 `slew_upper_threshold_pct_fall` and `slew_derate_from_library` (default `1.0`). They are recorded in
-the corner metadata; libraries combined in the same corner must agree on these attributes (a
-mismatch within one corner is a T error). In the lumped NLDM delay model (`Ideal` and
-`WireloadLumped`), delay, transition and constraint tables are already characterised in library slew
-units and are evaluated without scaling by `slew_derate_from_library` (`slew_derate_from_library`
-and trip-point thresholds apply only to RC interconnect slew degradation in Phase 2b).
+each cell's metadata. Valid libraries combined in one corner may differ; a malformed
+threshold interval or nonpositive slew derate is a T0013 error. The first library defines
+the top-level port convention. Cell delay, transition and constraint tables retain their
+original library units. A net converts slew between the driver's and receiver's intervals
+and derates; its arrival reference changes between their output/input thresholds.
+The extracted solver retains the source waveform convention for slew, then converts
+the resulting abstract transition to the receiving library. Delay uses the
+receiver input threshold on that waveform. No PDK file is
+rewritten to normalize these conventions.
 
 ## Constraints
 
@@ -88,7 +96,8 @@ include `create_clock`, `set_input_delay`, `set_output_delay`, `set_load`, `set_
 `set_driving_cell`, `set_clock_uncertainty`, `set_clock_latency`, `set_clock_transition`,
 `set_case_analysis`, `set_logic_zero`, `set_logic_one`, `set_disable_timing`, `set_false_path`,
 `set_multicycle_path`, `set_max_delay`, `set_min_delay`, `set_clock_groups`, `set_max_time_borrow`,
-`set_wire_load_model`, `set_wire_load_mode`, `group_path`, `set_units`, and design-rule commands,
+`set_wire_load_model`, `set_wire_load_mode`, `group_path`, `set_units`, global early/late
+`set_timing_derate`, and design-rule commands,
 together with the object queries `get_ports`, `get_pins`, `get_cells`, `get_nets`, `get_clocks`,
 `all_inputs`, `all_outputs`, `all_clocks`, `all_registers` and `current_design`. Unsupported
 commands are reported with diagnostic codes so that no constraint is silently ignored.
@@ -103,3 +112,11 @@ an edge-triggered delay with warning `T0041`; `set_load -subtract_pin_load` is a
 load with warning `T0042`; and `set_operating_conditions` with `-min`, `-max`, `-min_library`,
 `-max_library` or `-analysis_type bc_wc|on_chip_variation` gets warning `T0043`, each corner being
 analysed with its own libraries.
+
+
+Global `set_timing_derate -early` / `-late` factors scale cell and net delay,
+including driving-cell and propagated-clock delays. They do not scale transition
+times or setup/hold/recovery/removal constraints. The factors are positive finite
+values; command order replaces each selected factor. Unsupported object, edge,
+clock/data-only, check, dynamic and incremental scopes fail explicitly. The SCOPE
+record includes nonidentity factors in `global_timing_derate` order [early, late].

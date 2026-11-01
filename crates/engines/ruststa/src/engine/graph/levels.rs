@@ -10,7 +10,7 @@
 //! The topological id is the only tie-break of the engine: arc order, path heaps, endpoint order
 //! and CPPR parents.
 
-use crate::engine::graph::build::{DisableReason, GraphArc};
+use crate::engine::graph::build::{DisableReason, GraphArc, LaunchArc, carries_transition};
 use crate::engine::types::NodeId;
 
 /// Exact longest-path levels, canonical `(level, NodeId)` topological ordering, and CSR
@@ -52,6 +52,71 @@ impl Levels {
             "Levels::compute requires an acyclic graph"
         );
         Self::from_kahn(n_nodes, arcs, disabled, level, out_off, out_arcs)
+    }
+
+    /// Computes levels over every arc and launch that carries a transition (`STA-REQ-0117`): the
+    /// enabled arcs, the arcs that logic values disable and the launches flagged in
+    /// `carrying_launches` (disabled by logic values, or unclocked). The incoming and
+    /// outgoing tables still list the enabled arcs only. If the arcs and launches disabled by
+    /// logic values close a loop, the launches and then those arcs are left out of the levels
+    /// (the lowering merges only the transitions of arcs that rise in level); the second value
+    /// is the number of arcs and launches left out (0 on an acyclic graph).
+    pub fn compute_carrying(
+        n_nodes: usize,
+        arcs: &[GraphArc],
+        disabled: &[Option<DisableReason>],
+        launches: &[LaunchArc],
+        carrying_launches: &[bool],
+    ) -> (Levels, usize) {
+        let carried_arcs = || {
+            arcs.iter()
+                .zip(disabled)
+                .filter(|(_, d)| d.is_some() && carries_transition(**d))
+                .map(|(a, _)| (a.src.0, a.dst.0))
+        };
+        let carried_launches = || {
+            launches
+                .iter()
+                .zip(carrying_launches)
+                .filter(|(_, c)| **c)
+                .map(|(l, _)| (l.clock_pin.0, l.out_pin.0))
+        };
+        let n_extra_arcs = carried_arcs().count();
+        let n_extra_launches = carried_launches().count();
+        let (out_off, out_arcs, _) = build_out_csr_and_indeg(n_nodes, arcs, disabled);
+        if n_extra_arcs + n_extra_launches > 0 {
+            let enabled = arcs
+                .iter()
+                .zip(disabled)
+                .filter(|(_, d)| d.is_none())
+                .map(|(a, _)| (a.src.0, a.dst.0));
+            let attempts: [(bool, bool, usize); 2] =
+                [(true, true, 0), (true, false, n_extra_launches)];
+            for (with_arcs, with_launches, dropped) in attempts {
+                let edges: Vec<(u32, u32)> = enabled
+                    .clone()
+                    .chain(carried_arcs().filter(|_| with_arcs))
+                    .chain(carried_launches().filter(|_| with_launches))
+                    .collect();
+                if let Some(level) = edge_levels(n_nodes, &edges) {
+                    let levels = Self::from_kahn(n_nodes, arcs, disabled, level, out_off, out_arcs);
+                    return (levels, dropped);
+                }
+            }
+        }
+        let mut indeg = vec![0u32; n_nodes];
+        for (ai, arc) in arcs.iter().enumerate() {
+            if disabled[ai].is_none() {
+                indeg[arc.dst.index()] += 1;
+            }
+        }
+        let (level, visited) = kahn_longest_paths(n_nodes, arcs, &out_off, &out_arcs, &mut indeg);
+        debug_assert_eq!(
+            visited, n_nodes,
+            "Levels::compute_carrying requires an acyclic enabled graph"
+        );
+        let levels = Self::from_kahn(n_nodes, arcs, disabled, level, out_off, out_arcs);
+        (levels, n_extra_arcs + n_extra_launches)
     }
 
     /// Completes [`Levels`] construction from precomputed `level`, `out_off`, and `out_arcs`.
@@ -326,4 +391,45 @@ pub(crate) fn kahn_longest_paths(
         }
     }
     (level, queue.len())
+}
+
+/// Exact longest-path levels of the graph with the directed `edges` `(src, dst)`, or `None` when
+/// the edges close a loop (Kahn's algorithm, `O(V + E)`).
+fn edge_levels(n_nodes: usize, edges: &[(u32, u32)]) -> Option<Vec<u32>> {
+    let mut off = vec![0u32; n_nodes + 1];
+    let mut indeg = vec![0u32; n_nodes];
+    for &(s, d) in edges {
+        off[s as usize + 1] += 1;
+        indeg[d as usize] += 1;
+    }
+    for v in 0..n_nodes {
+        off[v + 1] += off[v];
+    }
+    let mut fill = off.clone();
+    let mut dst = vec![0u32; edges.len()];
+    for &(s, d) in edges {
+        dst[fill[s as usize] as usize] = d;
+        fill[s as usize] += 1;
+    }
+    let mut level = vec![0u32; n_nodes];
+    let mut queue: Vec<u32> = (0..n_nodes as u32)
+        .filter(|&v| indeg[v as usize] == 0)
+        .collect();
+    let mut head = 0usize;
+    while head < queue.len() {
+        let v = queue[head] as usize;
+        head += 1;
+        let next = level[v] + 1;
+        for &w in &dst[off[v] as usize..off[v + 1] as usize] {
+            let w = w as usize;
+            if next > level[w] {
+                level[w] = next;
+            }
+            indeg[w] -= 1;
+            if indeg[w] == 0 {
+                queue.push(w as u32);
+            }
+        }
+    }
+    (queue.len() == n_nodes).then_some(level)
 }

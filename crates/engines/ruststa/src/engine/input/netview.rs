@@ -4,7 +4,7 @@
 //! The netlist view: zero-copy access to the revision's frozen netlist (owner: E1).
 //!
 //! Engine section A. The view reads the `FrozenNetlist` of the `netlist` table in place. Node ids
-//! are the port bits, then the global pin rows ([`NodeId`](super::super::types::NodeId)). Names
+//! are the port bits, then the global pin rows ([`NodeId`]). Names
 //! come from the string table on demand; no node holds a `String`. The loads of a net are its
 //! `NET_PINS` (instance pins only) plus a reverse map of the port bits; nets joined by `ASSIGNS`
 //! are aliased by union-find, and the constant net rows of `PIN_NET` are the constants 0 and 1.

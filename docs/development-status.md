@@ -1,9 +1,36 @@
 # Development status
 
-Updated **2026-10-28** for the RustEDA integration branch,
-[`codex/unified-brand`](https://github.com/lab-emi/RustSTA/tree/codex/unified-brand).
-Its source preview is **0.4.3**. The standalone `main` branch can lag this
-snapshot; use RustEDA's recursive checkout to reproduce its exact module pin.
+Updated **2026-11-01**. This page describes the source published with the
+RustEDA development update. Use the superproject’s exact gitlinks and the
+repository lockfile when reproducing a run.
+
+## Mixed libraries and parallel RC preparation
+
+The source now includes mixed standard-cell/SRAM Liberty conventions, explicit
+global early/late timing derates and driving-cell waveforms on extracted and
+propagated-clock paths. RC preparation runs independent nodes within each graph
+level on a bounded rayon pool, then commits results in topological order. The
+memory estimate includes an additional 184 bytes per node for jobs/results.
+
+Recorded qualification for the parallel-RC source: 259 regular tests passed
+(17 ignored), 10 real-PDK campaigns passed across Sky130 HD and GF180 7T/9T,
+and 332 OpenSTA black-box comparison values retained the previous maxima
+(0.036 ps Sky130, 0.049 ps GF180; 1 ps gate). Full/incremental and 1/2/8-thread
+replays retained bit-identical timing tables on the recorded extracted designs.
+The two complete Ibex native runs measured 472.2 s and 472.6 s; their maximum
+same-SPEF RustSTA/OpenSTA difference is 0.476 ps.
+
+These are retained identity-bound results, not a new campaign run during the
+publication. GPU, Ngspice and scale tests listed as unchecked in that source QA
+record remain unchecked for this revision. Generated clocks, CPPR, CCS and
+crosstalk remain outside the supported flow scope.
+
+[Whole-flow evidence and measurement scope](https://lab-emi.github.io/RustEDA/benchmarks/) ·
+[RustEDA engine status](https://lab-emi.github.io/RustEDA/engine-status/)
+
+## Earlier qualification record
+
+The following measurements describe the earlier source revisions named here.
 
 ## Integrated capabilities
 
@@ -37,19 +64,17 @@ that drops edges; the independent circuit model is part of the evidence.
 
 The independent checker returns `undecided` for extracted RC. A successful
 `--method full` check establishes consistency with a full run. Generated
-clocks, CPPR, CCS and crosstalk remain unsupported; the integrated source also
-rejects `set_timing_derate` and extracted `set_driving_cell` rather than claiming
-the experimental implementation is present.
+clocks, CPPR, CCS and crosstalk remain unsupported; the new derate and driving-cell implementation has the recorded scope above.
 
-[Detailed RC evidence](https://lab-emi.github.io/RustEDA/modules/ruststa/verification/rc-waveforms/) ·
-[SPEF workflow and topology edits](https://lab-emi.github.io/RustEDA/modules/ruststa/guide/spef/) ·
-[Supported scope](https://lab-emi.github.io/RustEDA/modules/ruststa/reference/scope/)
+[Detailed RC evidence](verification/rc-waveforms.md) ·
+[SPEF workflow and topology edits](guide/spef.md) ·
+[Supported scope](reference/scope.md)
 
-## Active IHP/SRAM development
+## Publication checks
 
-A separate checkout is developing mixed standard-cell/SRAM library conventions,
-global early/late timing derates and driving-cell waveforms on extracted and
-propagated-clock paths. This work is **not part of the current integration pin**.
-Its component checks do not establish complete IHP Ibex physical closure.
-
-[RustEDA integration progress](https://lab-emi.github.io/RustEDA/engine-status/)
+The isolated workspace passes 415 regular Rust tests (19 ignored), formatting,
+all-target/all-feature Clippy and rustdoc. Repository layout and shared-file
+integrity pass; requirement coverage is 596 requirements with zero gaps and
+fixture regeneration checks pass. The standalone and unified strict documentation
+builds and rendered link checks pass. External qualification above is retained
+from the exact measured source, not rerun by these publication checks.

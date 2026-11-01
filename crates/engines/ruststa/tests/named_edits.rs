@@ -485,12 +485,23 @@ fn full_eval(
             .map(|p| slack(p.corner, &p.endpoint.name, p.is_hold_family()))
             .collect(),
         forward_nodes_evaluated: 0,
+        // The pin limit counts of the full analysis (`STA-REQ-0807`).
+        limits: a
+            .corners
+            .iter()
+            .map(ruststa::engine::store::from_analysis::corner_limits_report)
+            .collect(),
     }
 }
 
 /// Compares every reported value bitwise (`-0.0` and `NaN` differ from `0.0`).
 fn assert_bitwise(label: &str, q: &Evaluation, full: &Evaluation) {
     let bits = |v: &Option<f64>| v.map(f64::to_bits);
+    assert_eq!(
+        format!("{:?}", q.limits),
+        format!("{:?}", full.limits),
+        "{label}: limit counts"
+    );
     let s = (&q.summary, &full.summary);
     assert_eq!(
         bits(&s.0.wns_setup_ns),
