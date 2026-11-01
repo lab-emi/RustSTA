@@ -228,6 +228,8 @@ fn compare_corner(
     same_debug(c_idx, "latch_maps", &inc.latch_maps, &full.latch_maps)?;
     same_debug(c_idx, "gating_sites", &inc.gating_sites, &full.gating_sites)?;
     same_debug(c_idx, "net_loads", &inc.net_loads, &full.net_loads)?;
+    // The pin limit checks of the corner (`STA-REQ-0806`).
+    same_debug(c_idx, "limits", &inc.limits, &full.limits)?;
     same_debug(
         c_idx,
         "diags",

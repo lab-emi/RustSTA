@@ -13,8 +13,8 @@ use crate::args::{CheckMethod, RunArgs};
 use crate::check::{validate_tolerance, verify_sta_store};
 use crate::phases::PhaseLog;
 use crate::ws_io::{
-    StaRunOptions, json_object_to_map, map_store_error, parse_backend, run_sta_on_revision,
-    top_paths_from_store,
+    AnalysisTables, StaRunOptions, json_object_to_map, map_store_error, parse_backend,
+    run_sta_on_revision, top_paths_from_store, validate_limit_rows,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -59,8 +59,9 @@ pub fn exec_run(
     inv: &Invocation,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<(Envelope, Vec<String>, i32), Error> {
-    if let Err(err) =
-        validate_tolerance(args.tolerance).and_then(|()| validate_state_gib(args.max_state_gib))
+    if let Err(err) = validate_tolerance(args.tolerance)
+        .and_then(|()| validate_state_gib(args.max_state_gib))
+        .and_then(|()| validate_limit_rows(args.max_limit_rows))
     {
         let parsed = BaseRev::parse(&args.base_rev).ok().map(|b| b.rev());
         let _ = ws.log_rejected(inv, parsed, &err);
@@ -89,13 +90,26 @@ pub fn exec_run(
         max_paths: args.max_paths,
         store_mode: args.sta_store,
         max_state_gib: args.max_state_gib,
+        max_limit_rows: args.max_limit_rows,
+        require_wire_model: args.require_wire_model,
+        pulse_rules: crate::args::pulse_rules(args.pulse_groups, args.pulse_pins),
+        clock_limits: crate::args::clock_limits(args.clock_limits),
     };
 
     let step_res = (|| {
         let base_rev = txn.base().clone();
-        let (store_data, scope, comp, metrics) = run_sta_on_revision(ws, &base_rev, &opts, diags)?;
+        let AnalysisTables {
+            store: store_data,
+            limits,
+            scope,
+            completeness: comp,
+            metrics,
+        } = run_sta_on_revision(ws, &base_rev, &opts, diags)?;
 
         let mut upstream_names = vec!["netlist", "constraints"];
+        if base_rev.has_table("parasitics") {
+            upstream_names.push("parasitics");
+        }
         let corner_lib_tables: Vec<String>;
         if args.corners.is_empty() {
             upstream_names.push("libraries");
@@ -112,7 +126,11 @@ pub fn exec_run(
         let upstream = txn.upstream(&upstream_names)?;
         let log = PhaseLog::get();
         PhaseLog::time(log, "stage_store", || {
-            store_data.stage_to_txn(&mut txn, upstream)
+            store_data.stage_to_txn(&mut txn, upstream.clone())
+        })?;
+        // The pin limit table of the same analysis, with the same inputs (`STA-REQ-0806`).
+        PhaseLog::time(log, "stage_limits", || {
+            limits.stage_to_txn(&mut txn, upstream)
         })?;
 
         // The staged table is the in-memory one: queried in place, never encoded twice.

@@ -12,7 +12,7 @@ use super::canon_sdc::CanonSdc;
 use super::lib_model::{CellDef, CombArc, CornerLib, collect_vars};
 use super::verilog::{FlatDesign, NodeKind};
 
-/// Three-valued logic state (`0`, `1`, or `X` unknown) (`STA-REQ-0151`).
+/// Three-valued logic state (`0`, `1`, or `X` unknown) (`STA-REQ-0162`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogicVal {
     Zero,
@@ -72,7 +72,7 @@ impl LogicVal {
     }
 }
 
-/// Evaluates a Liberty boolean expression `f` under Kleene ternary logic (`STA-REQ-0151`).
+/// Evaluates a Liberty boolean expression `f` under Kleene ternary logic (`STA-REQ-0162`).
 #[must_use]
 pub fn eval_kleene(f: &Func, env: &dyn Fn(&str) -> LogicVal) -> LogicVal {
     match f {
@@ -106,6 +106,11 @@ pub struct ConstPropResult {
     pub disabled_launch_arcs: BTreeMap<(usize, usize), DisableReason>,
     /// Disabled sequential check arcs `(inst_idx, check_arc_idx) -> DisableReason`.
     pub disabled_check_arcs: BTreeMap<(usize, usize), DisableReason>,
+    /// Outputs of constant cells (tie cells): their transition is 0 (`STA-REQ-0117`).
+    pub tie_outputs: Vec<usize>,
+    /// Latches whose enable pin is constant, `(inst_idx, latch_idx) -> active`: an active enable
+    /// holds the latch transparent, an inactive one opaque (`STA-REQ-0163`).
+    pub constant_enable_latches: BTreeMap<(usize, usize), bool>,
 }
 
 /// Runs Kleene ternary constant propagation, applies `set_disable_timing`, disables non-toggling
@@ -119,6 +124,7 @@ pub fn propagate_constants(
     let n_nodes = design.nodes.len();
     let mut pin_vals = vec![LogicVal::X; n_nodes];
     let mut pinned_by_sdc = vec![false; n_nodes];
+    let mut tie_outputs = Vec::new();
 
     // 1. Seed constants from structural `1'b0` / `1'b1` ties and constant cells (`TIELO`/`TIEHI`).
     for (ni, node) in design.nodes.iter().enumerate() {
@@ -143,6 +149,7 @@ pub fn propagate_constants(
                     && let Some(&out_node) = inst.pin_nodes.get(pname)
                 {
                     pin_vals[out_node] = v;
+                    tie_outputs.push(out_node);
                 }
             }
         }
@@ -169,7 +176,7 @@ pub fn propagate_constants(
         &mut disabled_check_arcs,
     );
 
-    // 4. Fixed-point Kleene propagation across nets and combinational cells (`STA-REQ-0151`, `0152`).
+    // 4. Fixed-point Kleene propagation across nets and combinational cells (`STA-REQ-0162`, `0152`).
     for _ in 0..n_nodes.max(4) {
         let mut changed = false;
 
@@ -211,7 +218,41 @@ pub fn propagate_constants(
             }
         }
 
-        // Propagate across pure combinational cells (never across sequential cells, STA-REQ-0152).
+        // A clock gate output (`clock_gate_out_pin`) is the conjunction of the cell's clock and
+        // enable inputs, whatever the cell's other groups say (`STA-REQ-0162`).
+        for inst in &design.instances {
+            let Some(cdef) = lib.cells.get(&inst.cell_type) else {
+                continue;
+            };
+            let mut gate = None;
+            for (pname, pdef) in &cdef.pins {
+                if pdef.direction == Direction::Input
+                    && (pdef.clock_gate_clock_pin || pdef.clock_gate_enable_pin)
+                {
+                    let v = inst
+                        .pin_nodes
+                        .get(pname)
+                        .map_or(LogicVal::X, |&ni| pin_vals[ni]);
+                    gate = Some(gate.map_or(v, |g: LogicVal| g.and(v)));
+                }
+            }
+            let Some(gate) = gate.filter(|&g| g != LogicVal::X) else {
+                continue;
+            };
+            for (pname, pdef) in &cdef.pins {
+                if pdef.clock_gate_out_pin
+                    && let Some(&out_node) = inst.pin_nodes.get(pname)
+                    && !pinned_by_sdc[out_node]
+                    && pin_vals[out_node] != gate
+                {
+                    pin_vals[out_node] = gate;
+                    changed = true;
+                }
+            }
+        }
+
+        // Propagate across pure combinational cells: a sequential cell's stored state is never a
+        // constant, even with an asynchronous clear or preset held active (`STA-REQ-0162`).
         for (inst_idx, inst) in design.instances.iter().enumerate() {
             let Some(cdef) = lib.cells.get(&inst.cell_type) else {
                 continue;
@@ -220,7 +261,7 @@ pub fn propagate_constants(
                 continue;
             }
             for (pname, pdef) in &cdef.pins {
-                if pdef.direction != Direction::Output {
+                if pdef.direction != Direction::Output || pdef.clock_gate_out_pin {
                     continue;
                 }
                 let Some(&out_node) = inst.pin_nodes.get(pname) else {
@@ -281,6 +322,7 @@ pub fn propagate_constants(
 
     // 5. Evaluate `when` conditions, disable non-toggling arcs, and refine unateness (`STA-REQ-0153`, `0154`).
     let mut refined_comb_sense: BTreeMap<(usize, usize), TimingSense> = BTreeMap::new();
+    let mut constant_enable_latches: BTreeMap<(usize, usize), bool> = BTreeMap::new();
 
     for (inst_idx, inst) in design.instances.iter().enumerate() {
         let Some(cdef) = lib.cells.get(&inst.cell_type) else {
@@ -324,8 +366,20 @@ pub fn propagate_constants(
                         disabled_comb_arcs.insert((inst_idx, ca_idx), DisableReason::CaseAnalysis);
                         continue;
                     }
-                    if let Some(s) = sense_opt {
-                        refined_comb_sense.insert((inst_idx, ca_idx), s);
+                    // A non-unate arc takes the sense of the residual function; a unate arc
+                    // whose sense the residual function contradicts cannot switch the output
+                    // (`STA-REQ-0153`, `STA-REQ-0159`).
+                    match (&ca.sense, sense_opt) {
+                        (TimingSense::NonUnate, Some(s)) => {
+                            refined_comb_sense.insert((inst_idx, ca_idx), s);
+                        }
+                        (TimingSense::PositiveUnate, Some(TimingSense::NegativeUnate))
+                        | (TimingSense::NegativeUnate, Some(TimingSense::PositiveUnate)) => {
+                            disabled_comb_arcs
+                                .insert((inst_idx, ca_idx), DisableReason::CaseAnalysis);
+                            continue;
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -352,6 +406,15 @@ pub fn propagate_constants(
             }
         }
 
+        for (l_idx, latch) in cdef.latches.iter().enumerate() {
+            if let Some(&g) = inst.pin_nodes.get(&latch.enable_pin)
+                && let Some(level) = pin_vals[g].to_bool()
+            {
+                let active = level == (latch.active_level == super::lib_model::Trans::Rise);
+                constant_enable_latches.insert((inst_idx, l_idx), active);
+            }
+        }
+
         for (chk_idx, chk) in cdef.check_arcs.iter().enumerate() {
             if disabled_check_arcs.contains_key(&(inst_idx, chk_idx)) {
                 continue;
@@ -370,6 +433,8 @@ pub fn propagate_constants(
         refined_comb_sense,
         disabled_launch_arcs,
         disabled_check_arcs,
+        tie_outputs,
+        constant_enable_latches,
     }
 }
 

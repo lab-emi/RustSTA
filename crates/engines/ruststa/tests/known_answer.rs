@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 RustSTA contributors
 
 //! Suite `sta-engine-known-answer` (`STA-REQ-0015`, `STA-REQ-0016`, `STA-REQ-0108` to `0125`,
-//! `STA-REQ-0211`, `STA-REQ-0212`, `STA-REQ-0214`, `STA-REQ-0216` to `0226`, `STA-REQ-0501`):
+//! `STA-REQ-0229`, `STA-REQ-0212`, `STA-REQ-0214`, `STA-REQ-0216` to `0226`, `STA-REQ-0501`):
 //! end-to-end analytic known-answer verification of [`EngineAnalysis`] against the closed-form
 //! derivations in `verification/analytic/sta/*/DERIVATION.md` and `expected.json`.
 
@@ -470,7 +470,7 @@ fn assert_opt_close(got: Option<f64>, want: f64, label: &str) {
     );
 }
 
-// STA-REQ-0110 to 0114, STA-REQ-0211, STA-REQ-0212, STA-REQ-0501: inverter_chain.
+// STA-REQ-0110 to 0114, STA-REQ-0229, STA-REQ-0212, STA-REQ-0501: inverter_chain.
 #[test]
 fn known_answer_inverter_chain() {
     let verilog = "\
@@ -534,7 +534,7 @@ endmodule
     assert_opt_close(a.hold_slack_for("r2/D"), early - HOLD, "r2/D hold");
 }
 
-// STA-REQ-0211, STA-REQ-0501: falling_edge_capture.
+// STA-REQ-0229, STA-REQ-0501: falling_edge_capture.
 #[test]
 fn known_answer_falling_edge_capture() {
     let verilog = "\

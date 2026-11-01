@@ -6,7 +6,7 @@
 arcs are:
 - net arcs from each driver of a net to each of its loads;
 - cell arcs from `related_pin` to the pin that owns the timing group, for combinational types,
-  three-state enable/disable types (`three_state_enable*`, `three_state_disable*`, STA-REQ-0013),
+  three-state enable/disable types (`three_state_enable*`, `three_state_disable*`, STA-REQ-0017),
   and edge types (`rising_edge`, `falling_edge`); arcs of type `clear` and `preset` are not
   propagated (asynchronous controls are covered by recovery and removal checks, STA-REQ-0224).
 Check arcs (`setup_*`, `hold_*`, `recovery_*`, `removal_*`) are not propagation arcs.
@@ -44,6 +44,29 @@ launch tag `tag` present at `(u, tr_in, an)`, the candidate arrival at `(v, tag,
 `arr[u][tag][tr_in][an] + d`, reduced across incoming arcs in topological CSR order by `max` for
 `late` and `min` for `early`.
 
+**STA-REQ-0117** Transitions ignore logic values (replaces STA-REQ-0116)
+([`const_mux_select`](../../../verification/analytic/sta/const_mux_select/DERIVATION.md))
+[@bhasker2009static, ch. 3 and 7]. The transition of a pin is a property of the pin, not of the
+paths through it, and the delay calculation that gives it ignores logic values: the merge of
+STA-REQ-0108 runs over every arc that carries a transition into the pin, each evaluated at the
+transition of its source pin with its library timing sense:
+- the enabled arcs;
+- the arcs that only logic values disable (reasons `constant`, `case_analysis` and `false_when`,
+  STA-REQ-0159, STA-REQ-0155, STA-REQ-0164), with the transitions that a sense refinement
+  (STA-REQ-0153) removes from an enabled arc;
+- the clock-to-output arcs of sequential cells that launch no arrival because logic values
+  disable them or because no clock reaches their clock pin (STA-REQ-0163); when an ideal clock
+  reaches that clock pin, the arc is evaluated at the ideal clock transition instead
+  (STA-REQ-0822);
+- the `D -> Q` arc of a latch whose enable is held constant (STA-REQ-0163).
+Arcs that break a combinational cycle or that `set_disable_timing` disables carry nothing. The
+outputs of tie cells (constant drivers without timing arcs) have the transition 0; a port held
+constant by case analysis keeps its input transition. These arcs carry no arrival and no required
+time. An arc that logic values disable and that would close a loop with these transitions is left
+out of the merge and counted with warning `T0149`. The propagation of a propagated clock merges the
+same arcs, with the input ports, the tie cells and the launched outputs of sequential cells as its
+transition sources (STA-REQ-0710, STA-REQ-0714).
+
 ## Net loads and delay lookup
 
 **STA-REQ-0110** The load of a net depends on the transition of its driver and on the analysis. For
@@ -55,8 +78,11 @@ maximum instead. Port loads (`set_load`) are added: the `-max` value in the late
 output-pin capacitances (STA-REQ-0121) and wire-model capacitances (STA-REQ-0122 to 0125) are added
 to form the total net capacitance `C_net`.
 
-**STA-REQ-0111** In the `Ideal` and `WireloadLumped` wire models, net arcs have zero delay and copy
-transitions (`slew[driver][tr][an]`) unchanged from the driver to each load pin.
+**STA-REQ-0111** In the `Ideal` and `WireloadLumped` wire models, net arcs have no
+physical RC delay. Equal waveform conventions copy transitions unchanged. Differing
+library conventions convert the slew interval and its library derate, and shift the
+arrival reference from the source output threshold to the destination input threshold
+(STA-REQ-0016).
 
 **STA-REQ-0112** A cell arc with sense `positive_unate` maps an input rise to an output rise and a
 fall to a fall; `negative_unate` maps rise to fall and fall to rise; `non_unate` maps each input

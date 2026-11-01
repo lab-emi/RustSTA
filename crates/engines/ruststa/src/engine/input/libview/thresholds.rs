@@ -10,8 +10,7 @@ use rusteda_core::job::Diag;
 ///
 /// In the lumped NLDM delay model (`Ideal` and `WireloadLumped`), lookup tables are already
 /// indexed in library slew units and are evaluated without scaling by `slew_derate_from_library`.
-/// These attributes are recorded in the corner metadata and checked for consistency across all
-/// libraries combined in the same corner.
+/// Each cell retains these attributes; net boundaries convert between library conventions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CornerThresholds {
     pub input_threshold_pct_rise: f64,
@@ -42,6 +41,100 @@ impl Default for CornerThresholds {
 }
 
 impl CornerThresholds {
+    /// Validates the waveform convention used by the bounded crossing solver.
+    pub(crate) fn validate(self) -> Result<(), &'static str> {
+        for fall in [false, true] {
+            let t = self.rc(fall);
+            if ![t.lower, t.upper, t.input, t.output, t.derate]
+                .iter()
+                .all(|v| v.is_finite())
+                || t.lower <= 0.0
+                || t.upper >= 1.0
+                || t.lower >= t.upper
+                || t.input <= 0.0
+                || t.input >= 1.0
+                || t.output <= 0.0
+                || t.output >= 1.0
+                || t.derate <= 0.0
+                || t.derate > 1.0
+            {
+                return Err("invalid delay/slew trip points or slew derate");
+            }
+        }
+        Ok(())
+    }
+
+    /// Converts a library slew to another library's slew unit for the same linear waveform.
+    pub fn convert_slew(self, destination: Self, slew: f64, fall: bool) -> f64 {
+        if self == destination {
+            return slew;
+        }
+        let src = self.rc(fall);
+        let dst = destination.rc(fall);
+        slew * src.derate / (src.upper - src.lower) * (dst.upper - dst.lower) / dst.derate
+    }
+
+    /// Shifts the arrival reference from a driver's output to a sink's input threshold.
+    pub fn net_reference_shift(self, destination: Self, slew: f64, fall: bool) -> f64 {
+        let src = self.rc(fall);
+        let dst = destination.rc(fall);
+        slew * src.derate / (src.upper - src.lower) * (dst.input - src.output)
+    }
+    /// Read the parsed library metadata, never infer physics from a library name.
+    pub fn from_library(l: &rusteda_core::liberty::Library) -> Self {
+        let d = Self::default();
+        Self {
+            input_threshold_pct_rise: l
+                .input_threshold_pct_rise
+                .unwrap_or(d.input_threshold_pct_rise),
+            input_threshold_pct_fall: l
+                .input_threshold_pct_fall
+                .unwrap_or(d.input_threshold_pct_fall),
+            output_threshold_pct_rise: l
+                .output_threshold_pct_rise
+                .unwrap_or(d.output_threshold_pct_rise),
+            output_threshold_pct_fall: l
+                .output_threshold_pct_fall
+                .unwrap_or(d.output_threshold_pct_fall),
+            slew_lower_threshold_pct_rise: l
+                .slew_lower_threshold_pct_rise
+                .unwrap_or(d.slew_lower_threshold_pct_rise),
+            slew_upper_threshold_pct_rise: l
+                .slew_upper_threshold_pct_rise
+                .unwrap_or(d.slew_upper_threshold_pct_rise),
+            slew_lower_threshold_pct_fall: l
+                .slew_lower_threshold_pct_fall
+                .unwrap_or(d.slew_lower_threshold_pct_fall),
+            slew_upper_threshold_pct_fall: l
+                .slew_upper_threshold_pct_fall
+                .unwrap_or(d.slew_upper_threshold_pct_fall),
+            slew_derate_from_library: l
+                .slew_derate_from_library
+                .unwrap_or(d.slew_derate_from_library),
+        }
+    }
+
+    pub fn rc(self, fall: bool) -> rusteda_compute::rc::Thresholds {
+        use rusteda_compute::rc::Thresholds;
+        if fall {
+            Thresholds {
+                lower: 1.0 - self.slew_upper_threshold_pct_fall / 100.0,
+                upper: 1.0 - self.slew_lower_threshold_pct_fall / 100.0,
+                input: 1.0 - self.input_threshold_pct_fall / 100.0,
+                output: 1.0 - self.output_threshold_pct_fall / 100.0,
+                derate: self.slew_derate_from_library,
+            }
+        } else {
+            Thresholds {
+                lower: self.slew_lower_threshold_pct_rise / 100.0,
+                upper: self.slew_upper_threshold_pct_rise / 100.0,
+                input: self.input_threshold_pct_rise / 100.0,
+                output: self.output_threshold_pct_rise / 100.0,
+                derate: self.slew_derate_from_library,
+            }
+        }
+    }
+
     /// Extracts library-level threshold and `slew_derate_from_library` attributes from raw Liberty
     /// text, falling back to [`Self::default`] for attributes not stated in the header.
     #[must_use]
@@ -182,5 +275,27 @@ impl CornerThresholds {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod parsed_metadata_tests {
+    use super::*;
+    // STA-REQ-0725: the physical values are metadata, independent of a library label.
+    #[test]
+    fn parsed_trip_points_survive_arbitrary_library_names() {
+        let text = "library(arbitrary_name){time_unit:\"1ns\";capacitive_load_unit(1,pf);input_threshold_pct_rise:40;input_threshold_pct_fall:60;output_threshold_pct_rise:50;output_threshold_pct_fall:50;slew_lower_threshold_pct_rise:30;slew_upper_threshold_pct_rise:70;slew_lower_threshold_pct_fall:30;slew_upper_threshold_pct_fall:70;slew_derate_from_library:0.5;cell(B){pin(A){direction:input;}pin(Y){direction:output;function:\"A\";}}}";
+        let library = rusteda_formats::liberty::read_text(text, "thresholds.lib").unwrap();
+        let first = CornerThresholds::from_library(&library);
+        let mut renamed = library.clone();
+        renamed.name = "another_label".into();
+        assert_eq!(first, CornerThresholds::from_library(&renamed));
+        let rise = first.rc(false);
+        let fall = first.rc(true);
+        assert_eq!(rise.derate, 0.5);
+        assert_eq!(rise.lower, 0.3);
+        assert_eq!(rise.upper, 0.7);
+        assert_eq!(rise.input, 0.4);
+        assert_eq!(fall.input, 0.4);
     }
 }

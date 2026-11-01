@@ -9,16 +9,26 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
   <img src="assets/ruststa-banner.gif" alt="Timing feedback for the next design iteration." width="1200">
 </picture>
 
+## Development update · 2026-11-01
 
-## Latest RustEDA integration · 2026-10-28
+The source now includes mixed standard-cell/SRAM Liberty conventions, explicit
+global early/late timing derates and driving-cell waveforms on extracted and
+propagated-clock paths. RC preparation runs independent nodes within each graph
+level on a bounded rayon pool, then commits results in topological order. The
+memory estimate includes an additional 184 bytes per node for jobs/results.
 
-The integrated RustSTA development is documented in the
-[RustEDA module site](https://lab-emi.github.io/RustEDA/modules/ruststa/).
-This standalone site describes the older `main` source preview; it does not
-ship the integration branch's newer capabilities.
+[Source, evidence and remaining limits](development-status.md)
 
-[Development progress and evidence](development-status.md) ·
-[Use the integrated source](https://github.com/lab-emi/RustSTA/tree/codex/unified-brand)
+
+## Development status · 2026-10-28
+
+**RustSTA 0.4.3** adds non-tree extracted RC networks to the integrated timing
+flow. SPEF import, effective-capacitance waveforms and propagated primary clocks
+are supported. Dual-PDK reference/circuit checks accompany full/incremental and
+CPU/CUDA consistency checks. Mixed-library SRAM timing and global derates remain
+experimental work outside this snapshot.
+
+[Progress, measured agreement and known residuals →](development-status.md)
 
 ## Analyze. Trace. Iterate.
 
@@ -102,11 +112,12 @@ complete import → analysis → report → check flow.
 | Contribute to RustSTA | [Architecture](architecture/index.md) → [contributing](contributing.md) |
 
 !!! note "Analysis scope"
-    RustSTA is a source preview. The current engine uses ideal clocks and ideal
-    or lumped wire-load models. Generated clocks, propagated clocks, CPPR and SPEF
-    annotation are outside the implemented scope. Check the
-    [support table](reference/scope.md) before interpreting a result.
+    RustSTA 0.4.3 is a source preview. It supports ideal and explicitly propagated
+    primary clocks, ideal/lumped wires and detailed SPEF RC networks. Generated
+    clocks, CPPR, CCS and crosstalk remain outside scope. The independent checker
+    returns `undecided` for extracted RC; full recomputation checks consistency.
+    Check the [support table](reference/scope.md) before interpreting a result.
 
 Part of the [RustEDA tool family](https://github.com/lab-emi).
-Use [RustSys](https://lab-emi.github.io/RustSys/) to synthesize RTL to standard cells,
+Use [RustSys](https://lab-emi.github.io/RustEDA/modules/rustsys/) to synthesize RTL to standard cells,
 then analyze the exported structural netlist with RustSTA.

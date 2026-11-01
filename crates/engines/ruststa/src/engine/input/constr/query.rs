@@ -1094,7 +1094,7 @@ fn clock_attr(ck: &CompiledClock, attr: &str) -> Option<String> {
         "period" => Some(format!("{}", ck.period_ns)),
         "is_virtual" => Some(ck.is_virtual().to_string()),
         "is_generated" => Some("false".to_string()),
-        "is_propagated" => Some("false".to_string()),
+        "is_propagated" => Some(ck.propagated.to_string()),
         _ => None,
     }
 }

@@ -20,6 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
+      - name: Fetch locked dependencies for offline cross-platform metadata checks
+        run: |
+          ulimit -v 4194304
+          timeout --kill-after=5s 300s cargo fetch --locked
       - name: Check repository within CPU resource budgets
         run: |
           free -h
@@ -37,6 +41,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
+      - name: Fetch locked dependencies for offline cross-platform metadata checks
+        run: |
+          ulimit -v 4194304
+          timeout --kill-after=5s 300s cargo fetch --locked
       - name: Test within CPU resource budgets
         run: |
           free -h
@@ -49,6 +57,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
+      - name: Fetch locked dependencies for offline cross-platform metadata checks
+        run: |
+          ulimit -v 4194304
+          timeout --kill-after=5s 300s cargo fetch --locked
       - uses: actions/cache@v4
         with:
           path: target/pdk

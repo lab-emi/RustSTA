@@ -890,6 +890,7 @@ fn build_synthetic_scale_store(n_cells: usize) -> StaStoreData {
     }];
 
     let scope = ScopeReport {
+        global_timing_derate: None,
         top: String::from("top"),
         corners: vec![String::from("default")],
         wire_model: String::from("ideal"),
@@ -906,6 +907,7 @@ fn build_synthetic_scale_store(n_cells: usize) -> StaStoreData {
             disabled_arcs_by_reason: BTreeMap::new(),
             unanalyzed_arcs_by_type: BTreeMap::new(),
         },
+        limits: None,
     };
     let scope_bytes = serde_json::to_vec(&scope).expect("scope json");
     let (str_bytes, str_offs) = strings.finish();

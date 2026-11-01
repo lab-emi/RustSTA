@@ -20,7 +20,8 @@ use rusteda_workspace::edits::{Edit, EditFile};
 use super::analysis::{CornerAnalysis, STATE_BYTES_PER_NODE_TAG};
 use super::incr::{SessionError, SessionNodeKey, TimingSession};
 use super::scope::StaSummary;
-use super::store::layout::canon_f64;
+use super::store::from_analysis::corner_limits_report;
+use super::store::layout::{CornerLimitsReport, canon_f64};
 
 /// An endpoint whose slacks a query reports (`STA-REQ-0623`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +122,8 @@ pub struct Evaluation {
     pub paths: Vec<Option<f64>>,
     /// Node evaluations of the forward propagation that produced the values.
     pub forward_nodes_evaluated: usize,
+    /// The counts of the pin limit checks of every corner (`STA-REQ-0807`).
+    pub limits: Vec<CornerLimitsReport>,
 }
 
 /// The outcome of one candidate (`STA-REQ-0624`, `STA-REQ-0626`).
@@ -191,6 +194,7 @@ pub fn evaluate(session: &TimingSession, targets: &QueryTargets) -> Evaluation {
         endpoints,
         paths,
         forward_nodes_evaluated: session.last_stats().forward_nodes_evaluated,
+        limits: session.corners().iter().map(corner_limits_report).collect(),
     }
 }
 

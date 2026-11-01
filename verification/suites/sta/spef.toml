@@ -1,0 +1,13 @@
+[[suite]]
+name = "sta-extracted-rc"
+requirement = ["STA-REQ-0700", "STA-REQ-0701", "STA-REQ-0702", "STA-REQ-0703", "STA-REQ-0704", "STA-REQ-0705", "STA-REQ-0706", "STA-REQ-0707", "STA-REQ-0708", "STA-REQ-0710", "STA-REQ-0711", "STA-REQ-0712", "STA-REQ-0713", "STA-REQ-0730", "STA-REQ-0731", "STA-REQ-0732"]
+test = "crates/engines/ruststa/tests/extracted.rs"
+cases = "verification/fixtures/synthetic/spef"
+description = "Bounded detailed parasitics, typed-input validation, loads, zero resistance, resistor loops, components without a resistor path to the driver, full versus incremental ECO checks and propagated primary clocks. External acceptance uses the bounded nodal first-moment and dual-library harness documented with parasitic timing."
+
+[[suite]]
+name = "rc-waveforms"
+requirement = ["STA-REQ-0720", "STA-REQ-0721", "STA-REQ-0722", "STA-REQ-0723", "STA-REQ-0724", "STA-REQ-0725", "STA-REQ-0727", "STA-REQ-0728", "STA-REQ-0729"]
+test = "crates/engines/ruststa/tests/extracted.rs"
+cases = "verification/fixtures/synthetic/spef"
+description = "Three-moment pi, nonlinear effective loads/slews, parsed metadata, full/incremental and CPU/CUDA agreement. External transient and dual-library acceptance are explicitly enabled."
