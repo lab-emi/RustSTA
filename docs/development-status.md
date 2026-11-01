@@ -74,7 +74,7 @@ clocks, CPPR, CCS and crosstalk remain unsupported; the new derate and driving-c
 
 The isolated workspace passes 415 regular Rust tests (19 ignored), formatting,
 all-target/all-feature Clippy and rustdoc. Repository layout and shared-file
-integrity pass; requirement coverage is 596 requirements with zero gaps and
+integrity pass; requirement coverage is 597 requirements with zero gaps and
 fixture regeneration checks pass. The standalone and unified strict documentation
 builds and rendered link checks pass. External qualification above is retained
 from the exact measured source, not rerun by these publication checks.

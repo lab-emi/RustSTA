@@ -289,6 +289,7 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | SDC-REQ-0054 | docs/specs/sdc/sdc.md | @common/crates/apps/rusteda-cli/src/import_sdc.rs<br>@common/crates/apps/rusteda-cli/tests/import_sdc.rs<br>crates/apps/rusteda-cli/tests/import_sdc.rs |
 | SDC-REQ-0055 | docs/specs/sdc/sdc.md | @common/crates/apps/rusteda-cli/src/import_sdc.rs<br>@common/crates/apps/rusteda-cli/tests/import_sdc.rs<br>@common/crates/formats/rusteda-formats/src/sdc.rs<br>crates/apps/rusteda-cli/tests/import_sdc.rs |
 | SDC-REQ-0070 | docs/specs/sdc/sdc.md | @common/crates/formats/rusteda-formats/tests/sdc_commands.rs |
+| SDC-REQ-0071 | docs/specs/sdc/sdc.md | @common/crates/formats/rusteda-formats/tests/sdc_commands.rs |
 | STA-REQ-0001 | docs/specs/sta/inputs.md | crates/engines/ruststa/src/netlist.rs<br>crates/engines/ruststa/tests/legacy_graph.rs<br>crates/engines/ruststa/tests/support/legacy_import.rs<br>crates/engines/ruststa/tests/support/main.rs<br>crates/verify/ruststa-check/src/design.rs<br>crates/verify/ruststa-check/src/rev/verilog.rs |
 | STA-REQ-0002 | docs/specs/sta/inputs.md | crates/engines/ruststa/src/engine/graph/build.rs<br>crates/engines/ruststa/src/engine/input/netview.rs<br>crates/engines/ruststa/src/graph.rs<br>crates/engines/ruststa/src/netlist.rs<br>crates/engines/ruststa/tests/graph_netlist.rs<br>crates/verify/ruststa-check/src/design.rs<br>crates/verify/ruststa-check/src/rev/verilog.rs |
 | STA-REQ-0003 | docs/specs/sta/inputs.md | crates/engines/ruststa/src/engine/graph/build.rs<br>crates/engines/ruststa/src/engine/input/netview.rs<br>crates/engines/ruststa/src/engine/paths/search.rs<br>crates/engines/ruststa/src/engine/prop/exceptions/helpers.rs<br>crates/engines/ruststa/src/engine/prop/lower.rs<br>crates/engines/ruststa/src/netlist.rs<br>crates/engines/ruststa/tests/graph_netlist.rs<br>crates/engines/ruststa/tests/support/main.rs<br>crates/verify/ruststa-check/src/design.rs<br>crates/verify/ruststa-check/src/rev/verilog.rs |
@@ -619,9 +620,9 @@ more than 200 IDs is not expanded: only its first number counts as cited.
 | LIBERTY | 49 | 0 |
 | PROTO | 23 | 0 |
 | RCLI | 30 | 0 |
-| SDC | 56 | 0 |
+| SDC | 57 | 0 |
 | STA | 190 | 0 |
 | VERILOG | 28 | 0 |
 | WS | 100 | 0 |
 
-596 requirements, 0 without a citing test or source.
+597 requirements, 0 without a citing test or source.
