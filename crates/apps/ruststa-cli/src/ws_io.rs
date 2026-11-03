@@ -562,7 +562,7 @@ pub fn run_sta_on_revision(
         ctx,
         Propagation::Full,
         if keep_lowered {
-            KeepLowered::RequiredTimes
+            KeepLowered::ForTable
         } else {
             KeepLowered::No
         },

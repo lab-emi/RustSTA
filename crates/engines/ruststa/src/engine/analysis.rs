@@ -195,9 +195,12 @@ pub enum KeepLowered {
     No,
     /// The whole lowered problem of every corner.
     Full,
-    /// The part of every corner's lowered problem that the required times of its timing table
-    /// read ([`LoweredCorner::retain_for_required_times`]).
-    RequiredTimes,
+    /// For a caller that only builds the timing table of the analysis: the part of every
+    /// corner's lowered problem that the table's required times read
+    /// ([`LoweredCorner::retain_for_required_times`]). The level-ordered propagation values of
+    /// each corner (`CornerAnalysis::propagated.values`) are released once its checks and
+    /// endpoints are built, since the table reads the node-ordered ones.
+    ForTable,
 }
 
 impl From<bool> for KeepLowered {
@@ -434,11 +437,37 @@ impl<'a> EngineAnalysis<'a> {
             && matches!(propagation, Propagation::Full);
         if concurrent {
             use rayon::prelude::*;
-            let jobs: Vec<_> = corners.iter().zip(timing_libs).enumerate().collect();
+            // Every corner is bound first (at once), so that a shared or released extraction
+            // is not kept while the corners are analyzed.
+            let wires: Vec<Option<Result<CornerWires, Diag>>> = if options.parasitics.is_empty() {
+                corners.iter().map(|_| None).collect()
+            } else {
+                corners
+                    .par_iter()
+                    .zip(&timing_libs)
+                    .with_max_len(1)
+                    .map(|(cl, tlib)| {
+                        Some(wire_corner(
+                            cl.name,
+                            cl.libs,
+                            tlib,
+                            &netview,
+                            &constraints,
+                            options,
+                        ))
+                    })
+                    .collect()
+            };
+            let jobs: Vec<_> = corners
+                .iter()
+                .zip(timing_libs)
+                .zip(wires)
+                .enumerate()
+                .collect();
             let done: Vec<Result<(CornerAnalysis, PropagationRecord), Diag>> = jobs
                 .into_par_iter()
                 .with_max_len(1)
-                .map(|(idx, (cl, tlib))| {
+                .map(|(idx, ((cl, tlib), wires))| {
                     let mut own = PropagationRecord::default();
                     let ca = analyze_one_corner(
                         CornerId(idx as u32),
@@ -453,6 +482,7 @@ impl<'a> EngineAnalysis<'a> {
                         ctx,
                         propagation,
                         keep_lowered,
+                        wires,
                         &mut own,
                     )?;
                     Ok((ca, own))
@@ -468,6 +498,29 @@ impl<'a> EngineAnalysis<'a> {
                 corner_results.push(ca);
             }
         } else {
+            // A full analysis with extracted parasitics binds every corner first, so that a
+            // parsed extraction shared by the corners, or released once bound, is not kept
+            // while the first corners are analyzed. Each corner's result, including an error,
+            // is taken where the corner-by-corner loop would compute it.
+            let mut wires: Vec<Option<Result<CornerWires, Diag>>> =
+                if matches!(propagation, Propagation::Full) && !options.parasitics.is_empty() {
+                    corners
+                        .iter()
+                        .zip(&timing_libs)
+                        .map(|(cl, tlib)| {
+                            Some(wire_corner(
+                                cl.name,
+                                cl.libs,
+                                tlib,
+                                &netview,
+                                &constraints,
+                                options,
+                            ))
+                        })
+                        .collect()
+                } else {
+                    corners.iter().map(|_| None).collect()
+                };
             for (idx, (cl, tlib)) in corners.iter().zip(timing_libs).enumerate() {
                 let cid = CornerId(idx as u32);
                 let ca = analyze_one_corner(
@@ -483,6 +536,7 @@ impl<'a> EngineAnalysis<'a> {
                     ctx,
                     propagation,
                     keep_lowered,
+                    wires[idx].take(),
                     &mut record,
                 )
                 .map_err(|d| vec![d])?;
@@ -792,6 +846,37 @@ fn setup_corner<'l>(
     constraints: &CompiledConstraints,
     options: &AnalysisOptions,
 ) -> Result<CornerSetup<'l>, Diag> {
+    let wires = wire_corner(corner_name, corner_libs, lib, netview, constraints, options)?;
+    setup_wired_corner(
+        corner_id,
+        corner_name,
+        lib,
+        netview,
+        graph,
+        constraints,
+        options,
+        wires,
+    )
+}
+
+/// Steps 1 and 2 of a corner's setup: its wire model, bound to its extracted parasitics when it
+/// has them, its net loads and their diagnostics. A function of the shared inputs and the
+/// corner's own, so it can run before earlier corners are analyzed.
+struct CornerWires {
+    wire_model: ResolvedWireModel,
+    net_loads: NetLoads,
+    diags: Vec<Diag>,
+    extracted: bool,
+}
+
+fn wire_corner(
+    corner_name: &str,
+    corner_libs: &[Library],
+    lib: &TimingLib,
+    netview: &NetlistView<'_>,
+    constraints: &CompiledConstraints,
+    options: &AnalysisOptions,
+) -> Result<CornerWires, Diag> {
     let netlist = netview.frozen();
     let mut diags = Vec::new();
 
@@ -846,6 +931,32 @@ fn setup_corner<'l>(
         }
     }
     let net_loads = NetLoads::compute(netlist, lib, &wire_model, &load_overrides);
+    Ok(CornerWires {
+        wire_model,
+        net_loads,
+        diags,
+        extracted: corner_rc.is_some(),
+    })
+}
+
+/// Steps 3 to 7 of a corner's setup, after [`wire_corner`].
+#[allow(clippy::too_many_arguments)]
+fn setup_wired_corner<'l>(
+    corner_id: CornerId,
+    corner_name: &str,
+    lib: &'l TimingLib,
+    netview: &NetlistView<'_>,
+    graph: &TimingGraph,
+    constraints: &CompiledConstraints,
+    options: &AnalysisOptions,
+    wires: CornerWires,
+) -> Result<CornerSetup<'l>, Diag> {
+    let CornerWires {
+        wire_model,
+        net_loads,
+        mut diags,
+        extracted,
+    } = wires;
 
     // 3. Build ideal clock network (`STA-REQ-0200`).
     let clock_model = crate::engine::prop::clocks::propagated::build_model(
@@ -869,39 +980,37 @@ fn setup_corner<'l>(
     }
     // Memory budget of the propagation state, checked before any of it is allocated (AGENTS
     // rule 9.2, `STA-REQ-0024`).
-    let state_bytes =
-        (graph.num_nodes() as u64 * u64::from(tags.ntags_for_compute()) * STATE_BYTES_PER_NODE_TAG)
-            .saturating_add(
-                graph.num_nodes() as u64
-                    * constraints
-                        .clocks
-                        .iter()
-                        .filter(|c| c.propagated && !c.is_virtual())
-                        .count() as u64
-                    * 128,
-            )
-            .saturating_add(crate::engine::limits::retained_bytes(
-                graph.num_nodes(),
-                options.max_limit_rows,
-            ))
-            // The parsed parasitics of every analyzed corner can stay resident while any corner
-            // is analyzed, so each corner counts all of them (`STA-REQ-0820`).
-            .saturating_add(
-                options
-                    .parasitics
+    let state_bytes = (graph.num_nodes() as u64
+        * u64::from(tags.ntags_for_compute())
+        * STATE_BYTES_PER_NODE_TAG)
+        .saturating_add(
+            graph.num_nodes() as u64
+                * constraints
+                    .clocks
                     .iter()
-                    .fold(0u64, |n, p| n.saturating_add(p.estimated_state_bytes())),
-            )
-            .saturating_add(
-                if corner_rc.is_some()
-                    || lib.has_mixed_thresholds()
-                    || !constraints.timing_derate.is_identity()
-                {
-                    graph.arcs().len() as u64 * 192 + graph.num_nodes() as u64 * 128
-                } else {
-                    0
-                },
-            );
+                    .filter(|c| c.propagated && !c.is_virtual())
+                    .count() as u64
+                * 128,
+        )
+        .saturating_add(crate::engine::limits::retained_bytes(
+            graph.num_nodes(),
+            options.max_limit_rows,
+        ))
+        // The parsed parasitics of every analyzed corner can stay resident while any corner
+        // is analyzed, so each corner counts all of them (`STA-REQ-0820`).
+        .saturating_add(
+            options
+                .parasitics
+                .iter()
+                .fold(0u64, |n, p| n.saturating_add(p.estimated_state_bytes())),
+        )
+        .saturating_add(
+            if extracted || lib.has_mixed_thresholds() || !constraints.timing_derate.is_identity() {
+                graph.arcs().len() as u64 * 192 + graph.num_nodes() as u64 * 128
+            } else {
+                0
+            },
+        );
     if state_bytes > options.max_state_bytes {
         let gib = |b: u64| b as f64 / f64::from(1u32 << 30);
         return Err(Diag::error(
@@ -1027,6 +1136,7 @@ fn analyze_one_corner(
     ctx: Ctx<'_>,
     propagation: Propagation<'_>,
     keep_lowered: KeepLowered,
+    wires: Option<Result<CornerWires, Diag>>,
     record: &mut PropagationRecord,
 ) -> Result<CornerAnalysis, Diag> {
     let netlist = netview.frozen();
@@ -1043,15 +1153,25 @@ fn analyze_one_corner(
         latch_maps,
         lowered,
         mut diags,
-    } = setup_corner(
+    } = setup_wired_corner(
         corner_id,
         corner_name,
-        corner_libs,
         &lib,
         netview,
         graph,
         constraints,
         options,
+        match wires {
+            Some(wires) => wires?,
+            None => wire_corner(
+                corner_name,
+                corner_libs,
+                &lib,
+                netview,
+                constraints,
+                options,
+            )?,
+        },
     )?;
     clock.finish();
     let relations = RelationTable::new();
@@ -1110,7 +1230,7 @@ fn analyze_one_corner(
     match keep_lowered {
         KeepLowered::No => drop(lowered),
         KeepLowered::Full => record.lowered.push(into_owned_lowered(lowered)),
-        KeepLowered::RequiredTimes => {
+        KeepLowered::ForTable => {
             let mut lowered = lowered;
             lowered.retain_for_required_times();
             record.lowered.push(into_owned_lowered(lowered));
@@ -1183,6 +1303,10 @@ fn analyze_one_corner(
         constant,
     );
     clock.finish();
+    let mut propagated = propagated;
+    if keep_lowered == KeepLowered::ForTable {
+        propagated.values = Default::default();
+    }
 
     Ok(CornerAnalysis {
         corner_id,
