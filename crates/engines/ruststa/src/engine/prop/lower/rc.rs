@@ -31,6 +31,26 @@ impl DriveRoot {
     }
 }
 
+/// [`rc::wire_from_driver`] of a net wire after the driver waveform `(res, duration)` into `pi`,
+/// taking the driver's root crossing `root` when it was solved for the same pi and output trip
+/// point: the crossing is a function of them, the resistance and the duration alone, so taking it
+/// changes no bit (`STA-REQ-0729`). Any other root is solved again.
+fn wire_after_driver(
+    pi: Pi,
+    res: f64,
+    duration: f64,
+    root: Option<DriveRoot>,
+    tau: f64,
+    t: rc::Thresholds,
+) -> Result<(f64, f64), ComputeError> {
+    match root {
+        Some(r) if r.solves(pi, t.output) => {
+            rc::wire_from_driver_root(pi, res, duration, r.crossing, tau, t)
+        }
+        _ => rc::wire_from_driver(pi, res, duration, tau, t),
+    }
+}
+
 pub(super) fn prepare(
     lowered: &mut LoweredCorner<'_>,
     graph: &TimingGraph,
@@ -333,14 +353,8 @@ pub(crate) fn arc_value(
         };
         let (d, q) = match pi {
             // The driver solved this net's root crossing already when its pi and output trip
-            // point are the same: the crossing is a function of them, the resistance and the
-            // duration alone, so taking it changes no bit (`STA-REQ-0729`).
-            Some(((res, duration), pi)) => match root {
-                Some(r) if r.solves(pi, t.output) => {
-                    rc::wire_from_driver_root(pi, res, duration, r.crossing, tau, t)
-                }
-                _ => rc::wire_from_driver(pi, res, duration, tau, t),
-            },
+            // point are the same.
+            Some(((res, duration), pi)) => wire_after_driver(pi, res, duration, root, tau, t),
             None => rc::wire(tau, s, t, primary),
         }
         .map_err(|e| Diag::error("T0077", e.to_string()))?;
@@ -377,10 +391,10 @@ pub(crate) fn arc_value(
             slew: p.slew,
             tau: None,
             drive: p.drive,
-            root: p.drive.map(|_| DriveRoot {
+            root: p.root_crossing.map(|crossing| DriveRoot {
                 pi,
                 output: t.output,
-                crossing: p.root_crossing,
+                crossing,
             }),
         })
     } else {
@@ -392,5 +406,80 @@ pub(crate) fn arc_value(
             drive: None,
             root: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn trips(output: f64) -> rc::Thresholds {
+        rc::Thresholds {
+            lower: 0.2,
+            upper: 0.8,
+            input: 0.5,
+            output,
+            derate: 1.0,
+        }
+    }
+
+    // STA-REQ-0729: a net wire takes its driver's root crossing only when that crossing was
+    // solved for its own pi and output trip point; for any other pi or trip point it solves the
+    // crossing itself, so its value is the plain solve's bit for bit.
+    #[test]
+    fn a_wire_takes_only_the_root_crossing_of_its_own_pi() {
+        let pi = Pi {
+            near: 0.004,
+            far: 0.011,
+            resistance: 0.7,
+        };
+        let t = trips(0.5);
+        // The driver waveform of a cell arc into `pi` and its root crossing, as the cell arc's
+        // value records them.
+        let gate = rc::charge::gate(pi, t, 1.3, |c| (0.02 + 2.0 * c, 0.03 + 4.0 * c)).unwrap();
+        let (res, duration, tau) = (gate.resistance, gate.duration, 0.006);
+        assert!(res > 0.0 && duration > 0.0);
+        let own = DriveRoot {
+            pi,
+            output: t.output,
+            crossing: gate.root_crossing,
+        };
+        let bits = |v: (f64, f64)| (v.0.to_bits(), v.1.to_bits());
+        let plain = |pi: Pi, t: rc::Thresholds| {
+            bits(rc::wire_from_driver(pi, res, duration, tau, t).unwrap())
+        };
+        let given = |pi: Pi, root: Option<DriveRoot>, t: rc::Thresholds| {
+            bits(wire_after_driver(pi, res, duration, root, tau, t).unwrap())
+        };
+        assert_eq!(given(pi, Some(own), t), plain(pi, t));
+        assert_eq!(given(pi, None, t), plain(pi, t));
+        // A crossing of another pi, or of another trip point, is not taken.
+        let other = DriveRoot {
+            crossing: own.crossing * 1.5,
+            ..own
+        };
+        let near = Pi {
+            near: f64::from_bits(pi.near.to_bits() + 1),
+            ..pi
+        };
+        for p in [
+            near,
+            Pi { far: 0.012, ..pi },
+            Pi {
+                resistance: 0.71,
+                ..pi
+            },
+        ] {
+            assert!(!other.solves(p, t.output));
+            assert_eq!(given(p, Some(other), t), plain(p, t));
+        }
+        let t2 = trips(0.45);
+        assert!(!other.solves(pi, t2.output));
+        assert_eq!(given(pi, Some(other), t2), plain(pi, t2));
+        // Taken, the wrong crossing would show: the check is what keeps the bits.
+        assert_ne!(
+            bits(rc::wire_from_driver_root(pi, res, duration, other.crossing, tau, t).unwrap()),
+            plain(pi, t)
+        );
     }
 }
