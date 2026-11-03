@@ -42,6 +42,9 @@ pub struct PiDrive {
     /// The Thevenin resistance (kOhm) and the source ramp duration (ns) of the driver waveform;
     /// `None` in the lumped regime.
     pub drive: Option<(f64, f64)>,
+    /// The time (ns) at which the driver waveform's pi root crosses the output trip point of `t`,
+    /// with `drive`; NaN in the lumped regime.
+    pub root_crossing: f64,
 }
 
 /// [`pi_response`] with the driver waveform.
@@ -70,14 +73,21 @@ pub fn pi_drive(
             slew: s0,
             capacitance: total,
             drive: None,
+            root_crossing: f64::NAN,
         });
     }
     let r = rc::charge::gate(pi, t, res, eval)?;
+    let drive = (r.resistance > 0.0).then_some((r.resistance, r.duration));
     Ok(PiDrive {
         delay: r.delay,
         slew: r.slew,
         capacitance: r.capacitance,
-        drive: (r.resistance > 0.0).then_some((r.resistance, r.duration)),
+        drive,
+        root_crossing: if drive.is_some() {
+            r.root_crossing
+        } else {
+            f64::NAN
+        },
     })
 }
 

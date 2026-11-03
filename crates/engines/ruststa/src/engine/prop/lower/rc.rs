@@ -7,8 +7,29 @@ use rayon::prelude::*;
 use rusteda_compute::rc::{self, Pi};
 use rusteda_compute::timing::{ArcValues, lut::lookup};
 
-/// The worst slew and its driver waveform at one node, per [tr * 2 + an].
-type NodeWave = ([f64; 4], [Option<(f64, f64)>; 4]);
+/// The worst slew, its driver waveform and that waveform's root crossing at one node, per
+/// [tr * 2 + an].
+type NodeWave = ([f64; 4], [Option<(f64, f64)>; 4], [Option<DriveRoot>; 4]);
+
+/// The root crossing of the output trip point of a driver waveform, with the pi load and the
+/// output trip point it was solved for (`STA-REQ-0729`). A net arc of that driver whose pi and
+/// output trip point are bit-identical takes it instead of solving the same crossing again.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DriveRoot {
+    pi: Pi,
+    output: f64,
+    crossing: f64,
+}
+
+impl DriveRoot {
+    /// Whether this crossing was solved for the pi `pi` and the output trip point `output`.
+    fn solves(&self, pi: Pi, output: f64) -> bool {
+        self.pi.near.to_bits() == pi.near.to_bits()
+            && self.pi.far.to_bits() == pi.far.to_bits()
+            && self.pi.resistance.to_bits() == pi.resistance.to_bits()
+            && self.output.to_bits() == output.to_bits()
+    }
+}
 
 pub(super) fn prepare(
     lowered: &mut LoweredCorner<'_>,
@@ -69,6 +90,10 @@ pub(super) fn prepare(
     let mut slews = vec![[absent(0), absent(1), absent(0), absent(1)]; n];
     // The driver resistance of the transition in `slews` (STA-REQ-0729).
     let mut drives = vec![[None; 4]; n];
+    // The root crossings of the waveforms in `drives`, only while the waveforms are prepared:
+    // `root_of[v]` indexes `roots` for a node with any.
+    let mut root_of = vec![u32::MAX; n];
+    let mut roots: Vec<[Option<DriveRoot>; 4]> = Vec::new();
     let shared: &LoweredCorner<'_> = lowered;
     let spans = independent_spans(shared, graph, n);
     for &(begin, end) in &spans {
@@ -85,6 +110,7 @@ pub(super) fn prepare(
             jobs.push((v, value, record));
         }
         let (read_slews, read_drives) = (&slews, &drives);
+        let read_roots = (root_of.as_slice(), roots.as_slice());
         let done: Vec<Result<NodeWave, Diag>> = jobs
             .into_par_iter()
             .with_min_len(16)
@@ -100,14 +126,21 @@ pub(super) fn prepare(
                     record,
                     read_slews,
                     read_drives,
+                    read_roots,
                 )
             })
             .collect();
         // In order, so the first error of the topological sweep is the one reported.
         for (v, wave) in (begin..end).zip(done) {
-            (slews[v], drives[v]) = wave?;
+            let root;
+            (slews[v], drives[v], root) = wave?;
+            if root.iter().any(Option::is_some) {
+                root_of[v] = roots.len() as u32;
+                roots.push(root);
+            }
         }
     }
+    drop((root_of, roots));
     lowered.arc_values = arc_values;
     lowered.wires = wires;
     lowered.drives = drives;
@@ -158,10 +191,12 @@ fn node_wave(
     wires: &mut [WireRec],
     slews: &[[f64; 4]],
     drives: &[[Option<(f64, f64)>; 4]],
+    (root_of, roots): (&[u32], &[[Option<DriveRoot>; 4]]),
 ) -> Result<NodeWave, Diag> {
     let node = graph.order()[v];
     let mut own_slew = [absent(0), absent(1), absent(0), absent(1)];
     let mut own_drive = [None; 4];
+    let mut own_root = [None; 4];
     if let Some(k) = lowered.starts.find(v as u32) {
         own_slew.copy_from_slice(&lowered.starts.slew[k * 4..k * 4 + 4]);
         if let Some(d) = lowered.start_drives.get(&node) {
@@ -185,6 +220,9 @@ fn node_wave(
                     if s == absent(an) {
                         continue;
                     }
+                    let root = roots
+                        .get(root_of[in_arc.src as usize] as usize)
+                        .and_then(|r| r[ti * 2 + an]);
                     let value = arc_value(
                         &lowered.luts,
                         &cls,
@@ -197,6 +235,7 @@ fn node_wave(
                         to,
                         an,
                         drives[in_arc.src as usize][ti * 2 + an],
+                        root,
                     )?;
                     if let Some(tau) = value.tau {
                         record.delay[to * 2 + an] = tau;
@@ -209,12 +248,13 @@ fn node_wave(
                     if an == 0 && q < *dst || an == 1 && q > *dst {
                         *dst = q;
                         own_drive[to * 2 + an] = value.drive;
+                        own_root[to * 2 + an] = value.root;
                     }
                 }
             }
         }
     }
-    Ok((own_slew, own_drive))
+    Ok((own_slew, own_drive, own_root))
 }
 
 /// The value of one extracted arc for one input transition, output transition and bound.
@@ -227,12 +267,15 @@ pub(crate) struct RcArcValue {
     /// The driver waveform (Thevenin resistance in kOhm, source ramp duration in ns) of a cell
     /// arc into a pi load outside the lumped regime; the net's wires follow it (`STA-REQ-0729`).
     pub drive: Option<(f64, f64)>,
+    /// The root crossing of `drive`.
+    pub root: Option<DriveRoot>,
 }
 
 /// The value of the arc `raw` with the class `cls` for the input transition `s`, the output
 /// transition `to` and the bound `an` under the extracted wire model `wire` (`STA-REQ-0723`).
 /// `lumped_load` is the load of the arc's destination when its net has no extracted driver load;
-/// `drive` is the driver waveform of the transition `s` at a net arc's source. The only
+/// `drive` is the driver waveform of the transition `s` at a net arc's source and `root`, when
+/// known, the root crossing that waveform was solved with. The only
 /// evaluation of an extracted arc: the waveform preparation of the propagation and the
 /// transitions of the design rules (`STA-REQ-0809`) both use it. A cell arc into a pi load
 /// follows the driver rule of `STA-REQ-0728` and `STA-REQ-0727`; a net arc whose driver has such
@@ -250,6 +293,7 @@ pub(crate) fn arc_value(
     to: usize,
     an: usize,
     drive: Option<(f64, f64)>,
+    root: Option<DriveRoot>,
 ) -> Result<RcArcValue, Diag> {
     let (tr, bound) = (Tr::ALL[to], An::ALL[an]);
     if let ArcKind::Net { net } = raw.kind {
@@ -263,6 +307,7 @@ pub(crate) fn arc_value(
                 slew: value.slew,
                 tau: None,
                 drive: None,
+                root: None,
             });
         }
         // RC keeps the driver waveform's slew convention. NLDM presents its
@@ -287,7 +332,15 @@ pub(crate) fn arc_value(
             _ => None,
         };
         let (d, q) = match pi {
-            Some(((res, duration), pi)) => rc::wire_from_driver(pi, res, duration, tau, t),
+            // The driver solved this net's root crossing already when its pi and output trip
+            // point are the same: the crossing is a function of them, the resistance and the
+            // duration alone, so taking it changes no bit (`STA-REQ-0729`).
+            Some(((res, duration), pi)) => match root {
+                Some(r) if r.solves(pi, t.output) => {
+                    rc::wire_from_driver_root(pi, res, duration, r.crossing, tau, t)
+                }
+                _ => rc::wire_from_driver(pi, res, duration, tau, t),
+            },
             None => rc::wire(tau, s, t, primary),
         }
         .map_err(|e| Diag::error("T0077", e.to_string()))?;
@@ -296,6 +349,7 @@ pub(crate) fn arc_value(
             slew: source.convert_slew(destination, q, to == 1),
             tau: Some(tau),
             drive: None,
+            root: None,
         });
     }
     let t = lib.node_thresholds(view, raw.dst).rc(to == 1);
@@ -311,21 +365,23 @@ pub(crate) fn arc_value(
         )
     };
     if let Some(DriverLoad::Pi { c_near, c_far, r }) = load {
-        let p = crate::engine::delay::driver::pi_drive(
-            Pi {
-                near: c_near,
-                far: c_far,
-                resistance: r,
-            },
-            t,
-            eval,
-        )
-        .map_err(|e| Diag::error("T0077", e.to_string()))?;
+        let pi = Pi {
+            near: c_near,
+            far: c_far,
+            resistance: r,
+        };
+        let p = crate::engine::delay::driver::pi_drive(pi, t, eval)
+            .map_err(|e| Diag::error("T0077", e.to_string()))?;
         Ok(RcArcValue {
             delay: p.delay,
             slew: p.slew,
             tau: None,
             drive: p.drive,
+            root: p.drive.map(|_| DriveRoot {
+                pi,
+                output: t.output,
+                crossing: p.root_crossing,
+            }),
         })
     } else {
         let (d, q) = eval(lumped_load);
@@ -334,6 +390,7 @@ pub(crate) fn arc_value(
             slew: q.max(0.0),
             tau: None,
             drive: None,
+            root: None,
         })
     }
 }
