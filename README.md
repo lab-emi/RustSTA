@@ -174,7 +174,7 @@ gate. It is one task on one host.
 In the RustEDA Ibex flow on IHP SG13G2 / EZ130 (two real SRAMs), RustSTA drives
 the frontend and post-route repairs and signs off TT/SS extracted timing beside
 OpenSTA. On identical SPEF the two agreed within 0.806 ps in run16 (2026-10-30)
-and within 0.475 ps in R20/R21 (2026-11-01), against a 1 ps gate. The
+and within 0.4754 ps in R20/R21 (2026-11-01), against a 1 ps gate. The
 2026-11-02 host campaign reran the run16-class recipe with RustSTA `0c2bcc6` and
 measured 1.4052 ps, so the gate `failed`. The whole-flow comparison with
 LibreLane is on the

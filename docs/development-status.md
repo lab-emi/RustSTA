@@ -76,7 +76,7 @@ and 332 OpenSTA black-box comparison values retained the previous maxima
 (0.036 ps Sky130, 0.049 ps GF180; 1 ps gate). Full/incremental and 1/2/8-thread
 replays retained bit-identical timing tables on the recorded extracted designs.
 The two complete Ibex native runs R20 and R21 (2026-11-01) measured 472.2 s and
-472.6 s; their maximum same-SPEF RustSTA/OpenSTA difference is 0.475 ps. Their
+472.6 s; their maximum same-SPEF RustSTA/OpenSTA difference is 0.4754 ps. Their
 recipe inputs are not in the repository, so the 2026-11-02 host campaign above
 ran the published run16-class recipe instead.
 
