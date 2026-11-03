@@ -81,7 +81,7 @@ pub fn build_model(
     let rc = options
         .parasitics
         .iter()
-        .map(|p| p.data.estimated_state_bytes())
+        .map(|p| p.estimated_state_bytes())
         .max()
         .unwrap_or(0);
     let state = n

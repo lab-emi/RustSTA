@@ -201,12 +201,85 @@ impl StepClock<'_> {
     }
 }
 
+/// [`build_store_from_analysis_with_ctx`] that takes the kept `lowered` corners and drops each
+/// one as soon as the backward pass of its corner is done, so that the rest of the table is
+/// built without them. The table is the same.
+#[allow(clippy::too_many_arguments)]
+pub fn build_store_from_analysis_releasing(
+    analysis: &EngineAnalysis<'_>,
+    lowered: Vec<LoweredCorner<'_>>,
+    corner_libs_owned: &[(String, Vec<Library>)],
+    backend_name: &str,
+    precision: StorePrecision,
+    store_mode: StoreMode,
+    top_k_paths: usize,
+    ctx: Ctx<'_>,
+) -> StaStoreData {
+    build_store_kept(
+        &StoreInput::of(analysis),
+        Kept::Owned(lowered.into_iter().map(Some).collect()),
+        corner_libs_owned,
+        backend_name,
+        precision,
+        store_mode,
+        top_k_paths,
+        ctx,
+    )
+}
+
+/// The lowered problems of the corners that the backward pass reuses.
+enum Kept<'l, 'a> {
+    Borrowed(Option<&'l [LoweredCorner<'a>]>),
+    /// Each problem is dropped once the pass of its corner is done.
+    Owned(Vec<Option<LoweredCorner<'a>>>),
+}
+
+impl<'a> Kept<'_, 'a> {
+    fn get(&self, corner: usize) -> Option<&LoweredCorner<'a>> {
+        match self {
+            Kept::Borrowed(lowered) => lowered.and_then(|l| l.get(corner)),
+            Kept::Owned(lowered) => lowered.get(corner).and_then(Option::as_ref),
+        }
+    }
+
+    fn release(&mut self, corner: usize) {
+        if let Kept::Owned(lowered) = self
+            && let Some(slot) = lowered.get_mut(corner)
+        {
+            *slot = None;
+        }
+    }
+}
+
 /// [`build_store`] reporting its steps to the observer of `ctx`, with the kept `lowered` corners
 /// of the analysis when it has them.
 #[allow(clippy::too_many_arguments)]
 pub fn build_store_with_ctx(
     analysis: &StoreInput<'_>,
     lowered: Option<&[LoweredCorner<'_>]>,
+    corner_libs_owned: &[(String, Vec<Library>)],
+    backend_name: &str,
+    precision: StorePrecision,
+    store_mode: StoreMode,
+    top_k_paths: usize,
+    ctx: Ctx<'_>,
+) -> StaStoreData {
+    build_store_kept(
+        analysis,
+        Kept::Borrowed(lowered),
+        corner_libs_owned,
+        backend_name,
+        precision,
+        store_mode,
+        top_k_paths,
+        ctx,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_store_kept(
+    analysis: &StoreInput<'_>,
+    mut lowered: Kept<'_, '_>,
     corner_libs_owned: &[(String, Vec<Library>)],
     backend_name: &str,
     precision: StorePrecision,
@@ -527,7 +600,9 @@ pub fn build_store_with_ctx(
     if store_mode == StoreMode::Full {
         let total_cn = n_corners * n_nodes;
         for (c_idx, ca) in analysis.corners.iter().enumerate() {
-            let bp = compute_corner_backward_pass(analysis, ca, lowered.and_then(|l| l.get(c_idx)));
+            let bp = compute_corner_backward_pass(analysis, ca, lowered.get(c_idx));
+            // The pass was the only reader of the corner's lowered problem.
+            lowered.release(c_idx);
             clock.lap("store.backward_pass");
             // `NODE_REC` is allocated once the first pass has released its per-tag required times,
             // so that the two never coexist (AGENTS rule 9).

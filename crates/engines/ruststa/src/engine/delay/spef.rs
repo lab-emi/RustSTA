@@ -23,10 +23,94 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// An extraction associated with one explicitly named library corner. Corners extracted from
 /// one source share its parsed extraction.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// An input made by [`ParasiticInput::released_after_bind`] gives its extraction up once an
+/// analysis has bound its corner, so that the parsed text is not kept resident while that
+/// analysis goes on; its size estimate and coupling count stay, so the budgets of the analysis
+/// are those of an input that keeps it. Such an input serves one analysis.
+#[derive(Debug)]
 pub struct ParasiticInput {
     pub corner: String,
-    pub data: std::sync::Arc<format::Spef>,
+    data: std::sync::Mutex<Option<std::sync::Arc<format::Spef>>>,
+    release_after_bind: bool,
+    estimated_state_bytes: u64,
+    coupling_records: usize,
+}
+
+impl ParasiticInput {
+    /// The extraction `data` of the corner `corner`.
+    pub fn new(corner: impl Into<String>, data: std::sync::Arc<format::Spef>) -> Self {
+        Self {
+            corner: corner.into(),
+            estimated_state_bytes: data.estimated_state_bytes(),
+            coupling_records: data.coupling_records,
+            data: std::sync::Mutex::new(Some(data)),
+            release_after_bind: false,
+        }
+    }
+
+    /// [`ParasiticInput::new`] for one analysis, which releases the extraction once it has bound
+    /// the corner.
+    pub fn released_after_bind(
+        corner: impl Into<String>,
+        data: std::sync::Arc<format::Spef>,
+    ) -> Self {
+        Self {
+            release_after_bind: true,
+            ..Self::new(corner, data)
+        }
+    }
+
+    /// The extraction; `None` once an analysis has released it.
+    pub fn data(&self) -> Option<std::sync::Arc<format::Spef>> {
+        self.slot().clone()
+    }
+
+    /// [`format::Spef::estimated_state_bytes`] of the extraction.
+    pub fn estimated_state_bytes(&self) -> u64 {
+        self.estimated_state_bytes
+    }
+
+    /// The inter-net coupling records of the extraction.
+    pub fn coupling_records(&self) -> usize {
+        self.coupling_records
+    }
+
+    /// Called once the analysis has bound the corner: releases the extraction of an input made
+    /// by [`ParasiticInput::released_after_bind`].
+    pub(crate) fn bound(&self) {
+        if self.release_after_bind {
+            *self.slot() = None;
+        }
+    }
+
+    fn slot(&self) -> std::sync::MutexGuard<'_, Option<std::sync::Arc<format::Spef>>> {
+        self.data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+impl Clone for ParasiticInput {
+    fn clone(&self) -> Self {
+        Self {
+            corner: self.corner.clone(),
+            data: std::sync::Mutex::new(self.data()),
+            release_after_bind: self.release_after_bind,
+            estimated_state_bytes: self.estimated_state_bytes,
+            coupling_records: self.coupling_records,
+        }
+    }
+}
+
+impl PartialEq for ParasiticInput {
+    fn eq(&self, other: &Self) -> bool {
+        self.corner == other.corner
+            && self.release_after_bind == other.release_after_bind
+            && self.estimated_state_bytes == other.estimated_state_bytes
+            && self.coupling_records == other.coupling_records
+            && self.data() == other.data()
+    }
 }
 
 /// Bound per-net wire capacitance and per-load, transition/bound Elmore delay.

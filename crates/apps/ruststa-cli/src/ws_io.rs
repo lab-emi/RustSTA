@@ -16,7 +16,9 @@ use rusteda_workspace::{
     Corruption, DiagCode, Diagnostic, Error, JsonObject, Revision, Severity, Workspace, rlib,
 };
 
-use ruststa::engine::analysis::{AnalysisOptions, EngineAnalysis, Propagation, WireModelOption};
+use ruststa::engine::analysis::{
+    AnalysisOptions, EngineAnalysis, KeepLowered, Propagation, WireModelOption,
+};
 use ruststa::engine::input::constr::{CompiledConstraints, CornerLibs};
 use ruststa::engine::limits::status::{DRV_KINDS, limit_statuses};
 use ruststa::engine::limits::table::LimitsData;
@@ -33,7 +35,8 @@ use ruststa::engine::types::NodeId;
 use crate::args::{PrecisionArg, StoreArg, WireModelArg};
 use crate::phases::PhaseLog;
 use ruststa::engine::store::from_analysis::{
-    StoreInput, build_store_from_analysis_with_ctx, check_store_tables,
+    StoreInput, build_store_from_analysis_releasing, build_store_from_analysis_with_ctx,
+    check_store_tables,
 };
 
 /// Options for running STA on a workspace revision.
@@ -438,7 +441,7 @@ pub fn analysis_error(err_diags: &[JobDiag], diags: &mut Vec<Diagnostic>) -> Err
 #[allow(clippy::too_many_arguments)]
 pub fn table_of_analysis(
     analysis: &EngineAnalysis<'_>,
-    lowered: Option<&[LoweredCorner<'_>]>,
+    lowered: Option<Vec<LoweredCorner<'_>>>,
     corner_libs_owned: &[(String, Vec<Library>)],
     backend_scope_name: &str,
     store_precision: StorePrecision,
@@ -463,16 +466,30 @@ pub fn table_of_analysis(
     let top_k = max_paths.max(100);
     let log = PhaseLog::get();
     let store_data = PhaseLog::time(log, "store_build", || {
-        build_store_from_analysis_with_ctx(
-            analysis,
-            lowered,
-            corner_libs_owned,
-            backend_scope_name,
-            store_precision,
-            store_mode,
-            top_k,
-            Ctx::new(None, log.map(|l| l as &dyn Observer)),
-        )
+        let ctx = Ctx::new(None, log.map(|l| l as &dyn Observer));
+        match lowered {
+            // Each kept corner is dropped once its backward pass is done.
+            Some(lowered) => build_store_from_analysis_releasing(
+                analysis,
+                lowered,
+                corner_libs_owned,
+                backend_scope_name,
+                store_precision,
+                store_mode,
+                top_k,
+                ctx,
+            ),
+            None => build_store_from_analysis_with_ctx(
+                analysis,
+                None,
+                corner_libs_owned,
+                backend_scope_name,
+                store_precision,
+                store_mode,
+                top_k,
+                ctx,
+            ),
+        }
     });
     let limits = PhaseLog::time(log, "limits_build", || {
         LimitsData::from_analysis(analysis, max_limit_rows)
@@ -525,8 +542,9 @@ pub fn run_sta_on_revision(
         .map(|(name, libs)| CornerLibs::new(name.as_str(), libs.as_slice()))
         .collect();
     let analyzed: Vec<String> = corner_libs_owned.iter().map(|(n, _)| n.clone()).collect();
-    analysis_opts.parasitics =
-        PhaseLog::time(log, "load_parasitics", || load_parasitics(rev, &analyzed))?;
+    analysis_opts.parasitics = PhaseLog::time(log, "load_parasitics", || {
+        load_parasitics_for_one_analysis(rev, &analyzed)
+    })?;
 
     let compiled = PhaseLog::time(log, "compile_constraints", || {
         compile_constraints(&sdc_model, &frozen, &corner_refs, diags)
@@ -543,7 +561,11 @@ pub fn run_sta_on_revision(
         &analysis_opts,
         ctx,
         Propagation::Full,
-        keep_lowered,
+        if keep_lowered {
+            KeepLowered::RequiredTimes
+        } else {
+            KeepLowered::No
+        },
     )
     .map_err(|err_diags| analysis_error(&err_diags, diags))?;
     // Every corner has bound its parasitics: the parsed extraction is not read again, so it is
@@ -558,7 +580,7 @@ pub fn run_sta_on_revision(
     }
     table_of_analysis(
         &analysis,
-        keep_lowered.then_some(record.lowered.as_slice()),
+        keep_lowered.then_some(record.lowered),
         &corner_libs_owned,
         backend_scope_name,
         store_precision,
@@ -1101,70 +1123,108 @@ pub fn load_parasitics(
     rev: &Revision,
     corners: &[String],
 ) -> Result<Vec<std::sync::Arc<ruststa::engine::delay::spef::ParasiticInput>>, Error> {
-    use rusteda_formats::spef::{CornerSetMetadata, Metadata};
+    load_parasitics_with(rev, corners, false)
+}
+
+/// [`load_parasitics`] for one analysis, which releases each parsed extraction once it has
+/// bound the corners that share it (`ParasiticInput::released_after_bind`).
+pub fn load_parasitics_for_one_analysis(
+    rev: &Revision,
+    corners: &[String],
+) -> Result<Vec<std::sync::Arc<ruststa::engine::delay::spef::ParasiticInput>>, Error> {
+    load_parasitics_with(rev, corners, true)
+}
+
+fn load_parasitics_with(
+    rev: &Revision,
+    corners: &[String],
+    release_after_bind: bool,
+) -> Result<Vec<std::sync::Arc<ruststa::engine::delay::spef::ParasiticInput>>, Error> {
+    use rusteda_formats::spef::{CornerSetMetadata, Limits, Metadata};
+    use ruststa::engine::delay::spef::ParasiticInput;
+    use std::sync::Arc;
     if !rev.has_table("parasitics") {
         return Ok(Vec::new());
     }
-    let rbin = rev.open_rbin("parasitics", "PARASIT", 1..=2)?;
-    rbin.verify_hash()?;
-    let bad_meta = |e: String| Error::input_rejected(format!("invalid PARASIT metadata: {e}"));
-    // `(corner, limits, section)` of every corner of the table.
-    let entries: Vec<(String, rusteda_formats::spef::Limits, u32)> = if rbin.format_version() == 1 {
-        let metadata = rbin.section_bytes(2)?;
-        if metadata.len() > 4096 {
-            return Err(Error::input_rejected(
-                "T0072: parasitic metadata budget exceeded",
-            ));
-        }
-        let meta: Metadata =
-            serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
-        vec![(meta.corner, meta.limits, 1)]
-    } else {
-        let metadata = rbin.section_bytes(1)?;
-        if metadata.len() > 64 * 4096 {
-            return Err(Error::input_rejected(
-                "T0072: parasitic metadata budget exceeded",
-            ));
-        }
-        let set: CornerSetMetadata =
-            serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
-        set.corners
-            .into_iter()
-            .enumerate()
-            .map(|(i, c)| (c.corner, c.limits, i as u32 + 2))
-            .collect()
-    };
-    let mut out = Vec::new();
-    // `(section, limits, parse)` of every source parsed so far.
-    let mut parsed: Vec<(u32, rusteda_formats::spef::Limits, std::sync::Arc<_>)> = Vec::new();
-    for (corner, limits, section) in entries {
-        if !corners.is_empty() && !corners.contains(&corner) {
-            continue;
-        }
-        let bytes = rbin.section_bytes(section)?;
-        let mut earlier = None;
-        for (s, l, data) in &parsed {
-            if *l == limits && rbin.section_bytes(*s)? == bytes {
-                earlier = Some(std::sync::Arc::clone(data));
-                break;
+    // `(corner, limits, section, earlier)` of every requested corner, `earlier` the position of
+    // an earlier one with the same limits and byte-identical source.
+    let requested: Vec<(String, Limits, u32, Option<usize>)>;
+    let content_hash;
+    {
+        let rbin = rev.open_rbin("parasitics", "PARASIT", 1..=2)?;
+        rbin.verify_hash()?;
+        content_hash = rbin.content_hash();
+        let bad_meta = |e: String| Error::input_rejected(format!("invalid PARASIT metadata: {e}"));
+        // `(corner, limits, section)` of every corner of the table.
+        let entries: Vec<(String, Limits, u32)> = if rbin.format_version() == 1 {
+            let metadata = rbin.section_bytes(2)?;
+            if metadata.len() > 4096 {
+                return Err(Error::input_rejected(
+                    "T0072: parasitic metadata budget exceeded",
+                ));
             }
+            let meta: Metadata =
+                serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
+            vec![(meta.corner, meta.limits, 1)]
+        } else {
+            let metadata = rbin.section_bytes(1)?;
+            if metadata.len() > 64 * 4096 {
+                return Err(Error::input_rejected(
+                    "T0072: parasitic metadata budget exceeded",
+                ));
+            }
+            let set: CornerSetMetadata =
+                serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
+            set.corners
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| (c.corner, c.limits, i as u32 + 2))
+                .collect()
+        };
+        let mut planned: Vec<(String, Limits, u32, Option<usize>)> = Vec::new();
+        for (corner, limits, section) in entries {
+            if !corners.is_empty() && !corners.contains(&corner) {
+                continue;
+            }
+            // A section that cannot be read shares nothing; the parse below reports it.
+            let bytes = rbin.section_bytes(section).ok();
+            let earlier = planned.iter().position(|(_, l, s, _)| {
+                *l == limits && bytes.is_some() && rbin.section_bytes(*s).ok() == bytes
+            });
+            planned.push((corner, limits, section, earlier));
         }
-        let data = match earlier {
+        requested = planned;
+        // The map is released here, so that its pages no longer count towards this process
+        // while the sources are parsed.
+    }
+    let mut out: Vec<Arc<ParasiticInput>> = Vec::with_capacity(requested.len());
+    for (corner, limits, section, earlier) in requested {
+        let data = match earlier.and_then(|i| out[i].data()) {
             Some(data) => data,
             None => {
-                let source = std::str::from_utf8(bytes)
+                // The table verified above, mapped again for the pages of this section only.
+                let rbin = rev.open_rbin("parasitics", "PARASIT", 1..=2)?;
+                if rbin.content_hash() != content_hash {
+                    return Err(Error::input_rejected(
+                        "the PARASIT table changed while it was read",
+                    ));
+                }
+                let source = std::str::from_utf8(rbin.section_bytes(section)?)
                     .map_err(|_| Error::input_rejected("SPEF table is not UTF-8"))?;
-                let data = std::sync::Arc::new(
-                    rusteda_formats::spef::read(source, limits)
-                        .map_err(|e| Error::input_rejected(e.to_string()))?,
-                );
-                parsed.push((section, limits, std::sync::Arc::clone(&data)));
-                data
+                let parsed = std::thread::scope(|scope| {
+                    scope
+                        .spawn(|| rusteda_formats::spef::read(source, limits))
+                        .join()
+                })
+                .map_err(|_| Error::internal("the SPEF parse panicked"))?;
+                Arc::new(parsed.map_err(|e| Error::input_rejected(e.to_string()))?)
             }
         };
-        out.push(std::sync::Arc::new(
-            ruststa::engine::delay::spef::ParasiticInput { corner, data },
-        ));
+        out.push(Arc::new(if release_after_bind {
+            ParasiticInput::released_after_bind(corner, data)
+        } else {
+            ParasiticInput::new(corner, data)
+        }));
     }
     Ok(out)
 }

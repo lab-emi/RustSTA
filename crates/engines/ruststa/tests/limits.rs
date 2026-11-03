@@ -633,10 +633,10 @@ fn every_corner_binds_its_own_parasitics() {
         CornerLibs::new("slow", &libs),
     ];
     let input = |corner: &str, cap: f64| {
-        Arc::new(ParasiticInput {
-            corner: corner.into(),
-            data: Arc::new(spef::read(&spef_text(cap), spef::Limits::default()).unwrap()),
-        })
+        Arc::new(ParasiticInput::new(
+            corner,
+            Arc::new(spef::read(&spef_text(cap), spef::Limits::default()).unwrap()),
+        ))
     };
     let sdc = "set_input_transition 0.1 [get_ports a]\nset_max_capacitance 1 [current_design]\n";
     let compile = || CompiledConstraints::from_sdc_str(sdc, "c.sdc", &frozen, &corners).unwrap();

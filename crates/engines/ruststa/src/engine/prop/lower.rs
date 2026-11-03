@@ -203,6 +203,21 @@ pub struct LoweredCorner<'a> {
 }
 
 impl<'a> LoweredCorner<'a> {
+    /// Keeps only what the required-time propagation of the timing table reads
+    /// (`BackwardPass::propagate`): the CSR, the tables, the loads and the arc values, and the
+    /// wire records only when an arc has no value. The driver waveforms, the start rows and the
+    /// arc maps are released.
+    pub fn retain_for_required_times(&mut self) {
+        if self.arc_values.len() >= self.csr.in_arcs.len() {
+            self.wires = Vec::new();
+        }
+        self.drives = Vec::new();
+        self.start_drives = FxHashMap::default();
+        self.starts = StartRows::default();
+        self.csr_arc_to_graph_arc = Vec::new();
+        self.graph_arc_to_csr_arc = Vec::new();
+    }
+
     /// Lowers `netview`, `graph`, `lib`, `net_loads`, `ntags`, `starts` and `tag_maps` into the
     /// `rusteda_compute::timing` ABI (`STA-REQ-0401`).
     pub fn lower(

@@ -188,6 +188,25 @@ pub struct PropagationRecord {
     pub evaluated: Vec<u64>,
 }
 
+/// Which lowered problems an analysis keeps in its [`PropagationRecord`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeepLowered {
+    /// None.
+    No,
+    /// The whole lowered problem of every corner.
+    Full,
+    /// The part of every corner's lowered problem that the required times of its timing table
+    /// read ([`LoweredCorner::retain_for_required_times`]).
+    RequiredTimes,
+}
+
+impl From<bool> for KeepLowered {
+    /// `true` keeps the whole problems.
+    fn from(keep: bool) -> Self {
+        if keep { Self::Full } else { Self::No }
+    }
+}
+
 /// Compiles the library view of every corner (`STA-REQ-0017`).
 pub fn compile_corner_libs(corners: &[CornerLibs<'_>]) -> Result<Vec<TimingLib>, Diag> {
     corners
@@ -376,8 +395,9 @@ impl<'a> EngineAnalysis<'a> {
         options: &AnalysisOptions,
         ctx: Ctx<'_>,
         propagation: Propagation<'_>,
-        keep_lowered: bool,
+        keep_lowered: impl Into<KeepLowered>,
     ) -> Result<(Self, PropagationRecord), Vec<Diag>> {
+        let keep_lowered = keep_lowered.into();
         if corners.is_empty() {
             return Err(vec![Diag::error(
                 "T0005",
@@ -802,11 +822,23 @@ fn setup_corner<'l>(
             ));
         }
         let max = options.max_state_bytes;
-        let bound = Spef::bind(&input.data, netview, lib, &load_overrides, max)?;
+        let data = input.data().ok_or_else(|| {
+            Diag::error(
+                "T0070",
+                format!(
+                    "the extracted parasitics of corner {corner_name} were released by an \
+                     earlier analysis"
+                ),
+            )
+        })?;
+        let bound = Spef::bind(&data, netview, lib, &load_overrides, max)?;
+        // The corner no longer reads the parsed extraction.
+        drop(data);
+        input.bound();
         diags.clear();
         diags.extend(bound.topology().diagnostics(corner_name));
         wire_model = ResolvedWireModel::Extracted(bound);
-        if input.data.coupling_records > 0 {
+        if input.coupling_records() > 0 {
             diags.push(Diag::warning(
                 "T0074",
                 "inter-net coupling grounded at factor 1; crosstalk not analyzed",
@@ -852,11 +884,14 @@ fn setup_corner<'l>(
                 graph.num_nodes(),
                 options.max_limit_rows,
             ))
-            // The parsed parasitics of every analyzed corner stay resident while any corner is
-            // analyzed, so each corner counts all of them (`STA-REQ-0820`).
-            .saturating_add(options.parasitics.iter().fold(0u64, |n, p| {
-                n.saturating_add(p.data.estimated_state_bytes())
-            }))
+            // The parsed parasitics of every analyzed corner can stay resident while any corner
+            // is analyzed, so each corner counts all of them (`STA-REQ-0820`).
+            .saturating_add(
+                options
+                    .parasitics
+                    .iter()
+                    .fold(0u64, |n, p| n.saturating_add(p.estimated_state_bytes())),
+            )
             .saturating_add(
                 if corner_rc.is_some()
                     || lib.has_mixed_thresholds()
@@ -991,7 +1026,7 @@ fn analyze_one_corner(
     options: &AnalysisOptions,
     ctx: Ctx<'_>,
     propagation: Propagation<'_>,
-    keep_lowered: bool,
+    keep_lowered: KeepLowered,
     record: &mut PropagationRecord,
 ) -> Result<CornerAnalysis, Diag> {
     let netlist = netview.frozen();
@@ -1072,10 +1107,14 @@ fn analyze_one_corner(
         &node_values,
         constant,
     );
-    if keep_lowered {
-        record.lowered.push(into_owned_lowered(lowered));
-    } else {
-        drop(lowered);
+    match keep_lowered {
+        KeepLowered::No => drop(lowered),
+        KeepLowered::Full => record.lowered.push(into_owned_lowered(lowered)),
+        KeepLowered::RequiredTimes => {
+            let mut lowered = lowered;
+            lowered.retain_for_required_times();
+            record.lowered.push(into_owned_lowered(lowered));
+        }
     }
 
     // 9. Check unanalyzed arcs, max capacitance, and max transition (`STA-REQ-0017`,

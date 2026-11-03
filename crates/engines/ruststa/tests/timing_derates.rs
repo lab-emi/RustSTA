@@ -273,10 +273,10 @@ y O
 *END
 "#
         );
-        let parasitic = Arc::new(ParasiticInput {
-            corner: "default".into(),
-            data: Arc::new(rusteda_formats::spef::read(&source, Default::default()).unwrap()),
-        });
+        let parasitic = Arc::new(ParasiticInput::new(
+            "default",
+            Arc::new(rusteda_formats::spef::read(&source, Default::default()).unwrap()),
+        ));
         let sdc = format!("{SDC}set_timing_derate -early .95\nset_timing_derate -late 1.05\n");
         let mut session = TimingSession::new(
             design,
