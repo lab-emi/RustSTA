@@ -404,26 +404,71 @@ impl<'a> EngineAnalysis<'a> {
 
         let mut record = PropagationRecord::default();
         let mut corner_results = Vec::with_capacity(corners.len());
-        for (idx, (cl, tlib)) in corners.iter().zip(timing_libs).enumerate() {
-            let cid = CornerId(idx as u32);
-            let ca = analyze_one_corner(
-                cid,
-                cl.name,
-                cl.libs,
-                tlib,
-                &netview,
-                &graph,
-                &constant,
-                &constraints,
-                options,
-                ctx,
-                propagation,
-                keep_lowered,
-                &mut record,
-            )
-            .map_err(|d| vec![d])?;
-            all_diags.extend(ca.diags.iter().cloned());
-            corner_results.push(ca);
+        // With at least two worker threads per corner, a full analysis runs its corners at once
+        // on the shared pool. Every corner is a function of the shared inputs alone, and the
+        // results, records and diagnostics are collected in corner order, so the analysis is
+        // the one of the corner-by-corner loop below; the first error in corner order is
+        // returned.
+        let concurrent = corners.len() > 1
+            && rayon::current_num_threads() >= 2 * corners.len()
+            && matches!(propagation, Propagation::Full);
+        if concurrent {
+            use rayon::prelude::*;
+            let jobs: Vec<_> = corners.iter().zip(timing_libs).enumerate().collect();
+            let done: Vec<Result<(CornerAnalysis, PropagationRecord), Diag>> = jobs
+                .into_par_iter()
+                .with_max_len(1)
+                .map(|(idx, (cl, tlib))| {
+                    let mut own = PropagationRecord::default();
+                    let ca = analyze_one_corner(
+                        CornerId(idx as u32),
+                        cl.name,
+                        cl.libs,
+                        tlib,
+                        &netview,
+                        &graph,
+                        &constant,
+                        &constraints,
+                        options,
+                        ctx,
+                        propagation,
+                        keep_lowered,
+                        &mut own,
+                    )?;
+                    Ok((ca, own))
+                })
+                .collect();
+            for result in done {
+                let (ca, own) = result.map_err(|d| vec![d])?;
+                record.lowered.extend(own.lowered);
+                record.changed.extend(own.changed);
+                record.seeds.extend(own.seeds);
+                record.evaluated.extend(own.evaluated);
+                all_diags.extend(ca.diags.iter().cloned());
+                corner_results.push(ca);
+            }
+        } else {
+            for (idx, (cl, tlib)) in corners.iter().zip(timing_libs).enumerate() {
+                let cid = CornerId(idx as u32);
+                let ca = analyze_one_corner(
+                    cid,
+                    cl.name,
+                    cl.libs,
+                    tlib,
+                    &netview,
+                    &graph,
+                    &constant,
+                    &constraints,
+                    options,
+                    ctx,
+                    propagation,
+                    keep_lowered,
+                    &mut record,
+                )
+                .map_err(|d| vec![d])?;
+                all_diags.extend(ca.diags.iter().cloned());
+                corner_results.push(ca);
+            }
         }
 
         Ok((
