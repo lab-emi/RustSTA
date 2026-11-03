@@ -343,7 +343,7 @@ fn extracted_incremental_resize_matches_full() {
 fn incremental_resize_matches_full(text: &str) {
     let input = Arc::new(ParasiticInput {
         corner: "default".into(),
-        data: spef::read(text, spef::Limits::default()).unwrap(),
+        data: Arc::new(spef::read(text, spef::Limits::default()).unwrap()),
     });
     let sdc = "create_clock -name vclk -period 5\nset_input_delay -clock vclk -max 0.2 [get_ports a]\nset_input_delay -clock vclk -min 0.1 [get_ports a]\nset_output_delay -clock vclk -max 0.2 [get_ports y]\nset_output_delay -clock vclk -min 0.1 [get_ports y]\nset_input_transition 0.1 [get_ports a]\nset_load 0.01 [get_ports y]\n";
     let mut session = TimingSession::new(
@@ -404,7 +404,7 @@ fn extracted_timing_does_not_depend_on_worker_count() {
     let options = AnalysisOptions {
         parasitics: vec![Arc::new(ParasiticInput {
             corner: "default".into(),
-            data: spef::read(&text, spef::Limits::default()).unwrap(),
+            data: Arc::new(spef::read(&text, spef::Limits::default()).unwrap()),
         })],
         max_state_bytes: 1 << 26,
         ..Default::default()
@@ -499,7 +499,7 @@ fn dual_pdk_extracted_incremental_matches_full() {
         let corner = case["corner"].as_str().unwrap().to_owned();
         let input = Arc::new(ParasiticInput {
             corner: corner.clone(),
-            data: spef::read(&bounded("spef"), spef::Limits::default()).unwrap(),
+            data: Arc::new(spef::read(&bounded("spef"), spef::Limits::default()).unwrap()),
         });
         let original = case["original"].as_str().unwrap().to_owned();
         let mut session = TimingSession::new_multi_corner(
@@ -540,7 +540,7 @@ fn cpu_cuda_agree(text: &str) {
     use ruststa::engine::{analysis::EngineAnalysis, prop::lower::BackendKind};
     let input = Arc::new(ParasiticInput {
         corner: "default".into(),
-        data: spef::read(text, spef::Limits::default()).unwrap(),
+        data: Arc::new(spef::read(text, spef::Limits::default()).unwrap()),
     });
     let options = AnalysisOptions {
         parasitics: vec![input],
@@ -593,7 +593,7 @@ fn propagated_clock_is_explicit_and_replaces_ideal_latency() {
     let frozen = design().freeze();
     let input = Arc::new(ParasiticInput {
         corner: "default".into(),
-        data: spef::read(&source(), spef::Limits::default()).unwrap(),
+        data: Arc::new(spef::read(&source(), spef::Limits::default()).unwrap()),
     });
     let options = AnalysisOptions {
         parasitics: vec![input],
@@ -665,7 +665,7 @@ fn propagated_extracted_cpu_cuda_agree() {
     let frozen = design().freeze();
     let input = Arc::new(ParasiticInput {
         corner: "default".into(),
-        data: spef::read(&source(), spef::Limits::default()).unwrap(),
+        data: Arc::new(spef::read(&source(), spef::Limits::default()).unwrap()),
     });
     let options = AnalysisOptions {
         parasitics: vec![input],

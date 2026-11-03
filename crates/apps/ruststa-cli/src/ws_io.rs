@@ -546,6 +546,9 @@ pub fn run_sta_on_revision(
         keep_lowered,
     )
     .map_err(|err_diags| analysis_error(&err_diags, diags))?;
+    // Every corner has bound its parasitics: the parsed extraction is not read again, so it is
+    // released before the table is built.
+    drop(analysis_opts);
     check_wire_model(&analysis, opts.require_wire_model, diags)?;
     // The table reads the node-ordered propagation values of each corner; the level-ordered copy
     // is not read again, so it is released before the table is built (AGENTS rule 9: on OpenC910
@@ -1092,6 +1095,8 @@ pub fn resolve_node_name(
 /// version 1 table binds one corner, a version 2 table one source per corner (STA-REQ-0700,
 /// `STA-REQ-0820`, RCLI-REQ-0075). Only the requested corners are parsed; a requested corner
 /// without a source is left out, and the analysis then rejects it (`T0070`). No table: empty.
+/// The parse is a pure function of the source and its limits, so corners whose sources and
+/// limits are byte-identical share one parse.
 pub fn load_parasitics(
     rev: &Revision,
     corners: &[String],
@@ -1130,14 +1135,33 @@ pub fn load_parasitics(
             .collect()
     };
     let mut out = Vec::new();
+    // `(section, limits, parse)` of every source parsed so far.
+    let mut parsed: Vec<(u32, rusteda_formats::spef::Limits, std::sync::Arc<_>)> = Vec::new();
     for (corner, limits, section) in entries {
         if !corners.is_empty() && !corners.contains(&corner) {
             continue;
         }
-        let source = std::str::from_utf8(rbin.section_bytes(section)?)
-            .map_err(|_| Error::input_rejected("SPEF table is not UTF-8"))?;
-        let data = rusteda_formats::spef::read(source, limits)
-            .map_err(|e| Error::input_rejected(e.to_string()))?;
+        let bytes = rbin.section_bytes(section)?;
+        let mut earlier = None;
+        for (s, l, data) in &parsed {
+            if *l == limits && rbin.section_bytes(*s)? == bytes {
+                earlier = Some(std::sync::Arc::clone(data));
+                break;
+            }
+        }
+        let data = match earlier {
+            Some(data) => data,
+            None => {
+                let source = std::str::from_utf8(bytes)
+                    .map_err(|_| Error::input_rejected("SPEF table is not UTF-8"))?;
+                let data = std::sync::Arc::new(
+                    rusteda_formats::spef::read(source, limits)
+                        .map_err(|e| Error::input_rejected(e.to_string()))?,
+                );
+                parsed.push((section, limits, std::sync::Arc::clone(&data)));
+                data
+            }
+        };
         out.push(std::sync::Arc::new(
             ruststa::engine::delay::spef::ParasiticInput { corner, data },
         ));

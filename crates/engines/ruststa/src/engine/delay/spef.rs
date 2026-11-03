@@ -21,11 +21,12 @@ use rusteda_core::names::escape_segment;
 use rusteda_formats::spef as format;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// An extraction associated with one explicitly named library corner.
+/// An extraction associated with one explicitly named library corner. Corners extracted from
+/// one source share its parsed extraction.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParasiticInput {
     pub corner: String,
-    pub data: format::Spef,
+    pub data: std::sync::Arc<format::Spef>,
 }
 
 /// Bound per-net wire capacitance and per-load, transition/bound Elmore delay.
