@@ -7,10 +7,33 @@ RustSTA separates timing propagation from mapped result queries. Measure the
 workflow you actually need: input import, graph lowering, analysis, persistence,
 and any host/device synchronization all contribute to elapsed time.
 
-This documentation release publishes no numerical RustSTA-vs-OpenSTA speedup.
-The source contains benchmark harnesses; a harness is not itself a measured
-result. Avoid treating a GPU propagation microbenchmark as end-to-end timing
+This documentation release claims no general RustSTA-vs-OpenSTA speedup. One
+head-to-head on a single task and host is published with its scope, below. The
+source contains benchmark harnesses; a harness is not itself a measured result.
+Avoid treating a GPU propagation microbenchmark as end-to-end timing
 performance.
+
+## Published head-to-head · 2026-11-02
+
+The RustEDA Ibex host campaign (IHP SG13G2 / EZ130 with two real SRAMs, on a
+4-vCPU cloud host) replayed the flow's recorded RustSTA 0.4.3 and OpenSTA 3.1.0
+commands on the same final netlist, native SPEF, Liberty and SDC at TT and SS.
+Each repetition ran in a fresh copy of the timing directory with every command
+under GNU time: one warm-up and three interleaved measured repetitions at 2 and
+4 threads. RustSTA's scope is init, import, one run covering both corners and
+eight reports; OpenSTA's is one process per corner. Wall time sums each
+contender's processes, and peak RSS is its largest single process.
+
+RustSTA's median wall time was 17.898 s at 2 threads and 15.976 s at 4 threads,
+against 15.253 s and 13.497 s for OpenSTA. Worst peak RSS was 498,004 and
+502,876 KiB against 266,916 and 267,704 KiB. **OpenSTA was faster and used less
+memory on this host.** Numerical agreement on identical SPEF `failed` the 1 ps
+gate: TT setup worst slack differs by 1.4052 ps (native SPEF) and 1.2838 ps
+(OpenRCX SPEF), and the other six compared values are within 0.2153 ps.
+
+[All eight compared values and the campaign context](../development-status.md) ·
+[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta) ·
+[All benchmarks](https://lab-emi.github.io/RustEDA/benchmarks/)
 
 ## Measure an analysis
 

@@ -52,8 +52,9 @@ Record the executable version/hash, source input hashes, corner, clock/wire
 models, endpoint coverage, units and tolerance. Compare like-for-like setup/hold
 checks and rise/fall transitions.
 
-This documentation release does not publish a numerical OpenSTA speedup or a
-sign-off equivalence claim. A missing reference executable is `unverified`.
+This documentation release claims no general RustSTA-vs-OpenSTA speedup and no
+sign-off equivalence. One head-to-head on a single task and host is published
+with its scope; see [the 2026-11-02 head-to-head](../guide/performance.md#published-head-to-head-2026-11-02). A missing reference executable is `unverified`.
 For performance comparisons, report complete command wall time and peak RSS
 beside timing agreement; see [measurement guidance](../guide/performance.md).
 

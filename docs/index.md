@@ -9,6 +9,30 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
   <img src="assets/ruststa-banner.gif" alt="Timing feedback for the next design iteration." width="1200">
 </picture>
 
+## Ibex host campaign · 2026-11-02
+
+In the RustEDA Ibex host campaign (IHP SG13G2 / EZ130 with two real SRAMs, on a
+4-vCPU cloud host), RustSTA 0.4.3 and OpenSTA 3.1.0 analysed the same final
+netlist, SPEF, Liberty and SDC at TT and SS. **Numerical agreement `failed` the
+1 ps gate**: TT setup worst slack differs by 1.4052 ps on the native SPEF and
+1.2838 ps on the OpenRCX SPEF; the other six compared values are within
+0.2153 ps. The shared timing gate, which keeps the worse of the two engines'
+values on the OpenRCX SPEF, `passed` at TT and SS with zero setup, hold, slew,
+capacitance and fanout violations.
+
+On the native SPEF, RustSTA's complete pipeline (init, import, one run covering
+both corners, eight reports) took a median 17.898 s at 2 threads and 15.976 s at
+4 threads. OpenSTA's two per-corner processes took 15.253 s and 13.497 s. Worst
+peak RSS was 498,004 and 502,876 KiB against 266,916 and 267,704 KiB. **OpenSTA
+was faster and used less memory on this host.** Wall time sums each
+contender's processes and is the median of three interleaved measured
+repetitions after one warm-up; peak RSS is the largest single process, worst of
+the three. This is one task on one host.
+
+[Scope, all eight compared values and method](development-status.md) ·
+[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta) ·
+[All benchmarks](https://lab-emi.github.io/RustEDA/benchmarks/)
+
 ## Development update · 2026-11-01
 
 The source now includes mixed standard-cell/SRAM Liberty conventions, explicit
