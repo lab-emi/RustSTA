@@ -9,6 +9,7 @@ codes, and exit codes are specified in [`docs/specs/cli/README.md`](../cli/READM
 ```text
 ruststa [GLOBAL] run         -w <WS> --base-rev <REV> [--corner <NAME>]... [--backend cpu|cuda|gpu]
                              [--precision f64|f32] [--max-paths <N>] [--max-state-gib <GIB>]
+                             [--concurrent-corners]
                              [--max-limit-rows <N>] [--require-wire-model <MODEL>]
                              [--pulse-groups worst|last] [--pulse-pins all|clock-ends]
                              [--clock-limits paths|domain]
@@ -40,6 +41,8 @@ ruststa [GLOBAL] completions [<SHELL>]
 `--target-margin` are specified in [limits.md](limits.md) (STA-REQ-0806 to STA-REQ-0832).
 `--max-paths` sets the number of worst setup/hold paths included in `top_paths` (default `5`);
 `--max-state-gib` limits the estimated propagation state of one corner (default `16`, STA-REQ-0024);
+`--concurrent-corners` analyzes the corners at once already with one worker thread per corner
+instead of two (STA-REQ-0024; same results, the corners' states held together);
 `--backend` selects the propagation backend (`cpu`, `cuda`, `gpu`, STA-REQ-0400; default `cpu`).
 An uncompiled or unavailable GPU backend fails with `BACKEND_UNAVAILABLE` (exit `1`) and diagnostic
 `A0501`. The global option `--threads <N>` sets the number of worker threads of parallel CPU phases

@@ -466,6 +466,7 @@ pub fn exec_update(
         require_wire_model: args.require_wire_model,
         pulse_rules: crate::args::pulse_rules(args.pulse_groups, args.pulse_pins),
         clock_limits: crate::args::clock_limits(args.clock_limits),
+        concurrent_corners: false,
     };
 
     let step_res = (|| {

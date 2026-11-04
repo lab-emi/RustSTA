@@ -57,6 +57,9 @@ pub struct StaRunOptions {
     pub pulse_rules: ruststa::engine::limits::PulseRules,
     /// How the design-rule limits of a clock map to pins (`--clock-limits`, `STA-REQ-0808`).
     pub clock_limits: ruststa::engine::limits::ClockLimitScope,
+    /// Run the corners at once with one worker thread per corner (`--concurrent-corners`,
+    /// `STA-REQ-0024`).
+    pub concurrent_corners: bool,
 }
 
 /// Code of an analysis whose wire model is not the required one (`STA-REQ-0821`).
@@ -413,6 +416,7 @@ pub fn analysis_settings(
         max_limit_rows: opts.max_limit_rows,
         pulse_rules: opts.pulse_rules,
         clock_limits: opts.clock_limits,
+        concurrent_corners: opts.concurrent_corners,
     };
     Ok((
         analysis_opts,

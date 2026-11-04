@@ -315,6 +315,43 @@ fn corners_at_once_equal_corner_by_corner() {
     }
 }
 
+// STA-REQ-0024: with `concurrent_corners`, one worker thread per corner is enough to run the two
+// corners at once (two and three workers here; one worker still analyzes them one after the
+// other), with the tables, diagnostics and kept problems of the corner-by-corner analysis.
+#[test]
+fn concurrent_corners_with_one_thread_per_corner() {
+    let plain = options(1 << 30);
+    let serial = analyze(1, &plain, Kept::Full).unwrap();
+    for workers in [2, 3] {
+        let by_default = analyze(workers, &plain, Kept::Full).unwrap();
+        assert!(!by_default.concurrent, "{workers} workers, default");
+    }
+    let options = AnalysisOptions {
+        concurrent_corners: true,
+        ..options(1 << 30)
+    };
+    for workers in [1, 2, 3] {
+        for table in [Kept::Full, Kept::ForTable] {
+            let at_once = analyze(workers, &options, table).unwrap();
+            assert_eq!(at_once.concurrent, workers >= 2, "{workers} workers");
+            assert_eq!(at_once.deferred, 0, "{workers} workers");
+            assert_eq!(at_once.store, serial.store, "{workers} workers");
+            assert_eq!(at_once.limits, serial.limits, "{workers} workers");
+            assert_eq!(at_once.diags, serial.diags, "{workers} workers");
+            if let Kept::Full = table {
+                assert_eq!(
+                    Tables {
+                        concurrent: false,
+                        ..at_once
+                    },
+                    serial,
+                    "{workers} workers"
+                );
+            }
+        }
+    }
+}
+
 // STA-REQ-0024: the corners run at once only as far as their propagation states fit the limit
 // together. At the smallest limit that the corner-by-corner analysis passes, one corner fits and
 // two do not: one corner waits until the other is analyzed, with the same tables; at twice that

@@ -106,6 +106,10 @@ pub struct AnalysisOptions {
     pub pulse_rules: PulseRules,
     /// How the design-rule limits of a clock map to pins (`STA-REQ-0808`).
     pub clock_limits: ClockLimitScope,
+    /// Whether a full analysis runs its corners at once already with one worker thread per
+    /// corner, not only with two (`STA-REQ-0024`; `ruststa run --concurrent-corners`). The
+    /// results are the same either way; running at once holds the states of the corners together.
+    pub concurrent_corners: bool,
 }
 
 /// Default limit of the propagation state of one corner: 16 GiB (`STA-REQ-0024`).
@@ -127,6 +131,7 @@ impl Default for AnalysisOptions {
             max_limit_rows: DEFAULT_MAX_LIMIT_ROWS,
             pulse_rules: PulseRules::default(),
             clock_limits: ClockLimitScope::default(),
+            concurrent_corners: false,
         }
     }
 }
@@ -452,12 +457,14 @@ impl<'a> EngineAnalysis<'a> {
 
         let mut record = PropagationRecord::default();
         let mut corner_results = Vec::with_capacity(corners.len());
-        // With at least two worker threads per corner, a full analysis runs its corners at once on
-        // the shared pool. Every corner is a function of the shared inputs alone, and the
-        // results, records and diagnostics are collected in corner order, so the analysis is the
-        // one of the corner-by-corner loop below; the first error in corner order is returned.
+        // With at least two worker threads per corner (one with `concurrent_corners`), a full
+        // analysis runs its corners at once on the shared pool. Every corner is a function of the
+        // shared inputs alone, and the results, records and diagnostics are collected in corner
+        // order, so the analysis is the one of the corner-by-corner loop below; the first error
+        // in corner order is returned.
+        let threads_per_corner = if options.concurrent_corners { 1 } else { 2 };
         let concurrent = corners.len() > 1
-            && rayon::current_num_threads() >= 2 * corners.len()
+            && rayon::current_num_threads() >= threads_per_corner * corners.len()
             && matches!(propagation, Propagation::Full);
         // Each corner's start, `None` for a corner whose setup starts from nothing. A full
         // analysis with extracted parasitics binds every corner first (at once when its corners
