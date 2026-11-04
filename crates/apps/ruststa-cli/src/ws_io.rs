@@ -437,10 +437,12 @@ pub fn analysis_error(err_diags: &[JobDiag], diags: &mut Vec<Diagnostic>) -> Err
 }
 
 /// The timing and limit tables of `analysis` and their envelope headers, the analysis
-/// diagnostics added to `diags` (`STA-REQ-0302`, `STA-REQ-0806`).
+/// diagnostics added to `diags` (`STA-REQ-0302`, `STA-REQ-0806`). The limit table is built
+/// first and takes the kept limit rows of the corners (`LimitsData::from_analysis_releasing`),
+/// so that the timing table is built without them.
 #[allow(clippy::too_many_arguments)]
 pub fn table_of_analysis(
-    analysis: &EngineAnalysis<'_>,
+    analysis: &mut EngineAnalysis<'_>,
     lowered: Option<Vec<LoweredCorner<'_>>>,
     corner_libs_owned: &[(String, Vec<Library>)],
     backend_scope_name: &str,
@@ -465,6 +467,10 @@ pub fn table_of_analysis(
         .map_err(Error::input_rejected)?;
     let top_k = max_paths.max(100);
     let log = PhaseLog::get();
+    let limits = PhaseLog::time(log, "limits_build", || {
+        LimitsData::from_analysis_releasing(analysis, max_limit_rows)
+    });
+    let analysis = &*analysis;
     let store_data = PhaseLog::time(log, "store_build", || {
         let ctx = Ctx::new(None, log.map(|l| l as &dyn Observer));
         match lowered {
@@ -490,9 +496,6 @@ pub fn table_of_analysis(
                 ctx,
             ),
         }
-    });
-    let limits = PhaseLog::time(log, "limits_build", || {
-        LimitsData::from_analysis(analysis, max_limit_rows)
     });
     // The headers are read from the in-memory table: no bytes are encoded here; `ruststa run`
     // encodes the table once, when it stages `sta.rbin`.
@@ -579,7 +582,7 @@ pub fn run_sta_on_revision(
         corner.propagated.values = Default::default();
     }
     table_of_analysis(
-        &analysis,
+        &mut analysis,
         keep_lowered.then_some(record.lowered),
         &corner_libs_owned,
         backend_scope_name,

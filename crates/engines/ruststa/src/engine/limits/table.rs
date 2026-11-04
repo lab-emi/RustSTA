@@ -24,7 +24,7 @@ use rusteda_workspace::rbin::Rbin;
 use rusteda_workspace::{Corruption, Error, Hash64, RbinWriter, Result, Revision, Txn, Upstream};
 use serde_json::json;
 
-use crate::engine::analysis::EngineAnalysis;
+use crate::engine::analysis::{CornerAnalysis, EngineAnalysis};
 use crate::engine::input::NetTarget;
 use crate::engine::store::hash::{StringTableBuilder, StringTableView};
 use crate::engine::types::{NodeId, Tr};
@@ -174,80 +174,24 @@ impl LimitsData {
     /// The table of `analysis` with the row budget `max_rows` it ran with.
     #[must_use]
     pub fn from_analysis(analysis: &EngineAnalysis<'_>, max_rows: usize) -> Self {
-        let nv = &analysis.netview;
-        let mut strings = StringTableBuilder::new();
-        let mut corners = Vec::with_capacity(analysis.corners.len());
-        let mut kinds = Vec::with_capacity(analysis.corners.len() * NUM_KINDS);
-        let mut rows = Vec::new();
+        let mut table = TableBuilder::new(analysis.corners.len());
         for (c_idx, ca) in analysis.corners.iter().enumerate() {
-            let l = &ca.limits;
-            corners.push(LimitsCornerRec {
-                name_str: strings.intern(&ca.corner_name),
-                pulse_rules: l.rules.bits() | l.clock_limits.bits(),
-                unclocked_pulse_pins: l.unclocked_pulse_pins,
-                conditional_pulse_groups: l.conditional_pulse_groups,
-                pass_through_pulse_pins: l.pass_through_pulse_pins,
-                constant_drivers: l.constant_drivers,
-                static_transition_pins: l.static_transition_pins,
-                ideal_clock_pins: l.ideal_clock_pins,
-                untimed_pins: l.untimed_pins,
-                clock_scope_pins: l.clock_scope_pins,
-                unconnected_output_pins: l.unconnected_output_pins,
-            });
-            for kind in LimitKind::ALL {
-                let k = l.kind(kind);
-                let row_begin = rows.len() as u64;
-                for r in l.rows_of(kind) {
-                    let net_str = match nv.node_net(r.node) {
-                        NetTarget::Net(net) => strings.intern(&nv.net_name_str(net)),
-                        NetTarget::Const(_) => 0,
-                    };
-                    let clock_str = r.clock.map_or(0, |c| {
-                        analysis
-                            .constraints
-                            .clocks
-                            .get(c.index())
-                            .map_or(0, |ck| strings.intern(&ck.name))
-                    });
-                    rows.push(LimitsRowRec {
-                        value: r.value,
-                        limit: r.limit,
-                        slack: r.slack,
-                        node: r.node.0,
-                        pin_str: strings.intern(&nv.node_name_str(r.node)),
-                        net_str,
-                        clock_str,
-                        corner: c_idx as u16,
-                        kind: kind as u8,
-                        flags: encode_flags(r),
-                        reserved: 0,
-                    });
-                }
-                kinds.push(LimitsKindRec {
-                    checked: k.checked,
-                    violating: k.violating,
-                    unlimited: k.unlimited,
-                    stored: k.stored,
-                    row_begin,
-                    worst_slack: k.worst_slack.unwrap_or(f64::NAN),
-                    unevaluated: k.unevaluated,
-                });
-            }
+            table.push_corner(analysis, c_idx, ca);
         }
-        let (str_bytes, str_offs) = strings.finish();
-        Self {
-            str_bytes,
-            str_offs,
-            meta: [LimitsMeta {
-                num_corners: corners.len() as u32,
-                num_rows: rows.len() as u32,
-                max_rows: max_rows.min(u32::MAX as usize) as u32,
-                reserved: 0,
-            }],
-            corners,
-            kinds,
-            rows,
+        table.finish(max_rows)
+    }
+
+    /// [`Self::from_analysis`] that releases the kept rows of each corner (`CornerLimits::rows`)
+    /// once they are encoded, so that the rows of a corner and those of its table never coexist
+    /// (AGENTS rule 9). The table is the same; the corners keep their counts.
+    #[must_use]
+    pub fn from_analysis_releasing(analysis: &mut EngineAnalysis<'_>, max_rows: usize) -> Self {
+        let mut table = TableBuilder::new(analysis.corners.len());
+        for c_idx in 0..analysis.corners.len() {
+            table.push_corner(analysis, c_idx, &analysis.corners[c_idx]);
+            analysis.corners[c_idx].limits.rows = Vec::new();
         }
+        table.finish(max_rows)
     }
 
     /// The `rbin` writer of the table.
@@ -619,6 +563,103 @@ impl LimitsTable {
                 })
             })
             .collect()
+    }
+}
+
+/// A [`LimitsData`] being built corner by corner, in corner order.
+struct TableBuilder {
+    strings: StringTableBuilder,
+    corners: Vec<LimitsCornerRec>,
+    kinds: Vec<LimitsKindRec>,
+    rows: Vec<LimitsRowRec>,
+}
+
+impl TableBuilder {
+    fn new(n_corners: usize) -> Self {
+        Self {
+            strings: StringTableBuilder::new(),
+            corners: Vec::with_capacity(n_corners),
+            kinds: Vec::with_capacity(n_corners * NUM_KINDS),
+            rows: Vec::new(),
+        }
+    }
+
+    /// Appends the counts and the kept rows of corner `c_idx` of `analysis`, `ca`.
+    fn push_corner(&mut self, analysis: &EngineAnalysis<'_>, c_idx: usize, ca: &CornerAnalysis) {
+        let nv = &analysis.netview;
+        let strings = &mut self.strings;
+        let l = &ca.limits;
+        self.corners.push(LimitsCornerRec {
+            name_str: strings.intern(&ca.corner_name),
+            pulse_rules: l.rules.bits() | l.clock_limits.bits(),
+            unclocked_pulse_pins: l.unclocked_pulse_pins,
+            conditional_pulse_groups: l.conditional_pulse_groups,
+            pass_through_pulse_pins: l.pass_through_pulse_pins,
+            constant_drivers: l.constant_drivers,
+            static_transition_pins: l.static_transition_pins,
+            ideal_clock_pins: l.ideal_clock_pins,
+            untimed_pins: l.untimed_pins,
+            clock_scope_pins: l.clock_scope_pins,
+            unconnected_output_pins: l.unconnected_output_pins,
+        });
+        self.rows.reserve_exact(l.rows.len());
+        for kind in LimitKind::ALL {
+            let k = l.kind(kind);
+            let row_begin = self.rows.len() as u64;
+            for r in l.rows_of(kind) {
+                let net_str = match nv.node_net(r.node) {
+                    NetTarget::Net(net) => strings.intern(&nv.net_name_str(net)),
+                    NetTarget::Const(_) => 0,
+                };
+                let clock_str = r.clock.map_or(0, |c| {
+                    analysis
+                        .constraints
+                        .clocks
+                        .get(c.index())
+                        .map_or(0, |ck| strings.intern(&ck.name))
+                });
+                self.rows.push(LimitsRowRec {
+                    value: r.value,
+                    limit: r.limit,
+                    slack: r.slack,
+                    node: r.node.0,
+                    pin_str: strings.intern(&nv.node_name_str(r.node)),
+                    net_str,
+                    clock_str,
+                    corner: c_idx as u16,
+                    kind: kind as u8,
+                    flags: encode_flags(r),
+                    reserved: 0,
+                });
+            }
+            self.kinds.push(LimitsKindRec {
+                checked: k.checked,
+                violating: k.violating,
+                unlimited: k.unlimited,
+                stored: k.stored,
+                row_begin,
+                worst_slack: k.worst_slack.unwrap_or(f64::NAN),
+                unevaluated: k.unevaluated,
+            });
+        }
+    }
+
+    /// The table, for the row budget `max_rows`.
+    fn finish(self, max_rows: usize) -> LimitsData {
+        let (str_bytes, str_offs) = self.strings.finish();
+        LimitsData {
+            str_bytes,
+            str_offs,
+            meta: [LimitsMeta {
+                num_corners: self.corners.len() as u32,
+                num_rows: self.rows.len() as u32,
+                max_rows: max_rows.min(u32::MAX as usize) as u32,
+                reserved: 0,
+            }],
+            corners: self.corners,
+            kinds: self.kinds,
+            rows: self.rows,
+        }
     }
 }
 
