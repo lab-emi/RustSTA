@@ -305,12 +305,12 @@ impl Spef {
             if drivers.len() != 1 {
                 return Err(error(format!("SPEF net {name} needs exactly one driver")));
             }
-            let mut caps: Vec<[f64; 4]> = net.nodes.iter().map(|n| [n.cap_pf; 4]).collect();
+            let mut caps: Vec<[f64; 4]> = net.nodes.caps().iter().map(|&c| [c; 4]).collect();
             let mut connections = Vec::with_capacity(net.connections.len());
             let mut connected = BTreeSet::new();
             let mut root = None;
             for conn in &net.connections {
-                let rc_name = &net.nodes[conn.node as usize].name;
+                let rc_name = net.nodes.name(conn.node as usize);
                 let name = canonical(rc_name, source, !conn.port);
                 let id = *nodes.get(&name).ok_or_else(|| {
                     error(format!("SPEF connection {rc_name} is absent from netlist"))
@@ -398,7 +398,7 @@ impl Spef {
                 for component in &reduced.detached {
                     topology.detached_nodes += component.len();
                     for &node in component {
-                        topology.detached_wire_pf += net.nodes[node as usize].cap_pf;
+                        topology.detached_wire_pf += net.nodes.cap_pf(node as usize);
                         topology.detached_pins += usize::from(pins.contains_key(&node));
                     }
                 }
@@ -414,7 +414,7 @@ impl Spef {
                             named += 1;
                             members.push(match pins.get(&node) {
                                 Some(&id) => format!("pin {}", view.node_name(id)),
-                                None => format!("node {}", net.nodes[node as usize].name),
+                                None => format!("node {}", net.nodes.name(node as usize)),
                             });
                         }
                         if !members.is_empty() {
@@ -444,7 +444,7 @@ impl Spef {
                 result.delay_ns[id.index()] = delays[rc_node as usize];
             }
             // Add wire capacitance once on the canonical row, before alias aggregation.
-            result.wire_cap_pf[row.index()] = net.nodes.iter().map(|n| n.cap_pf).sum();
+            result.wire_cap_pf[row.index()] = net.nodes.caps().iter().sum();
         }
         for &net in view.canonical_nets() {
             if !view.drivers(net).is_empty()
