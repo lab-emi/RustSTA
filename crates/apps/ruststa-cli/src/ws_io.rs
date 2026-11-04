@@ -576,6 +576,11 @@ pub fn run_sta_on_revision(
     // Every corner has bound its parasitics: the parsed extraction is not read again, so it is
     // released before the table is built.
     drop(analysis_opts);
+    // Every corner has compiled its libraries into its own `TimingLib`: the table reads only how
+    // many libraries each corner has, so their parsed cells and tables are released before the
+    // table is built (AGENTS rule 9).
+    drop(corner_refs);
+    let corner_libs_owned = library_counts(corner_libs_owned);
     check_wire_model(&analysis, opts.require_wire_model, diags)?;
     // The table reads the node-ordered propagation values of each corner; the level-ordered copy
     // is not read again, so it is released before the table is built (AGENTS rule 9: on OpenC910
@@ -594,6 +599,16 @@ pub fn run_sta_on_revision(
         opts.max_limit_rows,
         diags,
     )
+}
+
+/// The libraries of every corner reduced to their number, the only part of them that the timing
+/// table records (`CornerRec::lib_count`): each library is replaced by an empty one, which holds
+/// no cell, table or template.
+fn library_counts(corners: Vec<(String, Vec<Library>)>) -> Vec<(String, Vec<Library>)> {
+    corners
+        .into_iter()
+        .map(|(corner, libs)| (corner, libs.iter().map(|_| Library::default()).collect()))
+        .collect()
 }
 
 /// Computes `(logic_levels, cell_delay_ns, wire_delay_ns, cell_delay_pct, wire_delay_pct)` for a
