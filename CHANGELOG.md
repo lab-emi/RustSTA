@@ -12,6 +12,21 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 - Constant endpoints retain their explicit disabled classification, including
   propagated tie-cell values, instead of appearing as missing timing arrivals.
 
+### Changed
+- **Peak memory of `ruststa run`:** each corner computes its required times right after its
+  endpoints and then releases its lowered problem (reduced to the arc delays those read), its
+  check records, net loads and bound parasitics, instead of keeping every corner's until the
+  timing table is built; the propagated clock network is lowered, prepared and kept at the size
+  of the clock network (STA-REQ-0713); the parsed libraries are released and the limit table is
+  staged before the timing table is built; the latch `G -> Q` transition tables go into each
+  corner's own lookup-table bank instead of a copy of it; the ranked paths are traced straight
+  into the table; the extraction is bound from the shared reader's compact SPEF nodes. On the
+  Ibex benchmark (two corners, 59,023 timing nodes), the peak resident memory of `ruststa run`
+  falls from 213 / 244 MiB to 151 / 177 MiB with the native extraction and from 255 / 282 MiB to
+  160 / 183 MiB with the reference extraction (2 / 4 threads), and its time by 10 to 14 %. Every
+  output is byte-identical, and `--max-state-gib` accepts, rejects and reports as before (the
+  clock network's preparation is charged the budgets of the whole graph).
+
 
 ### Documented
 - **Driver transitions near a reference's discontinuities (STA-REQ-0728):** on the final layouts
