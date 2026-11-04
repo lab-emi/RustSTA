@@ -201,8 +201,44 @@ pub struct LoweredCorner<'a> {
     /// launches that logic values disable, and the library transitions that a sense refinement
     /// removed from an enabled arc (`STA-REQ-0117`).
     pub slew_only_map: u32,
+    /// The incoming arcs that a cone lowering ([`LoweredCorner::lower_cone`]) left out; empty for
+    /// a full lowering.
+    pub pruned: PrunedArcs,
     /// Wall-clock seconds spent lowering into the compute ABI.
     pub lower_s: f64,
+}
+
+/// The incoming arcs that [`LoweredCorner::lower_cone`] leaves out, counted by their
+/// [`ArcClass::flags`](rusteda_compute::timing::ArcClass::flags), the only part of a class that
+/// the state and work budgets of the RC waveform preparation read. The preparation charges them
+/// as if it prepared them, so that `--max-state-gib` decides, and reports, for a cone exactly as
+/// for the whole graph (`STA-REQ-0713`, `STA-REQ-0723`).
+#[derive(Debug, Clone, Default)]
+pub struct PrunedArcs {
+    /// `(flags, arcs)`, one entry per distinct flags value, in the order first seen.
+    by_flags: Vec<(u32, u64)>,
+}
+
+impl PrunedArcs {
+    /// Counts one more left-out arc of a class with `flags`.
+    fn add(&mut self, flags: u32) {
+        match self.by_flags.iter_mut().find(|(f, _)| *f == flags) {
+            Some((_, arcs)) => *arcs += 1,
+            None => self.by_flags.push((flags, 1)),
+        }
+    }
+
+    /// The number of left-out arcs.
+    #[must_use]
+    pub fn arcs(&self) -> u64 {
+        self.by_flags.iter().map(|&(_, arcs)| arcs).sum()
+    }
+
+    /// The left-out arcs as `(flags, arcs)`, one entry per distinct flags value.
+    #[must_use]
+    pub fn by_flags(&self) -> &[(u32, u64)] {
+        &self.by_flags
+    }
 }
 
 /// The level-ordered positions that [`LoweredCorner::lower_cone`] keeps the incoming arcs of:
@@ -317,7 +353,9 @@ impl<'a> LoweredCorner<'a> {
     /// maps, so every node with an arrival, and every node whose value it reads, keeps all its
     /// incoming arcs: their values are those of [`Self::lower`] bit for bit, and the other
     /// nodes have no arrival in either. The arc tables of the waveform preparation are sized to
-    /// the kept arcs.
+    /// the kept arcs; its state and work budgets are charged for the left-out arcs as well
+    /// ([`PrunedArcs`]), so that a budget rejects, with the same diagnostic, exactly what it
+    /// rejects for [`Self::lower`].
     #[allow(clippy::too_many_arguments)]
     pub fn lower_cone(
         netview: &NetlistView<'_>,
@@ -391,6 +429,7 @@ impl<'a> LoweredCorner<'a> {
         };
         let mut next_slew_only = 0usize;
         let keep = roots.map(|roots| cone_positions(graph, roots, &slew_only));
+        let mut pruned = PrunedArcs::default();
 
         for (pos, &raw_node) in order.iter().enumerate() {
             let node_load = match netview.node_net(raw_node) {
@@ -412,6 +451,30 @@ impl<'a> LoweredCorner<'a> {
             let mut extras = slew_only[next_slew_only..extra_end].iter().peekable();
             next_slew_only = extra_end;
             if keep.as_ref().is_some_and(|keep| !keep[pos]) {
+                // Left out: counted by the classes the full lowering gives these arcs.
+                for &ai in graph.incoming(raw_node) {
+                    let g_arc = &g_arcs[ai as usize];
+                    pruned.add(match g_arc.kind {
+                        ArcKind::Net { .. } => luts.classes[lib.wire_class as usize].flags,
+                        _ => {
+                            let (inst, local_arc) = g_arc
+                                .kind
+                                .inst_and_lib_arc()
+                                .expect("non-net arc has inst and lib_arc");
+                            slew_only::class_flags(
+                                netview,
+                                lib,
+                                &cell_arcs,
+                                inst,
+                                local_arc,
+                                Some(g_arc.sense),
+                            )
+                        }
+                    });
+                }
+                for &(_, _, _, e_class) in extras {
+                    pruned.add(luts.classes[e_class as usize].flags);
+                }
                 continue;
             }
             for &ai in graph.incoming(raw_node) {
@@ -497,6 +560,7 @@ impl<'a> LoweredCorner<'a> {
             drives: Vec::new(),
             start_drives: FxHashMap::default(),
             slew_only_map,
+            pruned,
             lower_s,
         })
     }

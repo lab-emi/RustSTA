@@ -5,7 +5,7 @@
 use super::*;
 use rayon::prelude::*;
 use rusteda_compute::rc::{self, Pi};
-use rusteda_compute::timing::{ArcValues, lut::lookup};
+use rusteda_compute::timing::{ArcClass, ArcValues, lut::lookup};
 
 /// The worst slew, its driver waveform and that waveform's root crossing at one node, per
 /// [tr * 2 + an].
@@ -68,17 +68,18 @@ pub(super) fn prepare(
     }
     let n = lowered.csr.nodes();
     let arcs = lowered.csr.in_arcs.len();
+    // The arcs that a cone lowering left out are charged as if they were prepared, so that the
+    // budgets decide, and report, as for the whole graph (STA-REQ-0713).
+    let charged_arcs = (arcs as u64).saturating_add(lowered.pruned.arcs());
     // The state of a level also holds one job and one result per node while it runs.
     let bytes = (n as u64)
         .saturating_mul(32 + 96 + 56 + 128)
-        .saturating_add((arcs as u64).saturating_mul(192));
+        .saturating_add(charged_arcs.saturating_mul(192));
     if bytes > max_bytes {
         return Err(Diag::error("T0023", "RC arc state budget exceeded"));
     }
-    let mut work = 0u64;
     let charge_evaluations = rc::charge::Budget::default().max_evaluations as u64;
-    for a in lowered.csr.in_arcs.iter() {
-        let cls = lowered.luts.classes[a.class as usize];
+    let arc_work = |cls: &ArcClass| {
         // A wire: three bracketed sink crossings (64 doublings, 100 bisections, two cascades
         // each) and one root crossing (STA-REQ-0729); a cell arc: bounded charge callback work
         // (two table + five ramp evaluations each), one duration fit and three root crossings.
@@ -90,6 +91,7 @@ pub(super) fn prepare(
         } else {
             7 * charge_evaluations + 56 * 48 * 2 + 3 * 80
         };
+        let mut work = 0u64;
         for ti in 0..2 {
             for to in 0..2 {
                 if cls.allows(ti, to) {
@@ -97,6 +99,19 @@ pub(super) fn prepare(
                 }
             }
         }
+        work
+    };
+    // Every term is non-negative, so the saturating sum is the same in any order.
+    let mut work = 0u64;
+    for a in lowered.csr.in_arcs.iter() {
+        work = work.saturating_add(arc_work(&lowered.luts.classes[a.class as usize]));
+    }
+    for &(flags, count) in lowered.pruned.by_flags() {
+        let cls = ArcClass {
+            flags,
+            ..ArcClass::default()
+        };
+        work = work.saturating_add(arc_work(&cls).saturating_mul(count));
     }
     if work > max_bytes.saturating_mul(8) {
         return Err(Diag::error(
@@ -319,7 +334,7 @@ pub(crate) struct RcArcValue {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn arc_value(
     luts: &CompiledLutBank<'_>,
-    cls: &rusteda_compute::timing::ArcClass,
+    cls: &ArcClass,
     raw: &GraphArc,
     view: &NetlistView<'_>,
     wire: &dyn WireModel,

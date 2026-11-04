@@ -7,7 +7,7 @@
 //! arc, and the clock-to-output arcs that logic values disable or that no clock reaches all enter
 //! the transition of their destination pin, without an arrival.
 
-use rusteda_compute::timing::{CompiledLutBank, transition_bit};
+use rusteda_compute::timing::{ArcClass, CompiledLutBank, transition_bit};
 
 use crate::engine::graph::{ArcKind, ArcSense, TimingGraph};
 use crate::engine::input::NetlistView;
@@ -25,25 +25,59 @@ pub(super) fn class_for(
     local_arc: LibArc,
     sense: Option<ArcSense>,
 ) -> u32 {
+    match library_class(netview, lib, cell_arcs, inst, local_arc, sense) {
+        (base_class, None) => base_class,
+        (_, Some(refined_class)) => {
+            let classes = luts.classes.to_mut();
+            let idx = classes.len() as u32;
+            classes.push(refined_class);
+            idx
+        }
+    }
+}
+
+/// The [`ArcClass::flags`] of the class that [`class_for`] gives the cell arc
+/// `(inst, local_arc)` with the sense `sense`, without appending a class to any bank.
+pub(super) fn class_flags(
+    netview: &NetlistView<'_>,
+    lib: &TimingLib,
+    cell_arcs: &[Vec<LibArc>],
+    inst: u32,
+    local_arc: LibArc,
+    sense: Option<ArcSense>,
+) -> u32 {
+    match library_class(netview, lib, cell_arcs, inst, local_arc, sense) {
+        (base_class, None) => lib.lut_bank.classes[base_class as usize].flags,
+        (_, Some(refined_class)) => refined_class.flags,
+    }
+}
+
+/// The library class of the cell arc `(inst, local_arc)`, and, when the sense `sense` differs
+/// from the library sense, its copy with the transitions of `sense`.
+fn library_class(
+    netview: &NetlistView<'_>,
+    lib: &TimingLib,
+    cell_arcs: &[Vec<LibArc>],
+    inst: u32,
+    local_arc: LibArc,
+    sense: Option<ArcSense>,
+) -> (u32, Option<ArcClass>) {
     let cell_row = netview.frozen().instances[inst as usize].cell as usize;
     let global_arc = cell_arcs[cell_row][local_arc.index()];
     let base_class = global_arc.0;
     let Some(sense) = sense else {
-        return base_class;
+        return (base_class, None);
     };
     let desired_sense = lib_sense(sense);
     let lib_prop = lib.arc(global_arc);
     if lib_prop.sense == desired_sense {
-        base_class
+        (base_class, None)
     } else {
         let mut refined_prop = lib_prop.clone();
         refined_prop.sense = desired_sense;
         let mut refined_class = lib.lut_bank.classes[base_class as usize];
         refined_class.flags = refined_prop.transition_flags();
-        let classes = luts.classes.to_mut();
-        let idx = classes.len() as u32;
-        classes.push(refined_class);
-        idx
+        (base_class, Some(refined_class))
     }
 }
 
