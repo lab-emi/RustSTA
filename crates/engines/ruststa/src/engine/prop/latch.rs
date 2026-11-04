@@ -463,10 +463,14 @@ pub fn lower_corner<'l>(
         wire_model,
         max_state_bytes,
         Default::default(),
+        true,
     )
 }
 
-/// Lowers the timing graph including global early/late cell and net delay factors.
+/// Lowers the timing graph including global early/late cell and net delay factors; with
+/// `wire_records`, the RC preparation also keeps the wire records of the extracted net arcs
+/// ([`LoweredCorner::set_wire_values`] without them).
+#[allow(clippy::too_many_arguments)]
 pub fn lower_corner_with_derates<'l>(
     netview: &NetlistView<'_>,
     graph: &TimingGraph,
@@ -480,13 +484,18 @@ pub fn lower_corner_with_derates<'l>(
     wire_model: &dyn WireModel,
     max_state_bytes: u64,
     derates: crate::engine::delay::derate::TimingDerate,
+    wire_records: bool,
 ) -> Result<LoweredCorner<'l>, Diag> {
     let mut lowered =
         LoweredCorner::lower(netview, graph, lib, net_loads, ntags, starts, latch_maps)?;
     pin_latch_gq_slews(graph, launch_slews, &mut lowered);
     lowered.start_drives = launch_drives.clone();
     lowered.derates = derates;
-    lowered.set_wire_model(graph, netview, wire_model, lib, max_state_bytes)?;
+    if wire_records {
+        lowered.set_wire_model(graph, netview, wire_model, lib, max_state_bytes)?;
+    } else {
+        lowered.set_wire_values(graph, netview, wire_model, lib, max_state_bytes)?;
+    }
     Ok(lowered)
 }
 

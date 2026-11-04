@@ -908,7 +908,7 @@ fn setup_corner<'l>(
         options,
         wires,
     )?;
-    setup_prepared_corner(lib, netview, graph, constraints, options, prep)
+    setup_prepared_corner(lib, netview, graph, constraints, options, prep, true)
 }
 
 /// Steps 1 and 2 of a corner's setup: its wire model, bound to its extracted parasitics when it
@@ -1114,7 +1114,8 @@ fn prepare_corner(
     })
 }
 
-/// Steps 5 to 7 of a corner's setup, after [`prepare_corner`].
+/// Steps 5 to 7 of a corner's setup, after [`prepare_corner`]; with `wire_records` the lowered
+/// problem keeps the wire records of its extracted net arcs (`lower_corner_with_derates`).
 fn setup_prepared_corner<'l>(
     lib: &'l TimingLib,
     netview: &NetlistView<'_>,
@@ -1122,6 +1123,7 @@ fn setup_prepared_corner<'l>(
     constraints: &CompiledConstraints,
     options: &AnalysisOptions,
     prep: CornerPrep,
+    wire_records: bool,
 ) -> Result<CornerSetup<'l>, Diag> {
     let CornerPrep {
         wire_model,
@@ -1172,6 +1174,7 @@ fn setup_prepared_corner<'l>(
         &wire_model,
         options.max_state_bytes,
         constraints.timing_derate,
+        wire_records,
     )?;
 
     Ok(CornerSetup {
@@ -1339,7 +1342,17 @@ fn analyze_prepared_corner(
         latch_maps,
         lowered,
         mut diags,
-    } = setup_prepared_corner(&lib, netview, graph, constraints, options, prep)?;
+    } = setup_prepared_corner(
+        &lib,
+        netview,
+        graph,
+        constraints,
+        options,
+        prep,
+        // A table-only analysis of every node reads only the prepared arc values; a cone
+        // propagation compares the wire records with those of the earlier analysis.
+        keep_lowered != KeepLowered::ForTable || !matches!(propagation, Propagation::Full),
+    )?;
     clock.finish();
     let relations = RelationTable::new();
     let mut range_tracker = RangeTracker::new();

@@ -413,7 +413,22 @@ impl<'a> LoweredCorner<'a> {
         lib: &TimingLib,
         max_bytes: u64,
     ) -> Result<(), Diag> {
-        rc::prepare(self, graph, view, wire, lib, max_bytes)
+        rc::prepare(self, graph, view, wire, lib, max_bytes, true)
+    }
+
+    /// [`Self::set_wire_model`] without the wire records of the extracted net arcs (their first
+    /// moments), for a problem whose propagations read only the prepared arc values: the timing
+    /// table's analysis and the clock network propagation (AGENTS rule 9). The values are the
+    /// same.
+    pub fn set_wire_values(
+        &mut self,
+        graph: &TimingGraph,
+        view: &NetlistView<'_>,
+        wire: &dyn WireModel,
+        lib: &TimingLib,
+        max_bytes: u64,
+    ) -> Result<(), Diag> {
+        rc::prepare(self, graph, view, wire, lib, max_bytes, false)
     }
 
     /// Borrows this lowered corner as a [`TimingProblem`] for `rusteda_compute::timing`.

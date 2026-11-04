@@ -51,6 +51,8 @@ fn wire_after_driver(
     }
 }
 
+/// The tag-independent RC values of every arc of `lowered` under `wire` (`STA-REQ-0723`), and,
+/// with `wire_records`, the first moment of every extracted net arc in its wire record.
 pub(super) fn prepare(
     lowered: &mut LoweredCorner<'_>,
     graph: &TimingGraph,
@@ -58,6 +60,7 @@ pub(super) fn prepare(
     wire: &dyn WireModel,
     lib: &TimingLib,
     max_bytes: u64,
+    wire_records: bool,
 ) -> Result<(), Diag> {
     let extracted = wire.scope_name() == "spef_rc";
     if !extracted && !lib.has_mixed_thresholds() && lowered.derates.is_identity() {
@@ -105,8 +108,17 @@ pub(super) fn prepare(
         ));
     }
     let start = Instant::now();
+    // The preparation is a function of the CSR, the tables, the loads and the starts alone: a
+    // previous preparation of this problem (the clock propagation prepares it again for every
+    // clock and launch stage) is released before the next one is allocated, so that the two
+    // never coexist (AGENTS rule 9).
+    lowered.arc_values = Vec::new();
+    lowered.wires = Vec::new();
+    lowered.drives = Vec::new();
     let mut arc_values = vec![ArcValues::default(); arcs];
-    let mut wires = vec![WireRec::default(); arcs];
+    // The arc values hold every delay and transition; the wire records only keep the first
+    // moments for the callers that compare or report them.
+    let mut wires = vec![WireRec::default(); if wire_records { arcs } else { 0 }];
     let mut slews = vec![[absent(0), absent(1), absent(0), absent(1)]; n];
     // The driver resistance of the transition in `slews` (STA-REQ-0729).
     let mut drives = vec![[None; 4]; n];
@@ -119,13 +131,15 @@ pub(super) fn prepare(
     for &(begin, end) in &spans {
         let in_ptr = &shared.csr.in_ptr;
         let (first, last) = (in_ptr[begin] as usize, in_ptr[end] as usize);
-        let (mut values, mut records) = (&mut arc_values[first..last], &mut wires[first..last]);
+        let mut values = &mut arc_values[first..last];
+        let mut records = wires.get_mut(first..last).unwrap_or_default();
         let mut jobs = Vec::with_capacity(end - begin);
         for v in begin..end {
             let count = (in_ptr[v + 1] - in_ptr[v]) as usize;
             let (value, rest) = std::mem::take(&mut values).split_at_mut(count);
             values = rest;
-            let (record, rest) = std::mem::take(&mut records).split_at_mut(count);
+            let (record, rest) =
+                std::mem::take(&mut records).split_at_mut(count.min(records.len()));
             records = rest;
             jobs.push((v, value, record));
         }
@@ -198,7 +212,8 @@ fn independent_spans(
 }
 
 /// The arcs into the node `v`, from the finished state of its sources. Writes only this node's
-/// rows of the arc tables and returns its wave; no other node reads them before this level ends.
+/// rows of the arc tables (`wires` empty without wire records) and returns its wave; no other
+/// node reads them before this level ends.
 #[allow(clippy::too_many_arguments)]
 fn node_wave(
     lowered: &LoweredCorner<'_>,
@@ -224,8 +239,9 @@ fn node_wave(
         }
     }
     let first = lowered.csr.in_ptr[v] as usize;
-    for (offset, (values, record)) in arc_values.iter_mut().zip(wires.iter_mut()).enumerate() {
+    for (offset, values) in arc_values.iter_mut().enumerate() {
         let k = first + offset;
+        let mut record = wires.get_mut(offset);
         let in_arc = lowered.csr.in_arcs[k];
         let cls = lowered.luts.classes[in_arc.class as usize];
         let raw = lowered.csr_raw_arc(graph, k);
@@ -257,7 +273,7 @@ fn node_wave(
                         drives[in_arc.src as usize][ti * 2 + an],
                         root,
                     )?;
-                    if let Some(tau) = value.tau {
+                    if let (Some(tau), Some(record)) = (value.tau, record.as_deref_mut()) {
                         record.delay[to * 2 + an] = tau;
                     }
                     let j = (ti * 2 + to) * 2 + an;

@@ -1200,6 +1200,7 @@ fn compute_corner_backward_pass(
             &ca.wire_model,
             u64::MAX,
             analysis.constraints.timing_derate,
+            false,
         )
         .expect("the lowering of a validated analysis is deterministic");
         bp.propagate(analysis.graph, &lowered, &values);
