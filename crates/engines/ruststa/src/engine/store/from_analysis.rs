@@ -32,6 +32,7 @@ use crate::engine::prop::endpoints::EndpointStatus;
 use crate::engine::prop::latch::lower_corner_with_derates;
 use crate::engine::prop::lower::LoweredCorner;
 use crate::engine::prop::starts::build_start_rows;
+use crate::engine::store::layout::PATH_CHAIN_STEP_WORDS;
 use crate::engine::store::{
     ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport,
     CornerLimitsReport, CornerRec, DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec,
@@ -820,40 +821,63 @@ fn build_store_kept(
         }
     }
 
-    // `PATH_CHAIN`: the header and the steps of every ranked path, in rank order. A chunk of
-    // paths is traced in parallel and appended in order, so the words do not depend on the
-    // number of threads.
-    const TRACE_CHUNK: usize = 1 << 16;
+    // `PATH_CHAIN`: the header and the steps of every ranked path, in rank order. The steps of
+    // every path are counted first, so that the chain is one allocation of its final size; every
+    // path is then traced in parallel straight into its own range of it. The words do not depend
+    // on the number of threads, and no traced path is held anywhere else (AGENTS Rule 9: bounded
+    // memory at OpenC910 scale, where every one of millions of endpoints has a ranked path).
+    let path_words = |cp: &CandPath<'_>| {
+        let mut steps = 0usize;
+        for_each_path_step(
+            analysis,
+            &analysis.corners[cp.corner_idx],
+            &pin_index,
+            &node_bucket,
+            cp.rec,
+            |_, _, _, _, _, _, _| steps += 1,
+        );
+        PATH_CHAIN_HEADER_WORDS + PATH_CHAIN_STEP_WORDS * steps
+    };
+    let words: Vec<usize> = cand_paths.par_iter().map(path_words).collect();
     let mut path_chain_ptr = Vec::with_capacity(n_ranked + 1);
-    path_chain_ptr.push(0);
-    let mut path_chain: Vec<u32> = Vec::new();
-    for chunk in cand_paths.chunks(TRACE_CHUNK) {
-        let traced: Vec<Vec<u32>> = chunk
-            .par_iter()
-            .map(|cp| {
-                let ca = &analysis.corners[cp.corner_idx];
-                let check_value = compute_check_intrinsic(analysis, ca, &pin_index, cp.rec);
-                let mut words = Vec::with_capacity(PATH_CHAIN_HEADER_WORDS + 16 * 3);
-                words.extend_from_slice(&pack_f64_words(canon_f64(cp.rec.required)));
-                words.extend_from_slice(&pack_f64_words(canon_f64(check_value)));
-                for_each_path_step(
-                    analysis,
-                    ca,
-                    &pin_index,
-                    &node_bucket,
-                    cp.rec,
-                    |node, tr, kind, tag_slot, nb, _, _| {
-                        words.extend_from_slice(&pack_chain_step(node, tr, kind, tag_slot, nb));
-                    },
-                );
-                words
-            })
-            .collect();
-        for words in traced {
-            path_chain.extend_from_slice(&words);
-            path_chain_ptr.push(path_chain.len() as u64);
-        }
+    path_chain_ptr.push(0u64);
+    for &n in &words {
+        let end = path_chain_ptr[path_chain_ptr.len() - 1] + n as u64;
+        path_chain_ptr.push(end);
     }
+    let mut path_chain = vec![0u32; path_chain_ptr[n_ranked] as usize];
+    let mut ranges: Vec<&mut [u32]> = Vec::with_capacity(n_ranked);
+    let mut rest = path_chain.as_mut_slice();
+    for &n in &words {
+        let (range, tail) = std::mem::take(&mut rest).split_at_mut(n);
+        ranges.push(range);
+        rest = tail;
+    }
+    drop(words);
+    cand_paths
+        .par_iter()
+        .zip(ranges)
+        .with_min_len(64)
+        .for_each(|(cp, out)| {
+            let ca = &analysis.corners[cp.corner_idx];
+            let check_value = compute_check_intrinsic(analysis, ca, &pin_index, cp.rec);
+            out[..2].copy_from_slice(&pack_f64_words(canon_f64(cp.rec.required)));
+            out[2..PATH_CHAIN_HEADER_WORDS]
+                .copy_from_slice(&pack_f64_words(canon_f64(check_value)));
+            let mut at = PATH_CHAIN_HEADER_WORDS;
+            for_each_path_step(
+                analysis,
+                ca,
+                &pin_index,
+                &node_bucket,
+                cp.rec,
+                |node, tr, kind, tag_slot, nb, _, _| {
+                    out[at..at + PATH_CHAIN_STEP_WORDS]
+                        .copy_from_slice(&pack_chain_step(node, tr, kind, tag_slot, nb));
+                    at += PATH_CHAIN_STEP_WORDS;
+                },
+            );
+        });
     clock.lap("store.trace_paths");
 
     // `PATHS` and `PATH_POINTS`: the top-K paths with their arrivals and slews.
