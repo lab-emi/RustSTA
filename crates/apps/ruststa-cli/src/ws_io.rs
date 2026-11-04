@@ -23,7 +23,7 @@ use ruststa::engine::input::constr::{CompiledConstraints, CornerLibs};
 use ruststa::engine::limits::status::{DRV_KINDS, limit_statuses};
 use ruststa::engine::limits::table::LimitsData;
 use ruststa::engine::limits::{LimitKind, MAX_LIMIT_ROWS_CEILING};
-use ruststa::engine::prop::lower::LoweredCorner;
+use ruststa::engine::prop::backward::BackwardPass;
 use ruststa::engine::prop::lower::{BackendKind, Precision};
 use ruststa::engine::prop::tags::DEFAULT_TAG_BUDGET;
 use ruststa::engine::store::{
@@ -35,8 +35,7 @@ use ruststa::engine::types::NodeId;
 use crate::args::{PrecisionArg, StoreArg, WireModelArg};
 use crate::phases::PhaseLog;
 use ruststa::engine::store::from_analysis::{
-    StoreInput, build_store_from_analysis_releasing, build_store_from_analysis_with_ctx,
-    check_store_tables,
+    StoreInput, build_store_from_analysis_with_ctx, build_store_from_required, check_store_tables,
 };
 
 /// Options for running STA on a workspace revision.
@@ -437,13 +436,15 @@ pub fn analysis_error(err_diags: &[JobDiag], diags: &mut Vec<Diagnostic>) -> Err
 }
 
 /// The timing and limit tables of `analysis` and their envelope headers, the analysis
-/// diagnostics added to `diags` (`STA-REQ-0302`, `STA-REQ-0806`). The limit table is built
-/// first and takes the kept limit rows of the corners (`LimitsData::from_analysis_releasing`),
-/// so that the timing table is built without them.
+/// diagnostics added to `diags` (`STA-REQ-0302`, `STA-REQ-0806`). `required` holds the required
+/// times of every corner when the analysis computed them for its table
+/// (`KeepLowered::ForTable`); without them each corner is lowered again for its backward pass.
+/// The limit table is built first and takes the kept limit rows of the corners
+/// (`LimitsData::from_analysis_releasing`), so that the timing table is built without them.
 #[allow(clippy::too_many_arguments)]
 pub fn table_of_analysis(
     analysis: &mut EngineAnalysis<'_>,
-    lowered: Option<Vec<LoweredCorner<'_>>>,
+    required: Option<Vec<BackwardPass>>,
     corner_libs_owned: &[(String, Vec<Library>)],
     backend_scope_name: &str,
     store_precision: StorePrecision,
@@ -473,11 +474,11 @@ pub fn table_of_analysis(
     let analysis = &*analysis;
     let store_data = PhaseLog::time(log, "store_build", || {
         let ctx = Ctx::new(None, log.map(|l| l as &dyn Observer));
-        match lowered {
-            // Each kept corner is dropped once its backward pass is done.
-            Some(lowered) => build_store_from_analysis_releasing(
+        match required {
+            // Each corner's required times are dropped once its rows are built.
+            Some(required) => build_store_from_required(
                 analysis,
-                lowered,
+                required,
                 corner_libs_owned,
                 backend_scope_name,
                 store_precision,
@@ -553,8 +554,9 @@ pub fn run_sta_on_revision(
         compile_constraints(&sdc_model, &frozen, &corner_refs, diags)
     })?;
     let ctx = Ctx::new(None, log.map(|l| l as &dyn Observer));
-    // A full table needs the backward pass of every corner: the analysis keeps its lowered
-    // problems for it, so the store does not lower the corners a second time.
+    // A full table needs the backward pass of every corner: each corner computes it before the
+    // next one is analyzed and releases its lowered problem, so the store does not lower the
+    // corners a second time.
     let keep_lowered = store_mode == StoreMode::Full;
     let (mut analysis, record) = EngineAnalysis::analyze_with(
         &frozen,
@@ -583,7 +585,7 @@ pub fn run_sta_on_revision(
     }
     table_of_analysis(
         &mut analysis,
-        keep_lowered.then_some(record.lowered),
+        keep_lowered.then_some(record.required),
         &corner_libs_owned,
         backend_scope_name,
         store_precision,

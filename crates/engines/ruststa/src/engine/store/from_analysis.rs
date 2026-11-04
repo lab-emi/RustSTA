@@ -228,11 +228,40 @@ pub fn build_store_from_analysis_releasing(
     )
 }
 
-/// The lowered problems of the corners that the backward pass reuses.
+/// [`build_store_from_analysis_with_ctx`] with the required times and slacks of every corner that
+/// the analysis computed for its table (`KeepLowered::ForTable`, `PropagationRecord::required`),
+/// in corner order, instead of a backward pass over each corner's lowered problem. Each pass is
+/// dropped once its corner's rows are built. The table is the same.
+#[allow(clippy::too_many_arguments)]
+pub fn build_store_from_required(
+    analysis: &EngineAnalysis<'_>,
+    required: Vec<BackwardPass>,
+    corner_libs_owned: &[(String, Vec<Library>)],
+    backend_name: &str,
+    precision: StorePrecision,
+    store_mode: StoreMode,
+    top_k_paths: usize,
+    ctx: Ctx<'_>,
+) -> StaStoreData {
+    build_store_kept(
+        &StoreInput::of(analysis),
+        Kept::Required(required.into_iter().map(Some).collect()),
+        corner_libs_owned,
+        backend_name,
+        precision,
+        store_mode,
+        top_k_paths,
+        ctx,
+    )
+}
+
+/// What the backward pass of each corner reuses.
 enum Kept<'l, 'a> {
     Borrowed(Option<&'l [LoweredCorner<'a>]>),
     /// Each problem is dropped once the pass of its corner is done.
     Owned(Vec<Option<LoweredCorner<'a>>>),
+    /// The passes themselves, each taken by the rows of its corner.
+    Required(Vec<Option<BackwardPass>>),
 }
 
 impl<'a> Kept<'_, 'a> {
@@ -240,6 +269,7 @@ impl<'a> Kept<'_, 'a> {
         match self {
             Kept::Borrowed(lowered) => lowered.and_then(|l| l.get(corner)),
             Kept::Owned(lowered) => lowered.get(corner).and_then(Option::as_ref),
+            Kept::Required(_) => None,
         }
     }
 
@@ -249,6 +279,30 @@ impl<'a> Kept<'_, 'a> {
         {
             *slot = None;
         }
+    }
+
+    /// The backward pass of corner `ca` (index `corner`): the one computed by the analysis, or one
+    /// over the corner's kept or lowered-again problem.
+    fn backward_pass(
+        &mut self,
+        analysis: &StoreInput<'_>,
+        ca: &CornerAnalysis,
+        corner: usize,
+    ) -> BackwardPass {
+        if let Kept::Required(passes) = self
+            && let Some(bp) = passes.get_mut(corner).and_then(Option::take)
+        {
+            return bp;
+        }
+        // The seeds of the pass are the corner's check records (`KeepLowered::ForTable` releases
+        // them once it has computed the required times the table is built from).
+        assert!(
+            !ca.endpoints.records_released(),
+            "the check records of corner {} were released: build its table from its required \
+             times (build_store_from_required)",
+            ca.corner_name
+        );
+        compute_corner_backward_pass(analysis, ca, self.get(corner))
     }
 }
 
@@ -601,7 +655,7 @@ fn build_store_kept(
     if store_mode == StoreMode::Full {
         let total_cn = n_corners * n_nodes;
         for (c_idx, ca) in analysis.corners.iter().enumerate() {
-            let bp = compute_corner_backward_pass(analysis, ca, lowered.get(c_idx));
+            let bp = lowered.backward_pass(analysis, ca, c_idx);
             // The pass was the only reader of the corner's lowered problem.
             lowered.release(c_idx);
             clock.lap("store.backward_pass");
@@ -1155,24 +1209,24 @@ fn compute_corner_backward_pass(
     ca: &CornerAnalysis,
     kept: Option<&LoweredCorner<'_>>,
 ) -> BackwardPass {
-    let n_nodes = analysis.graph.num_nodes();
     let ntags = ca.tags.len().max(1);
-    let mut bp = BackwardPass::required_and_slack_only(n_nodes, ntags);
-
-    for rec in &ca.endpoints.records {
-        let an = rec.kind.data_bound();
-        bp.seed_required(rec.endpoint, rec.tag.index(), rec.data_tr, an, rec.required);
-    }
     // The node-ordered values of the corner hold the propagated arrivals and transitions, so the
     // pass does not need the level-ordered result, which a caller may already have released.
+    if let Some(lowered) = kept {
+        return BackwardPass::for_table(
+            analysis.graph,
+            lowered,
+            ntags,
+            &ca.endpoints.records,
+            &ca.node_values,
+        );
+    }
+    let mut bp =
+        BackwardPass::seeded_for_table(analysis.graph.num_nodes(), ntags, &ca.endpoints.records);
     let values = ByNode {
         values: &ca.node_values,
         order: analysis.graph.order(),
     };
-    if let Some(lowered) = kept {
-        bp.propagate(analysis.graph, lowered, &values);
-        return bp;
-    }
 
     if let Ok(start_build) = build_start_rows(
         analysis.netview,

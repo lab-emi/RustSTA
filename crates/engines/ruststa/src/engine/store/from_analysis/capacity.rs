@@ -4,6 +4,8 @@
 //! The capacity check of a timing table before it is built (owner: E10; `STA-REQ-0302`).
 
 use super::StoreInput;
+use crate::engine::analysis::CornerAnalysis;
+use crate::engine::prop::checks::SlackRecord;
 use crate::engine::store::{INST_HASH_MAX_CELL_STR, INST_HASH_MAX_PIN_COUNT};
 use crate::engine::types::NodeId;
 
@@ -67,13 +69,9 @@ pub fn check_store_tables(analysis: &StoreInput<'_>, backend_name: &str) -> Resu
             .keys()
             .map(String::len)
             .sum::<usize>();
-        // The path group of every summarized endpoint, at most once per record.
-        bytes += ca
-            .endpoints
-            .records
-            .iter()
-            .map(|r| r.path_group.len())
-            .sum::<usize>();
+        // The path group of every summarized endpoint, at most once per worst record of an
+        // endpoint: the table names the path group of an endpoint's worst record.
+        bytes += worst_records(ca).map(|r| r.path_group.len()).sum::<usize>();
     }
     bytes += (0..nv.num_cells())
         .map(|c| {
@@ -104,7 +102,7 @@ pub fn check_store_tables(analysis: &StoreInput<'_>, backend_name: &str) -> Resu
         + analysis
             .corners
             .iter()
-            .map(|ca| ca.endpoints.records.len())
+            .map(|ca| worst_records(ca).count())
             .sum::<usize>()
         + 2 * analysis.diags.len();
     if bytes > u32::MAX as usize || strings >= u32::MAX as usize {
@@ -114,4 +112,15 @@ pub fn check_store_tables(analysis: &StoreInput<'_>, backend_name: &str) -> Resu
         ));
     }
     Ok(())
+}
+
+/// The worst setup, hold, recovery and removal record of every endpoint of `ca`, the records a
+/// timing table names the path groups of. They are kept with the endpoints when the analysis
+/// releases its individual check records (`CornerAnalysis::retain_for_table`).
+fn worst_records(ca: &CornerAnalysis) -> impl Iterator<Item = &SlackRecord> {
+    ca.endpoints.endpoints.values().flat_map(|e| {
+        [&e.setup, &e.hold, &e.recovery, &e.removal]
+            .into_iter()
+            .flatten()
+    })
 }

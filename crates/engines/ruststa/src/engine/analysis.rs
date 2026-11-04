@@ -36,6 +36,7 @@ use crate::engine::limits::{
     ClockLimitScope, CornerLimits, DEFAULT_MAX_LIMIT_ROWS, LimitInputs, PulseRules,
     check_corner_limits, static_transitions,
 };
+use crate::engine::prop::backward::BackwardPass;
 use crate::engine::prop::checks::evaluate_all_checks;
 use crate::engine::prop::clocks::ClockModel;
 use crate::engine::prop::clocks::ideal::IdealClockModel;
@@ -45,7 +46,8 @@ use crate::engine::prop::exceptions::ExceptionContext;
 use crate::engine::prop::gating::{ClockGatingSite, discover_gating_sites};
 use crate::engine::prop::latch::{build_latch_tag_maps, lower_corner_with_derates};
 use crate::engine::prop::lower::{
-    self, ArcTagMaps, BackendKind, LoweredCorner, LoweredResult, Precision, TimingValues,
+    self, ArcTagMaps, BackendKind, LoweredCorner, LoweredResult, NodeOrdered, Precision,
+    TimingValues,
 };
 use crate::engine::prop::relation::RelationTable;
 use crate::engine::prop::starts::{DriveCellEffect, build_start_rows};
@@ -181,6 +183,10 @@ pub enum Propagation<'p> {
 pub struct PropagationRecord {
     /// The lowered problem of each corner, when the analysis was asked to keep it.
     pub lowered: Vec<LoweredCorner<'static>>,
+    /// The required times and slacks of the pins of each corner, as its timing table records them
+    /// ([`BackwardPass::for_table`]), when the analysis computed them for its table
+    /// ([`KeepLowered::ForTable`]).
+    pub required: Vec<BackwardPass>,
     /// The level positions whose values a cone propagation changed; `None` after a full one.
     pub changed: Vec<Option<Vec<u32>>>,
     /// The seeds of the propagation: every node for a full one.
@@ -196,11 +202,16 @@ pub enum KeepLowered {
     No,
     /// The whole lowered problem of every corner.
     Full,
-    /// For a caller that only builds the timing table of the analysis: the part of every
-    /// corner's lowered problem that the table's required times read
-    /// ([`LoweredCorner::retain_for_required_times`]). The level-ordered propagation values of
-    /// each corner (`CornerAnalysis::propagated.values`) are released once its checks and
-    /// endpoints are built, since the table reads the node-ordered ones.
+    /// None, for a caller that only builds the timing and limit tables of the analysis: every
+    /// corner's lowered problem is kept only for what the table's required times read
+    /// ([`LoweredCorner::retain_for_required_times`]) until the corner's checks and endpoints are
+    /// built, when the corner computes those required times ([`PropagationRecord::required`])
+    /// and releases it, so that no corner holds its problem while the next ones are analyzed.
+    /// The corner then keeps only what its tables read ([`CornerAnalysis::retain_for_table`]):
+    /// its level-ordered propagation values (`CornerAnalysis::propagated.values`) are released
+    /// too, since the table reads the node-ordered ones. Its timing table is built with
+    /// `build_store_from_required`, which takes the required times instead of lowering the
+    /// corner again from the released check records and loads.
     ForTable,
 }
 
@@ -265,6 +276,17 @@ pub struct CornerAnalysis {
 }
 
 impl CornerAnalysis {
+    /// Releases what the timing and limit tables of the corner do not read once its required
+    /// times are computed ([`KeepLowered::ForTable`]): the check records (the endpoint records keep
+    /// the worst of each endpoint), the net loads and the bound values of extracted parasitics.
+    /// The tables read the corner's name, library view, tags, clock model, node-ordered values,
+    /// endpoints, limits, wire model scope and diagnostics, which stay.
+    pub fn retain_for_table(&mut self) {
+        self.endpoints.release_records();
+        self.net_loads = NetLoads::default();
+        self.wire_model.release_bound();
+    }
+
     /// Returns the propagated pin transition time `slew[node][tr][an]` in `ns` (`STA-REQ-0114`).
     #[inline]
     #[must_use]
@@ -565,6 +587,7 @@ impl<'a> EngineAnalysis<'a> {
                     }
                 };
                 record.lowered.extend(own.lowered);
+                record.required.extend(own.required);
                 record.changed.extend(own.changed);
                 record.seeds.extend(own.seeds);
                 record.evaluated.extend(own.evaluated);
@@ -1395,6 +1418,12 @@ fn analyze_prepared_corner(
     };
     record.evaluated.push(propagated.stats.nodes_evaluated);
     let node_values = propagated.to_node_order(graph);
+    let mut propagated = propagated;
+    // Everything after the propagation reads the node-ordered copy, which holds the same values;
+    // a table-only corner releases the level-ordered ones at once.
+    if keep_lowered == KeepLowered::ForTable {
+        propagated.values = Default::default();
+    }
     clock.finish();
     // Static transitions of the pins without a propagated one, for the design rules (STA-REQ-0809).
     let statics = static_transitions(
@@ -1407,15 +1436,23 @@ fn analyze_prepared_corner(
         &node_values,
         constant,
     );
-    match keep_lowered {
-        KeepLowered::No => drop(lowered),
-        KeepLowered::Full => record.lowered.push(into_owned_lowered(lowered)),
+    // A table's required times are propagated over the lowered problem once the corner's check
+    // records and endpoints are built; until then it keeps only what that pass reads.
+    let for_table = match keep_lowered {
+        KeepLowered::No => {
+            drop(lowered);
+            None
+        }
+        KeepLowered::Full => {
+            record.lowered.push(into_owned_lowered(lowered));
+            None
+        }
         KeepLowered::ForTable => {
             let mut lowered = lowered;
             lowered.retain_for_required_times();
-            record.lowered.push(into_owned_lowered(lowered));
+            Some(lowered)
         }
-    }
+    };
 
     // 9. Check unanalyzed arcs, max capacitance, and max transition (`STA-REQ-0017`,
     // `STA-REQ-0015`, `STA-REQ-0120`).
@@ -1460,7 +1497,7 @@ fn analyze_prepared_corner(
         &tags,
         &mut exceptions,
         &gating_sites,
-        &propagated,
+        &NodeOrdered(&node_values),
         &mut range_tracker,
     )?;
     diags.extend(range_tracker.warnings(&lib.lut_bank));
@@ -1478,17 +1515,28 @@ fn analyze_prepared_corner(
         &clock_model,
         &tags,
         &gating_sites,
-        &propagated,
+        &NodeOrdered(&node_values),
         check_records,
         constant,
     );
     clock.finish();
-    let mut propagated = propagated;
-    if keep_lowered == KeepLowered::ForTable {
-        propagated.values = Default::default();
+    let table_only = for_table.is_some();
+    if let Some(lowered) = for_table {
+        // The required times and slacks of the timing table (`STA-REQ-0227`), after which
+        // the corner's lowered problem is released.
+        let clock = PhaseClock::start(ctx, "required_times");
+        record.required.push(BackwardPass::for_table(
+            graph,
+            &lowered,
+            tags.len().max(1),
+            &endpoints.records,
+            &node_values,
+        ));
+        drop(lowered);
+        clock.finish();
     }
 
-    Ok(CornerAnalysis {
+    let mut ca = CornerAnalysis {
         corner_id,
         corner_name: corner_name.to_string(),
         lib,
@@ -1508,7 +1556,11 @@ fn analyze_prepared_corner(
         unanalyzed_arcs,
         limits,
         diags,
-    })
+    };
+    if table_only {
+        ca.retain_for_table();
+    }
+    Ok(ca)
 }
 
 fn count_applied_exceptions(constraints: &CompiledConstraints) -> ScopeExceptions {

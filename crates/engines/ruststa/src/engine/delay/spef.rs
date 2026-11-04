@@ -462,6 +462,17 @@ impl Spef {
 }
 
 impl Spef {
+    /// Releases the bound per-net capacitances and pi loads and the per-load delays, keeping the
+    /// thresholds and the topology counts, for an analysis whose tables no longer read the wire
+    /// model ([`crate::engine::analysis::CornerAnalysis::retain_for_table`]). The released
+    /// binding must not be queried as a [`WireModel`] again.
+    pub fn release_bound(&mut self) {
+        self.wire_cap_pf = Vec::new();
+        self.delay_ns = Vec::new();
+        self.pi_loads = Vec::new();
+        self.primary = Vec::new();
+    }
+
     /// The non-tree networks of this binding (STA-REQ-0730, STA-REQ-0731).
     pub fn topology(&self) -> &RcTopology {
         &self.topology

@@ -3,7 +3,8 @@
 
 //! Corners analyzed at once and corner by corner: the same tables bit for bit, within the
 //! propagation memory budget of every corner together (`STA-REQ-0024`); the kept lowered problems
-//! of the timing table; and extracted parasitics released once bound (`STA-REQ-0820`).
+//! or the required times of the timing table; and extracted parasitics released once bound
+//! (`STA-REQ-0820`).
 
 use std::sync::{Arc, Mutex};
 
@@ -17,6 +18,7 @@ use ruststa::engine::input::constr::{CompiledConstraints, CornerLibs};
 use ruststa::engine::limits::table::LimitsData;
 use ruststa::engine::store::from_analysis::{
     build_store_from_analysis_releasing, build_store_from_analysis_with_ctx,
+    build_store_from_required,
 };
 use ruststa::engine::store::layout::{StoreMode, StorePrecision};
 use ruststa_fixtures::liberty::{Variant, library};
@@ -149,17 +151,19 @@ struct Tables {
     limits: Vec<u8>,
     diags: Vec<(String, String)>,
     lowered: usize,
+    required: usize,
     concurrent: bool,
     deferred: usize,
 }
 
-/// The lowered problems the timing table is built from.
+/// What the timing table is built from.
 #[derive(Clone, Copy)]
 enum Kept {
     /// From the whole kept lowered problems.
     Full,
-    /// From the problems kept for the table, each released after its required times, as
-    /// `ruststa run` builds it.
+    /// From the whole kept lowered problems, each released after its required times.
+    Released,
+    /// From the required times each corner computed for the table, as `ruststa run` builds it.
     ForTable,
     /// Without kept problems: every corner lowered again.
     Relowered,
@@ -195,7 +199,7 @@ fn analyze(
             let constraints =
                 CompiledConstraints::from_sdc_str(SDC, "top.sdc", &frozen, &corners).unwrap();
             let keep = match table {
-                Kept::Full => KeepLowered::Full,
+                Kept::Full | Kept::Released => KeepLowered::Full,
                 Kept::ForTable => KeepLowered::ForTable,
                 Kept::Relowered => KeepLowered::No,
             };
@@ -211,6 +215,7 @@ fn analyze(
             )
             .map_err(|d| codes(&d))?;
             let lowered = record.lowered.len();
+            let required = record.required.len();
             let store = match table {
                 Kept::Full => build_store_from_analysis_with_ctx(
                     &analysis,
@@ -222,9 +227,19 @@ fn analyze(
                     100,
                     Ctx::NONE,
                 ),
-                Kept::ForTable => build_store_from_analysis_releasing(
+                Kept::Released => build_store_from_analysis_releasing(
                     &analysis,
                     record.lowered,
+                    &owned,
+                    "cpu",
+                    StorePrecision::F64,
+                    StoreMode::Full,
+                    100,
+                    Ctx::NONE,
+                ),
+                Kept::ForTable => build_store_from_required(
+                    &analysis,
+                    record.required,
                     &owned,
                     "cpu",
                     StorePrecision::F64,
@@ -251,6 +266,7 @@ fn analyze(
                     .unwrap(),
                 diags: codes(&analysis.diags),
                 lowered,
+                required,
                 concurrent: phases.contains(&"concurrent_corners"),
                 deferred: phases.iter().filter(|p| **p == "deferred_corner").count(),
             })
@@ -267,6 +283,7 @@ fn corners_at_once_equal_corner_by_corner() {
     assert!(!serial.concurrent);
     assert_eq!(serial.deferred, 0);
     assert_eq!(serial.lowered, 2);
+    assert_eq!(serial.required, 0);
     // The corners differ, or this comparison proves nothing.
     assert!(serial.store.len() > 1000);
     for workers in [4, 5] {
@@ -283,9 +300,14 @@ fn corners_at_once_equal_corner_by_corner() {
         );
     }
     for workers in [1, 4] {
-        for table in [Kept::ForTable, Kept::Relowered] {
+        for table in [Kept::Released, Kept::ForTable, Kept::Relowered] {
             let other = analyze(workers, &options, table).unwrap();
             assert_eq!(other.concurrent, workers == 4);
+            // A table-only analysis keeps no lowered problem, but the required times of every
+            // corner, computed before the next corners are analyzed.
+            if let Kept::ForTable = table {
+                assert_eq!((other.lowered, other.required), (0, 2), "{workers} workers");
+            }
             assert_eq!(other.store, serial.store, "{workers} workers");
             assert_eq!(other.limits, serial.limits, "{workers} workers");
             assert_eq!(other.diags, serial.diags, "{workers} workers");
@@ -401,4 +423,52 @@ fn released_extraction_serves_one_analysis() {
         );
         assert!(shared.parasitics.iter().all(|p| p.data().is_none()));
     }
+}
+
+// STA-REQ-0302: a table-only analysis releases the check records of every corner once it has
+// computed the corner's required times, so its timing table is built from those required times:
+// a backward pass over a corner lowered again would have no seeds, and is refused.
+#[test]
+#[should_panic(expected = "were released")]
+fn table_only_analysis_tables_need_its_required_times() {
+    let lib = lib();
+    let frozen = netlist();
+    let libs = [lib];
+    let corners = [
+        CornerLibs::new("fast", &libs),
+        CornerLibs::new("slow", &libs),
+    ];
+    let owned = vec![
+        ("fast".to_string(), libs.to_vec()),
+        ("slow".to_string(), libs.to_vec()),
+    ];
+    let constraints = CompiledConstraints::from_sdc_str(SDC, "top.sdc", &frozen, &corners).unwrap();
+    let (analysis, record) = EngineAnalysis::analyze_with(
+        &frozen,
+        &corners,
+        None,
+        constraints,
+        &options(1 << 30),
+        Ctx::NONE,
+        Propagation::Full,
+        KeepLowered::ForTable,
+    )
+    .unwrap();
+    assert_eq!(record.required.len(), 2);
+    assert!(
+        analysis
+            .corners
+            .iter()
+            .all(|c| c.endpoints.records.is_empty())
+    );
+    let _ = build_store_from_analysis_with_ctx(
+        &analysis,
+        None,
+        &owned,
+        "cpu",
+        StorePrecision::F64,
+        StoreMode::Full,
+        100,
+        Ctx::NONE,
+    );
 }

@@ -645,6 +645,41 @@ impl<'a> LoweredCorner<'a> {
     }
 }
 
+/// Propagated arrivals and transitions looked up by node: a [`LoweredResult`], whose values are
+/// level-ordered, or [`NodeOrdered`], its node-ordered copy ([`LoweredResult::to_node_order`]),
+/// which holds the same values bit for bit.
+pub trait NodeValues: Sync {
+    /// The arrival time (ns) at `node` for `tag`, transition `tr` and bound `an`.
+    fn arrival(&self, graph: &TimingGraph, node: NodeId, tag: usize, tr: Tr, an: An) -> f64;
+    /// The transition time (ns) at `node` for transition `tr` and bound `an`.
+    fn slew(&self, graph: &TimingGraph, node: NodeId, tr: Tr, an: An) -> f64;
+}
+
+impl NodeValues for LoweredResult {
+    fn arrival(&self, graph: &TimingGraph, node: NodeId, tag: usize, tr: Tr, an: An) -> f64 {
+        LoweredResult::arrival(self, graph, node, tag, tr, an)
+    }
+
+    fn slew(&self, graph: &TimingGraph, node: NodeId, tr: Tr, an: An) -> f64 {
+        LoweredResult::slew(self, graph, node, tr, an)
+    }
+}
+
+/// Node-ordered propagation values ([`LoweredResult::to_node_order`]) looked up by node, so that
+/// a corner that keeps only them reads the values of its propagation.
+#[derive(Debug, Clone, Copy)]
+pub struct NodeOrdered<'v>(pub &'v TimingValues);
+
+impl NodeValues for NodeOrdered<'_> {
+    fn arrival(&self, _graph: &TimingGraph, node: NodeId, tag: usize, tr: Tr, an: An) -> f64 {
+        self.0.arrival(node.index(), tag, tr.index(), an.index())
+    }
+
+    fn slew(&self, _graph: &TimingGraph, node: NodeId, tr: Tr, an: An) -> f64 {
+        self.0.transition(node.index(), tr.index(), an.index())
+    }
+}
+
 /// Output of a lowered propagation: level-ordered [`TimingValues`], [`PropagationStats`], and
 /// lowering time (`STA-REQ-0401`, `COMPUTE-REQ-0016`, `COMPUTE-REQ-0024`).
 #[derive(Debug, Clone)]
