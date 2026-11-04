@@ -44,13 +44,15 @@ use crate::engine::prop::cppr::NoCppr;
 use crate::engine::prop::endpoints::{CornerEndpoints, EndpointRecord};
 use crate::engine::prop::exceptions::ExceptionContext;
 use crate::engine::prop::gating::{ClockGatingSite, discover_gating_sites};
-use crate::engine::prop::latch::{build_latch_tag_maps, lower_corner_with_derates};
+use crate::engine::prop::latch::{
+    LatchSlewTables, add_latch_gq_slew_tables, build_latch_tag_maps, lower_corner_with_derates,
+};
 use crate::engine::prop::lower::{
     self, ArcTagMaps, BackendKind, LoweredCorner, LoweredResult, NodeOrdered, Precision,
     TimingValues,
 };
 use crate::engine::prop::relation::RelationTable;
-use crate::engine::prop::starts::{DriveCellEffect, build_start_rows};
+use crate::engine::prop::starts::{DriveCellEffect, SeededStarts, build_start_rows};
 use crate::engine::prop::tags::{DEFAULT_TAG_BUDGET, TagTable};
 use crate::engine::scope::{
     AnalysisScope, CornerSummary, ScopeCompleteness, ScopeExceptions, StaStatusValue, StaSummary,
@@ -1148,26 +1150,44 @@ fn setup_prepared_corner<'l>(
     prep: CornerPrep,
     wire_records: bool,
 ) -> Result<CornerSetup<'l>, Diag> {
-    let CornerPrep {
-        wire_model,
-        net_loads,
-        clock_model,
-        tags,
-        mut exceptions,
-        diags,
-        own_state_bytes: _,
-    } = prep;
+    let starts = start_prepared_corner(lib, netview, graph, constraints, prep)?;
+    lower_started_corner(
+        lib,
+        netview,
+        graph,
+        constraints,
+        options,
+        starts,
+        None,
+        wire_records,
+    )
+}
 
+/// A corner after steps 5 and 6 of its setup: its preparation, start rows and latch tag maps.
+struct CornerStarts {
+    prep: CornerPrep,
+    start_build: SeededStarts,
+    latch_maps: ArcTagMaps,
+}
+
+/// Steps 5 and 6 of a corner's setup, after [`prepare_corner`].
+fn start_prepared_corner(
+    lib: &TimingLib,
+    netview: &NetlistView<'_>,
+    graph: &TimingGraph,
+    constraints: &CompiledConstraints,
+    mut prep: CornerPrep,
+) -> Result<CornerStarts, Diag> {
     // 5. Build start rows (`STA-REQ-0217`, `STA-REQ-0218`, `STA-REQ-0219`).
     let start_build = build_start_rows(
         netview,
         graph,
         lib,
         constraints,
-        &clock_model,
-        &tags,
-        &exceptions,
-        &net_loads,
+        &prep.clock_model,
+        &prep.tags,
+        &prep.exceptions,
+        &prep.net_loads,
         &constraints.timing_derate,
     )?;
 
@@ -1175,11 +1195,46 @@ fn setup_prepared_corner<'l>(
     let latch_maps = build_latch_tag_maps(
         graph,
         constraints,
-        &clock_model,
+        &prep.clock_model,
         &NoCppr,
-        &tags,
-        &mut exceptions,
+        &prep.tags,
+        &mut prep.exceptions,
     )?;
+    Ok(CornerStarts {
+        prep,
+        start_build,
+        latch_maps,
+    })
+}
+
+/// Step 7 of a corner's setup, after [`start_prepared_corner`]: the lowered problem, with the
+/// latch `D -> Q` transition tables of `latch_tables` when the corner added them to the bank of
+/// `lib` ([`add_latch_gq_slew_tables`]).
+#[allow(clippy::too_many_arguments)]
+fn lower_started_corner<'l>(
+    lib: &'l TimingLib,
+    netview: &NetlistView<'_>,
+    graph: &TimingGraph,
+    constraints: &CompiledConstraints,
+    options: &AnalysisOptions,
+    starts: CornerStarts,
+    latch_tables: Option<&LatchSlewTables>,
+    wire_records: bool,
+) -> Result<CornerSetup<'l>, Diag> {
+    let CornerStarts {
+        prep,
+        start_build,
+        latch_maps,
+    } = starts;
+    let CornerPrep {
+        wire_model,
+        net_loads,
+        clock_model,
+        tags,
+        exceptions,
+        diags,
+        own_state_bytes: _,
+    } = prep;
 
     // 7. Lower onto `rusteda_compute::timing` and pin latch `G -> Q` slews (`STA-REQ-0222`,
     // `STA-REQ-0401`).
@@ -1197,6 +1252,7 @@ fn setup_prepared_corner<'l>(
         &wire_model,
         options.max_state_bytes,
         constraints.timing_derate,
+        latch_tables,
         wire_records,
     )?;
 
@@ -1339,7 +1395,7 @@ fn analyze_prepared_corner(
     clock: PhaseClock<'_>,
     corner_id: CornerId,
     corner_name: &str,
-    lib: TimingLib,
+    mut lib: TimingLib,
     netview: &NetlistView<'_>,
     graph: &TimingGraph,
     constant: &[bool],
@@ -1365,17 +1421,25 @@ fn analyze_prepared_corner(
         latch_maps,
         lowered,
         mut diags,
-    } = setup_prepared_corner(
-        &lib,
-        netview,
-        graph,
-        constraints,
-        options,
-        prep,
-        // A table-only analysis of every node reads only the prepared arc values; a cone
-        // propagation compares the wire records with those of the earlier analysis.
-        keep_lowered != KeepLowered::ForTable || !matches!(propagation, Propagation::Full),
-    )?;
+    } = {
+        let starts = start_prepared_corner(&lib, netview, graph, constraints, prep)?;
+        // The scalar transition tables of the latch `D -> Q` arcs are added to the corner's own
+        // bank, which its lowered problem borrows, instead of to a copy of the whole bank.
+        let latch_tables =
+            add_latch_gq_slew_tables(graph, &starts.start_build.launch_slews, &mut lib.lut_bank);
+        lower_started_corner(
+            &lib,
+            netview,
+            graph,
+            constraints,
+            options,
+            starts,
+            Some(&latch_tables),
+            // A table-only analysis of every node reads only the prepared arc values; a cone
+            // propagation compares the wire records with those of the earlier analysis.
+            keep_lowered != KeepLowered::ForTable || !matches!(propagation, Propagation::Full),
+        )?
+    };
     clock.finish();
     let relations = RelationTable::new();
     let mut range_tracker = RangeTracker::new();
