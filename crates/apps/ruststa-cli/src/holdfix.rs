@@ -10,12 +10,14 @@
 //! gives, per endpoint, the worst corner, the largest needed delay and the smallest setup slack
 //! over all corners. The paths come from the ranked paths of the timing table: every corner
 //! ranks its own worst hold path of each endpoint. The nets come from the revision's netlist.
-//! Rows are bounded by `--limit` per corner (AGENTS rule 3.4).
+//! Rows are bounded by `--limit` per corner (AGENTS rule 3.4). Nested rows are spliced
+//! ([`RawJson::array`], [`JsonObject::insert_raw`]) instead of serialized again at every level,
+//! so the section costs time linear in its size.
 
 use std::collections::BTreeMap;
 
 use rustc_hash::FxHashMap;
-use rusteda_workspace::{Error, JsonObject, Revision};
+use rusteda_workspace::{Error, JsonObject, RawJson, Revision};
 use ruststa::engine::graph::CheckKind;
 use ruststa::engine::input::{NetTarget, NetlistView, NodeKind};
 use ruststa::engine::store::{
@@ -228,9 +230,9 @@ pub(crate) fn hold_fix_section(
                     po.insert("required_ns", &canon_f64(p.required))?;
                     po.insert("check_value_ns", &canon_f64(p.check_value))?;
                     po.insert("slack_ns", &canon_f64(p.slack))?;
-                    po.insert("stages", &stage_json(&nv, &v, c, &p)?)?;
+                    po.insert_raw("stages", RawJson::array(stage_json(&nv, &v, c, &p)?));
                     o.insert("startpoint", &start)?;
-                    o.insert("path", &po)?;
+                    o.insert_raw("path", po.into());
                 }
                 None => {
                     o.insert("startpoint", &Option::<String>::None)?;
@@ -249,7 +251,7 @@ pub(crate) fn hold_fix_section(
             "worst_hold_slack_ns",
             &holds().reduce(f64::min).map(canon_f64),
         )?;
-        co.insert("endpoints", &rows)?;
+        co.insert_raw("endpoints", RawJson::array(rows));
         corners_json.push(co);
     }
 
@@ -298,8 +300,8 @@ pub(crate) fn hold_fix_section(
 
     let mut out = JsonObject::new();
     out.insert("target_margin_ns", &canon_f64(target_margin))?;
-    out.insert("corners", &corners_json)?;
+    out.insert_raw("corners", RawJson::array(corners_json));
     out.insert("merged_total", &merged_total)?;
-    out.insert("merged", &merged_rows)?;
+    out.insert_raw("merged", RawJson::array(merged_rows));
     Ok(out)
 }
