@@ -186,6 +186,9 @@ pub struct LoweredCorner<'a> {
     pub wires: Vec<WireRec>,
     /// CPU-prepared f64 RC arc values, shared by all propagation backends.
     pub arc_values: Vec<ArcValues>,
+    /// The delays of `arc_values` alone (`ArcValues::delay`), once only the required-time
+    /// propagation reads them ([`Self::retain_for_required_times`]); empty otherwise.
+    pub arc_delays: Vec<[f64; 8]>,
     /// Per level-ordered node `[Rise/Early, Rise/Late, Fall/Early, Fall/Late]`: the driver
     /// waveform (Thevenin resistance in kOhm, source ramp duration in ns) that set the node's
     /// prepared transition, when a cell arc into a pi load outside the lumped regime set it
@@ -254,13 +257,34 @@ fn cone_positions(
 }
 
 impl<'a> LoweredCorner<'a> {
+    /// The prepared delay `j` (`(input transition * 2 + output transition) * 2 + bound`) of CSR
+    /// arc `k`: of its arc values, or of their delays once only those are kept.
+    #[inline]
+    #[must_use]
+    pub fn arc_delay(&self, k: usize, j: usize) -> Option<f64> {
+        match self.arc_values.get(k) {
+            Some(values) => Some(values.delay[j]),
+            None => self.arc_delays.get(k).map(|delays| delays[j]),
+        }
+    }
+
     /// Keeps only what the required-time propagation of the timing table reads
-    /// (`BackwardPass::propagate`): the CSR, the tables, the loads and the arc values, and the
-    /// wire records only when an arc has no value. The driver waveforms, the start rows and the
-    /// arc maps are released.
+    /// (`BackwardPass::propagate`): the CSR, the tables, the loads and the delays of the arc
+    /// values ([`Self::arc_delays`], in the allocation of the arc values, half of it released),
+    /// and the wire records only when an arc has no value. The transitions of the arc values,
+    /// the driver waveforms, the start rows and the arc maps are released; the problem can no
+    /// longer be propagated forward.
     pub fn retain_for_required_times(&mut self) {
         if self.arc_values.len() >= self.csr.in_arcs.len() {
             self.wires = Vec::new();
+        }
+        if !self.arc_values.is_empty() {
+            let mut delays: Vec<[f64; 8]> = std::mem::take(&mut self.arc_values)
+                .into_iter()
+                .map(|v| v.delay)
+                .collect();
+            delays.shrink_to_fit();
+            self.arc_delays = delays;
         }
         self.drives = Vec::new();
         self.start_drives = FxHashMap::default();
@@ -469,6 +493,7 @@ impl<'a> LoweredCorner<'a> {
             starts,
             wires: Vec::new(),
             arc_values: Vec::new(),
+            arc_delays: Vec::new(),
             drives: Vec::new(),
             start_drives: FxHashMap::default(),
             slew_only_map,
