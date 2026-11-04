@@ -6,6 +6,11 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 ## [Unreleased]
 
 ### Added
+- **`ruststa run --concurrent-corners`:** the corners of a full analysis run at once already with
+  one worker thread per corner (by default only with two), within the same `--max-state-gib`
+  rule (STA-REQ-0024); the results are byte-identical, the peak memory holds the corners' states
+  together. The Ibex frontend's two-worker runs on its estimated parasitics take 0.8 to 1.8 s
+  less each.
 - Global early/late timing derates, per-cell mixed-library slew conventions, and
   driving-cell waveforms on propagated primary clocks and extracted input nets.
   Scope metadata records applied derates. Unsupported derate scopes fail explicitly.
@@ -26,6 +31,12 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   160 / 183 MiB with the reference extraction (2 / 4 threads), and its time by 10 to 14 %. Every
   output is byte-identical, and `--max-state-gib` accepts, rejects and reports as before (the
   clock network's preparation is charged the budgets of the whole graph).
+
+- **Report rendering:** `ruststa report` splices the nested rows of its sections (`hold_fix` paths
+  and stages, endpoint, DRV and limit rows) into the envelope instead of serializing every level
+  again, and the envelope is laid out once. On the Ibex frontend the 14 MB `hold_fix` report of
+  both corners takes 0.33 s instead of 1.48 s and the DRV listing below 0.2 ns of slack 0.16 s
+  instead of 1.16 s; every report is byte-identical.
 
 
 ### Documented
