@@ -21,9 +21,57 @@ use std::sync::Arc;
 /// Immutable arrival/slew results; session snapshots share them through Arc.
 #[derive(Debug, Clone)]
 pub struct PropagatedClocks {
-    values: Vec<Option<TimingValues>>,
+    values: Vec<Option<ClockRows>>,
     rank: Vec<u32>,
     all_physical: bool,
+}
+
+/// The propagated values of one clock at the pins its arrivals reach, the only ones
+/// [`PropagatedClocks::arrival`] reads: the rows of the level-ordered positions with a present
+/// arrival, so that a clock keeps the size of its network rather than of the design
+/// (STA-REQ-0713).
+#[derive(Debug, Clone)]
+struct ClockRows {
+    /// The positions with a row, increasing.
+    positions: Vec<u32>,
+    /// Row `i` holds the arrivals and transitions of position `positions[i]`; no predecessors.
+    values: TimingValues,
+}
+
+impl ClockRows {
+    /// The rows of the positions of `full` with a finite arrival of any tag, transition or bound.
+    fn of(full: &TimingValues) -> Self {
+        let per_node = full.ntags as usize * 4;
+        let positions: Vec<u32> = (0..full.nodes())
+            .filter(|&v| {
+                full.arr[v * per_node..(v + 1) * per_node]
+                    .iter()
+                    .any(|a| a.is_finite())
+            })
+            .map(|v| v as u32)
+            .collect();
+        let mut arr = Vec::with_capacity(positions.len() * per_node);
+        let mut slew = Vec::with_capacity(positions.len() * 4);
+        for &v in &positions {
+            let v = v as usize;
+            arr.extend_from_slice(&full.arr[v * per_node..(v + 1) * per_node]);
+            slew.extend_from_slice(&full.slew[v * 4..(v + 1) * 4]);
+        }
+        Self {
+            positions,
+            values: TimingValues {
+                ntags: full.ntags,
+                arr,
+                slew,
+                pred: Vec::new(),
+            },
+        }
+    }
+
+    /// The row of position `pos`, if its arrival is present.
+    fn row(&self, pos: u32) -> Option<usize> {
+        self.positions.binary_search(&pos).ok()
+    }
 }
 impl PropagatedClocks {
     pub fn contains(&self, clock: ClockId) -> bool {
@@ -44,15 +92,18 @@ impl PropagatedClocks {
         tr: Tr,
         an: An,
     ) -> Option<ClockArrival> {
-        let values = self.values.get(clock.index())?.as_ref()?;
-        let pos = *self.rank.get(pin.index())? as usize;
-        let latency = values.arrival(pos, edge.index(), tr.index(), an.index());
+        let rows = self.values.get(clock.index())?.as_ref()?;
+        // A position without a row has no finite arrival.
+        let row = rows.row(*self.rank.get(pin.index())?)?;
+        let latency = rows
+            .values
+            .arrival(row, edge.index(), tr.index(), an.index());
         if !latency.is_finite() {
             return None;
         }
         Some(ClockArrival {
             latency,
-            slew: values.transition(pos, tr.index(), an.index()),
+            slew: rows.values.transition(row, tr.index(), an.index()),
         })
     }
 }
@@ -190,7 +241,15 @@ pub fn build_model(
             "nonfinite driving-cell waveform; the extracted driver requires characterized load sensitivity",
         ));
     }
-    let mut lowered = LoweredCorner::lower(
+    // Arrivals start only at the sources of the propagated clocks, and only the values of the
+    // pins they reach are read: the lowering keeps the arcs those values depend on.
+    let roots: Vec<NodeId> = constraints
+        .clocks
+        .iter()
+        .filter(|c| c.propagated && !c.is_virtual())
+        .flat_map(|c| c.sources.iter().copied())
+        .collect();
+    let mut lowered = LoweredCorner::lower_cone(
         view,
         graph,
         lib,
@@ -198,12 +257,13 @@ pub fn build_model(
         2,
         GraphStartBuilder::new(2).build(),
         &ArcTagMaps::new(),
+        &roots,
     )?;
     lowered.derates = constraints.timing_derate;
     lowered.start_drives = crate::engine::prop::starts::port_drives(&driving_cells);
     let mut propagate_all = |launched: &[(NodeId, [[f64; 2]; 2])],
                              model: &IdealClockModel|
-     -> Result<Vec<Option<TimingValues>>, Diag> {
+     -> Result<Vec<Option<ClockRows>>, Diag> {
         let mut values = Vec::with_capacity(constraints.clocks.len());
         for (ci, clock) in constraints.clocks.iter().enumerate() {
             if !clock.propagated || clock.is_virtual() {
@@ -253,13 +313,13 @@ pub fn build_model(
                 }
             }
             lowered.starts = starts.build();
-            lowered.set_wire_model(graph, view, wire, lib, options.max_state_bytes)?;
-            let mut result = lowered
+            lowered.set_wire_values(graph, view, wire, lib, options.max_state_bytes)?;
+            let result = lowered
                 .propagate(BackendKind::Cpu, Precision::F64, Ctx::NONE)
                 .map_err(|e| crate::engine::prop::lower::compute_error_diag(&e))?
                 .values;
-            result.pred = Vec::new(); // Predecessors are not clock paths; release their allocation.
-            values.push(Some(result));
+            // Only the pins with an arrival are read; predecessors are not clock paths.
+            values.push(Some(ClockRows::of(&result)));
         }
         Ok(values)
     };

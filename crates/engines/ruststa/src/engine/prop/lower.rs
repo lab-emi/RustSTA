@@ -202,6 +202,57 @@ pub struct LoweredCorner<'a> {
     pub lower_s: f64,
 }
 
+/// The level-ordered positions that [`LoweredCorner::lower_cone`] keeps the incoming arcs of:
+/// the nodes from which a node that an arrival from `roots` reaches (over the enabled arcs, the
+/// only ones without a tag map in such a propagation) can be reached over the lowered arcs, the
+/// enabled ones and the transition-only ones of `slew_only` (`(dst, src, arc, class)` by
+/// position, sorted). `O(V + E)`.
+fn cone_positions(
+    graph: &TimingGraph,
+    roots: &[NodeId],
+    slew_only: &[(u32, u32, u32, u32)],
+) -> Vec<bool> {
+    let n = graph.num_nodes();
+    let g_arcs = graph.arcs();
+    let order = graph.order();
+    // An arrival reaches a node through an enabled incoming arc from a node it reaches; the
+    // sources of a node's incoming arcs come before it in level order.
+    let mut reached = vec![false; n];
+    for &root in roots {
+        if root.index() < n {
+            reached[graph.topo_rank(root) as usize] = true;
+        }
+    }
+    for pos in 0..n {
+        if !reached[pos] {
+            reached[pos] = graph
+                .incoming(order[pos])
+                .iter()
+                .any(|&ai| reached[graph.topo_rank(g_arcs[ai as usize].src) as usize]);
+        }
+    }
+    let mut positions: Vec<u32> = (0..n as u32).filter(|&p| reached[p as usize]).collect();
+    let mut keep = reached;
+    while let Some(pos) = positions.pop() {
+        let sources = graph
+            .incoming(order[pos as usize])
+            .iter()
+            .map(|&ai| graph.topo_rank(g_arcs[ai as usize].src));
+        let first = slew_only.partition_point(|e| e.0 < pos);
+        let extra = slew_only[first..]
+            .iter()
+            .take_while(|e| e.0 == pos)
+            .map(|e| e.1);
+        for src in sources.chain(extra) {
+            if !keep[src as usize] {
+                keep[src as usize] = true;
+                positions.push(src);
+            }
+        }
+    }
+    keep
+}
+
 impl<'a> LoweredCorner<'a> {
     /// Keeps only what the required-time propagation of the timing table reads
     /// (`BackwardPass::propagate`): the CSR, the tables, the loads and the arc values, and the
@@ -228,6 +279,54 @@ impl<'a> LoweredCorner<'a> {
         ntags: u32,
         starts: StartRows,
         tag_maps: &ArcTagMaps,
+    ) -> Result<Self, Diag> {
+        Self::lower_into(
+            netview, graph, lib, net_loads, ntags, starts, tag_maps, None,
+        )
+    }
+
+    /// [`Self::lower`] with only the arcs that a propagation of arrivals from `roots` reads, for a
+    /// propagation whose only arrivals start at `roots` and whose values are read only where an
+    /// arrival is present, such as the clock network (`STA-REQ-0713`): the arcs into the nodes
+    /// from which a node that an arrival from `roots` reaches can be reached. Every other node
+    /// keeps its row, without incoming arcs. Arrivals pass only the enabled arcs without tag
+    /// maps, so every node with an arrival, and every node whose value it reads, keeps all its
+    /// incoming arcs: their values are those of [`Self::lower`] bit for bit, and the other
+    /// nodes have no arrival in either. The arc tables of the waveform preparation are sized to
+    /// the kept arcs.
+    #[allow(clippy::too_many_arguments)]
+    pub fn lower_cone(
+        netview: &NetlistView<'_>,
+        graph: &TimingGraph,
+        lib: &'a TimingLib,
+        net_loads: &NetLoads,
+        ntags: u32,
+        starts: StartRows,
+        tag_maps: &ArcTagMaps,
+        roots: &[NodeId],
+    ) -> Result<Self, Diag> {
+        Self::lower_into(
+            netview,
+            graph,
+            lib,
+            net_loads,
+            ntags,
+            starts,
+            tag_maps,
+            Some(roots),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn lower_into(
+        netview: &NetlistView<'_>,
+        graph: &TimingGraph,
+        lib: &'a TimingLib,
+        net_loads: &NetLoads,
+        ntags: u32,
+        starts: StartRows,
+        tag_maps: &ArcTagMaps,
+        roots: Option<&[NodeId]>,
     ) -> Result<Self, Diag> {
         let t0 = Instant::now();
         let n_nodes = graph.num_nodes();
@@ -267,6 +366,7 @@ impl<'a> LoweredCorner<'a> {
             0
         };
         let mut next_slew_only = 0usize;
+        let keep = roots.map(|roots| cone_positions(graph, roots, &slew_only));
 
         for (pos, &raw_node) in order.iter().enumerate() {
             let node_load = match netview.node_net(raw_node) {
@@ -287,6 +387,9 @@ impl<'a> LoweredCorner<'a> {
                     .count();
             let mut extras = slew_only[next_slew_only..extra_end].iter().peekable();
             next_slew_only = extra_end;
+            if keep.as_ref().is_some_and(|keep| !keep[pos]) {
+                continue;
+            }
             for &ai in graph.incoming(raw_node) {
                 let g_arc = &g_arcs[ai as usize];
                 let src = graph.topo_rank(g_arc.src);
