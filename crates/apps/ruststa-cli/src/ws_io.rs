@@ -131,6 +131,42 @@ pub struct AnalysisTables {
     pub metrics: JsonObject,
 }
 
+/// The timing table of an analysis and its envelope headers, without its pin limit table, which
+/// [`run_sta_on_revision_with`] and [`tables_of_analysis_with`] hand over before the timing table
+/// is built.
+#[derive(Debug)]
+pub struct TimingTables {
+    /// The timing table.
+    pub store: StaStoreData,
+    /// Envelope `scope`.
+    pub scope: JsonObject,
+    /// Envelope `completeness`.
+    pub completeness: JsonObject,
+    /// Envelope `metrics`.
+    pub metrics: JsonObject,
+}
+
+impl TimingTables {
+    /// These tables with the pin limit table `limits`.
+    fn with_limits(self, limits: LimitsData) -> AnalysisTables {
+        AnalysisTables {
+            store: self.store,
+            limits,
+            scope: self.scope,
+            completeness: self.completeness,
+            metrics: self.metrics,
+        }
+    }
+}
+
+/// The pin limit table of an analysis, kept by a caller that wants the tables together.
+fn keep_limits(slot: &mut Option<LimitsData>) -> impl FnMut(LimitsData) -> Result<(), Error> + '_ {
+    |limits| {
+        *slot = Some(limits);
+        Ok(())
+    }
+}
+
 /// Resolved backend and its canonical scope string (`"cpu"` or `"cuda"`).
 pub fn parse_backend(raw: &str) -> Result<(BackendKind, &'static str), Error> {
     match raw {
@@ -453,6 +489,38 @@ pub fn table_of_analysis(
     max_limit_rows: usize,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<AnalysisTables, Error> {
+    let mut limits = None;
+    let timing = tables_of_analysis_with(
+        analysis,
+        required,
+        corner_libs_owned,
+        backend_scope_name,
+        store_precision,
+        store_mode,
+        max_paths,
+        max_limit_rows,
+        diags,
+        &mut keep_limits(&mut limits),
+    )?;
+    Ok(timing.with_limits(limits.expect("the limit table is built before the timing table")))
+}
+
+/// [`table_of_analysis`] that hands the limit table to `limits_out` as soon as it is built, and
+/// before the timing table is built, so that a caller that stages it at once never holds both
+/// tables (AGENTS rule 9). An error of `limits_out` is returned before the timing table is built.
+#[allow(clippy::too_many_arguments)]
+pub fn tables_of_analysis_with(
+    analysis: &mut EngineAnalysis<'_>,
+    required: Option<Vec<BackwardPass>>,
+    corner_libs_owned: &[(String, Vec<Library>)],
+    backend_scope_name: &str,
+    store_precision: StorePrecision,
+    store_mode: StoreMode,
+    max_paths: usize,
+    max_limit_rows: usize,
+    diags: &mut Vec<Diagnostic>,
+    limits_out: &mut dyn FnMut(LimitsData) -> Result<(), Error>,
+) -> Result<TimingTables, Error> {
     for d in &analysis.diags {
         diags.push(convert_job_diag(d));
     }
@@ -471,6 +539,7 @@ pub fn table_of_analysis(
     let limits = PhaseLog::time(log, "limits_build", || {
         LimitsData::from_analysis_releasing(analysis, max_limit_rows)
     });
+    limits_out(limits)?;
     let analysis = &*analysis;
     let store_data = PhaseLog::time(log, "store_build", || {
         let ctx = Ctx::new(None, log.map(|l| l as &dyn Observer));
@@ -509,9 +578,8 @@ pub fn table_of_analysis(
                 .ok_or_else(|| Error::internal("an in-memory timing table lost its data"))?;
             Ok::<_, Error>((data, scope_obj, comp_obj, metrics_obj))
         })?;
-    Ok(AnalysisTables {
+    Ok(TimingTables {
         store: store_data,
-        limits,
         scope: scope_obj,
         completeness: comp_obj,
         metrics: metrics_obj,
@@ -526,6 +594,20 @@ pub fn run_sta_on_revision(
     opts: &StaRunOptions,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<AnalysisTables, Error> {
+    let mut limits = None;
+    let timing = run_sta_on_revision_with(ws, rev, opts, diags, &mut keep_limits(&mut limits))?;
+    Ok(timing.with_limits(limits.expect("the limit table is built before the timing table")))
+}
+
+/// [`run_sta_on_revision`] that hands the pin limit table to `limits_out` before the timing
+/// table is built ([`tables_of_analysis_with`]).
+pub fn run_sta_on_revision_with(
+    ws: &Workspace,
+    rev: &Revision,
+    opts: &StaRunOptions,
+    diags: &mut Vec<Diagnostic>,
+    limits_out: &mut dyn FnMut(LimitsData) -> Result<(), Error>,
+) -> Result<TimingTables, Error> {
     let (mut analysis_opts, backend_scope_name, store_precision, store_mode) =
         analysis_settings(opts)?;
     check_wire_model_inputs(rev, opts.require_wire_model, diags)?;
@@ -588,7 +670,7 @@ pub fn run_sta_on_revision(
     for corner in &mut analysis.corners {
         corner.propagated.values = Default::default();
     }
-    table_of_analysis(
+    tables_of_analysis_with(
         &mut analysis,
         keep_lowered.then_some(record.required),
         &corner_libs_owned,
@@ -598,6 +680,7 @@ pub fn run_sta_on_revision(
         opts.max_paths,
         opts.max_limit_rows,
         diags,
+        limits_out,
     )
 }
 

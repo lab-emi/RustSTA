@@ -13,8 +13,8 @@ use crate::args::{CheckMethod, RunArgs};
 use crate::check::{validate_tolerance, verify_sta_store};
 use crate::phases::PhaseLog;
 use crate::ws_io::{
-    AnalysisTables, StaRunOptions, json_object_to_map, map_store_error, parse_backend,
-    run_sta_on_revision, top_paths_from_store, validate_limit_rows,
+    StaRunOptions, TimingTables, json_object_to_map, map_store_error, parse_backend,
+    run_sta_on_revision_with, top_paths_from_store, validate_limit_rows,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -98,14 +98,6 @@ pub fn exec_run(
 
     let step_res = (|| {
         let base_rev = txn.base().clone();
-        let AnalysisTables {
-            store: store_data,
-            limits,
-            scope,
-            completeness: comp,
-            metrics,
-        } = run_sta_on_revision(ws, &base_rev, &opts, diags)?;
-
         let mut upstream_names = vec!["netlist", "constraints"];
         if base_rev.has_table("parasitics") {
             upstream_names.push("parasitics");
@@ -125,12 +117,21 @@ pub fn exec_run(
         }
         let upstream = txn.upstream(&upstream_names)?;
         let log = PhaseLog::get();
-        PhaseLog::time(log, "stage_store", || {
-            store_data.stage_to_txn(&mut txn, upstream.clone())
+        // The pin limit table of the same analysis, with the same inputs (`STA-REQ-0806`), staged
+        // as soon as it is built, so that it is not held while the timing table is built.
+        let TimingTables {
+            store: store_data,
+            scope,
+            completeness: comp,
+            metrics,
+        } = run_sta_on_revision_with(ws, &base_rev, &opts, diags, &mut |limits| {
+            PhaseLog::time(log, "stage_limits", || {
+                limits.stage_to_txn(&mut txn, upstream.clone())
+            })
+            .map(drop)
         })?;
-        // The pin limit table of the same analysis, with the same inputs (`STA-REQ-0806`).
-        PhaseLog::time(log, "stage_limits", || {
-            limits.stage_to_txn(&mut txn, upstream)
+        PhaseLog::time(log, "stage_store", || {
+            store_data.stage_to_txn(&mut txn, upstream)
         })?;
 
         // The staged table is the in-memory one: queried in place, never encoded twice.
