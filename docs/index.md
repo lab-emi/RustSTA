@@ -9,6 +9,26 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
   <img src="assets/ruststa-banner.gif" alt="Timing feedback for the next design iteration." width="1200">
 </picture>
 
+## Ibex host campaign · 2026-11-05
+
+In the RustEDA Ibex host campaign of 2026-11-05 (IHP SG13G2 / EZ130 with two
+real SRAMs, on a 4-vCPU cloud host), RustSTA 0.4.3 (commit [`6a4547b`](https://github.com/lab-emi/RustSTA/commit/6a4547b854d3d7076b9e68932bde60dbdc18a752)) and
+OpenSTA 3.1.0 analysed the same final netlist, SPEF, Liberty and SDC at TT and
+SS. **Numerical agreement `passed` the 1 ps gate**: the eight compared worst
+slacks differ by at most 0.1639 ps, and the shared timing gate passed with zero
+setup, hold, slew, capacitance and fanout violations.
+
+On the native SPEF, RustSTA's complete pipeline took a median 6.825 s at
+2 threads and 5.317 s at 4 threads; OpenSTA's two per-corner processes took
+11.168 s and 10.566 s. Worst peak RSS was 148,164 and 169,188 KiB against
+180,320 and 180,528 KiB. **RustSTA was faster and used less memory on this
+task and host** (three interleaved measured repetitions after one warm-up).
+The layout and host differ from 2026-11-02's, below.
+
+[Scope and all eight compared values](development-status.md) ·
+[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-05) ·
+[All benchmarks](https://lab-emi.github.io/RustEDA/benchmarks/)
+
 ## Ibex host campaign · 2026-11-02
 
 In the RustEDA Ibex host campaign (IHP SG13G2 / EZ130 with two real SRAMs, on a

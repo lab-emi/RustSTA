@@ -1,8 +1,61 @@
 # Development status
 
-Updated **2026-11-02**. This page describes the source published with the
+Updated **2026-11-05**. The 2026-11-05 section reports the RustEDA host campaign
+of that date; the rest of this page describes the source published with the
 RustEDA development update. Use the superproject’s exact gitlinks and the
 repository lockfile when reproducing a run.
+
+## Ibex host campaign · 2026-11-05
+
+The RustEDA host campaign of 2026-11-05 reran Ibex with two real SRAMs on IHP
+SG13G2 / EZ130 on a 4-vCPU Intel Xeon cloud host (15.7 GiB RAM, no swap; a
+different and slower machine than on 2026-11-02), with RustSTA 0.4.3 at commit
+[`6a4547b`](https://github.com/lab-emi/RustSTA/commit/6a4547b854d3d7076b9e68932bde60dbdc18a752) (CPU backend) and OpenSTA 3.1.0 from the nixpkgs OpenROAD 26Q3 build.
+The native flow used the repository's current recipe and is `unqualified`: the
+component-qualification evidence that the 16-gate composer needs is not
+published. Its producer completed all 114 manifest steps.
+
+**Numerical agreement `passed` the 1 ps gate.** Both engines analysed the same
+final netlist, Liberty and SDC with each of the two SPEF files, CPPR off:
+
+| SPEF | Corner | Check | RustSTA | OpenSTA | Difference |
+| --- | --- | --- | ---: | ---: | ---: |
+| Native | TT | Setup | 49.636384 ns | 49.636341 ns | 0.0431 ps |
+| Native | TT | Hold | 0.114312 ns | 0.114148 ns | 0.1639 ps |
+| Native | SS | Setup | 49.441896 ns | 49.441902 ns | 0.0057 ps |
+| Native | SS | Hold | 0.215451 ns | 0.215404 ns | 0.0468 ps |
+| OpenRCX | TT | Setup | 49.636377 ns | 49.636337 ns | 0.0396 ps |
+| OpenRCX | TT | Hold | 0.111583 ns | 0.111421 ns | 0.1611 ps |
+| OpenRCX | SS | Setup | 49.442037 ns | 49.442051 ns | 0.0135 ps |
+| OpenRCX | SS | Hold | 0.211026 ns | 0.210980 ns | 0.0462 ps |
+
+The shared timing gate, which keeps the worse of the two engines' values on the
+OpenRCX SPEF, `passed` at TT and SS with zero setup, hold, slew, capacitance and
+fanout violations on the native layout; on LibreLane's layout it `failed` on
+capacitance and fanout limits, which are design results, not engine
+disagreements. Re-timed with the same binaries on a fresh OpenRCX SPEF
+of the 2026-11-02 layout, TT setup worst slack still differs by 1.2838 ps (as on
+2026-11-02), so the 1 ps margin of this campaign is a property of the new
+layout, not a RustSTA fix.
+
+The module head-to-head replays the flow's recorded commands on the native SPEF
+at 2 and 4 threads, with the scope and method of 2026-11-02 below.
+
+| | RustSTA 0.4.3 | OpenSTA 3.1.0 |
+| --- | ---: | ---: |
+| Median wall, 2 threads (fastest) | 6.825 s (6.685 s) | 11.168 s (10.567 s) |
+| Median wall, 4 threads (fastest) | 5.317 s (5.171 s) | 10.566 s (9.875 s) |
+| Worst peak RSS, 2 threads | 148,164 KiB | 180,320 KiB |
+| Worst peak RSS, 4 threads | 169,188 KiB | 180,528 KiB |
+
+**RustSTA was faster and used less memory on this task and host.** OpenSTA's
+median wall time was 1.64× RustSTA's at 2 threads and 1.99× at 4 threads, with
+1.22× and 1.07× its worst peak RSS. RustSTA's CPU time per run was 8.84–10.02 s
+(2 threads) and 9.71–10.00 s (4 threads), OpenSTA's 12.73–14.71 s and
+13.92–15.66 s. The layout differs from 2026-11-02's, so the two campaigns' times
+are not a before/after of RustSTA alone.
+
+[Host campaign 2026-11-05](https://lab-emi.github.io/RustEDA/benchmarks/#ibex-host-campaign-2026-11-05)
 
 ## Ibex host campaign · 2026-11-02
 

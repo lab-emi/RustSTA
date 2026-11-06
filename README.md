@@ -20,7 +20,46 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
 
 Part of **[RustEDA](https://github.com/lab-emi/RustEDA)**, infrastructure for chip-design recursive self-improvement. Native tools shorten the work between inference steps; verified results guide the next iteration.
 
-## Latest development · 2026-11-02
+## Latest development · 2026-11-05
+
+The RustEDA Ibex host campaign of 2026-11-05 (IHP SG13G2 / EZ130 with two real
+SRAMs, on a 4-vCPU Intel Xeon cloud host with 15.7 GiB RAM and no swap; a
+different and slower machine than on 2026-11-02) ran RustSTA 0.4.3 (commit
+[`6a4547b`](https://github.com/lab-emi/RustSTA/commit/6a4547b854d3d7076b9e68932bde60dbdc18a752), CPU backend) in the repository's current native recipe and
+against OpenSTA 3.1.0 on the same final netlist, SPEF, Liberty and SDC at TT and
+SS. **Numerical agreement `passed` the 1 ps gate on this layout**: the eight
+compared worst slacks (setup and hold, TT and SS, native and OpenRCX SPEF)
+differ by at most 0.1639 ps, and the RustEDA producer completed every step. The
+shared timing gate passed on the native layout with zero setup, hold, slew,
+capacitance and fanout violations. The difference measured on the 2026-11-02
+layout was not fixed: re-timed with this campaign's RustSTA and OpenSTA binaries
+on a fresh OpenRCX SPEF of that layout, TT setup worst slack still differs by
+1.2838 ps, as it did then. The gap is specific to that layout; the 2026-11-02
+section below keeps it.
+
+The head-to-head replays the flow's recorded commands on the native SPEF at 2
+and 4 threads, with the same scope as before (RustSTA: init, import, one run
+covering both corners and eight reports; OpenSTA: one process per corner).
+**RustSTA was faster and used less memory on this task and host.**
+
+| | RustSTA 0.4.3 | OpenSTA 3.1.0 |
+| --- | ---: | ---: |
+| Median wall, 2 threads (fastest) | 6.825 s (6.685 s) | 11.168 s (10.567 s) |
+| Median wall, 4 threads (fastest) | 5.317 s (5.171 s) | 10.566 s (9.875 s) |
+| Worst peak RSS, 2 threads | 148,164 KiB | 180,320 KiB |
+| Worst peak RSS, 4 threads | 169,188 KiB | 180,528 KiB |
+
+OpenSTA took 1.64× (2 threads) and 1.99× (4 threads) RustSTA's median wall
+time. Wall times are medians of three measured repetitions after one warm-up,
+interleaved; peak RSS is the worst of the three. The layout differs from
+2026-11-02's (14,178 instead of 16,329 routed nets), so the two campaigns'
+times are not a before/after of RustSTA alone. This is one task on one host.
+
+[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-05) ·
+[Host campaign 2026-11-05](https://lab-emi.github.io/RustEDA/benchmarks/#ibex-host-campaign-2026-11-05) ·
+[All benchmarks](https://lab-emi.github.io/RustEDA/benchmarks/)
+
+## Ibex host campaign · 2026-11-02
 
 The RustEDA Ibex host campaign (IHP SG13G2 / EZ130 with two real SRAMs, on a
 4-vCPU Intel Xeon cloud host with 15.7 GiB RAM and no swap) ran RustSTA 0.4.3
@@ -162,21 +201,24 @@ Coverage and limits are explicit: the independent checker can return `undecided`
 on bounded large exception cases; a missing external tool or device is
 unverified. Compare pinned reference executables as black boxes and report
 complete command wall time, peak memory, timing scope and numerical agreement
-together. No general RustSTA-vs-OpenSTA speedup is claimed. One head-to-head is
+together. No general RustSTA-vs-OpenSTA speedup is claimed. Head-to-heads are
 published with that scope on the
-[RustEDA benchmarks page](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta):
-in the 2026-11-02 Ibex host campaign, OpenSTA was faster on the 4-vCPU host.
-RustSTA's complete pipeline took 1.17× (2 threads) and 1.18× (4 threads)
-OpenSTA's median wall time with 1.87× and 1.88× its worst peak RSS, and the two
-differed by up to 1.4052 ps on identical SPEF, which `failed` the 1 ps agreement
-gate. It is one task on one host.
+[RustEDA benchmarks page](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-05).
+In the 2026-11-05 Ibex host campaign RustSTA's complete pipeline was faster:
+OpenSTA took 1.64× (2 threads) and 1.99× (4 threads) its median wall time, with
+1.22× and 1.07× RustSTA's worst peak RSS, and the two agreed within 0.1639 ps on
+identical SPEF. In the 2026-11-02 campaign, on another host and layout, OpenSTA
+was faster (RustSTA 1.17× and 1.18× its median wall time) and the two differed
+by up to 1.4052 ps, which `failed` the 1 ps gate. Each is one task on one host.
 
 In the RustEDA Ibex flow on IHP SG13G2 / EZ130 (two real SRAMs), RustSTA drives
 the frontend and post-route repairs and signs off TT/SS extracted timing beside
 OpenSTA. On identical SPEF the two agreed within 0.806 ps in run16 (2026-10-30)
 and within 0.4754 ps in R20/R21 (2026-11-01), against a 1 ps gate. The
 2026-11-02 host campaign reran the run16-class recipe with RustSTA `0c2bcc6` and
-measured 1.4052 ps, so the gate `failed`. The whole-flow comparison with
+measured 1.4052 ps, so the gate `failed`; the 2026-11-05 campaign ran the current
+recipe with RustSTA `6a4547b` and measured 0.1639 ps on its layout, so the gate
+`passed`. The whole-flow comparison with
 LibreLane is on the
 [RustEDA benchmarks page](https://lab-emi.github.io/RustEDA/benchmarks/).
 

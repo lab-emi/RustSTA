@@ -7,11 +7,26 @@ RustSTA separates timing propagation from mapped result queries. Measure the
 workflow you actually need: input import, graph lowering, analysis, persistence,
 and any host/device synchronization all contribute to elapsed time.
 
-This documentation release claims no general RustSTA-vs-OpenSTA speedup. One
-head-to-head on a single task and host is published with its scope, below. The
+This documentation release claims no general RustSTA-vs-OpenSTA speedup.
+Head-to-heads on single tasks and hosts are published with their scope, below. The
 source contains benchmark harnesses; a harness is not itself a measured result.
 Avoid treating a GPU propagation microbenchmark as end-to-end timing
 performance.
+
+## Published head-to-head · 2026-11-05
+
+The RustEDA Ibex host campaign of 2026-11-05 (IHP SG13G2 / EZ130 with two real
+SRAMs, on a 4-vCPU cloud host) replayed the flow's recorded RustSTA 0.4.3
+(commit [`6a4547b`](https://github.com/lab-emi/RustSTA/commit/6a4547b854d3d7076b9e68932bde60dbdc18a752)) and OpenSTA 3.1.0 commands on the same final netlist, native
+SPEF, Liberty and SDC at TT and SS, with the method of 2026-11-02 below.
+RustSTA's median wall time was 6.825 s at 2 threads and 5.317 s at 4 threads,
+against 11.168 s and 10.566 s for OpenSTA. Worst peak RSS was 148,164 and
+169,188 KiB against 180,320 and 180,528 KiB. **RustSTA was faster and used less
+memory on this task and host.** Numerical agreement on identical SPEF `passed`
+the 1 ps gate: the eight compared worst slacks differ by at most 0.1639 ps.
+
+[All eight compared values and the campaign context](../development-status.md) ·
+[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-05)
 
 ## Published head-to-head · 2026-11-02
 
