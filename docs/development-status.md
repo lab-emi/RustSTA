@@ -10,7 +10,7 @@ repository lockfile when reproducing a run.
 The RustEDA host campaign of 2026-11-05 reran Ibex with two real SRAMs on IHP
 SG13G2 / EZ130 on a 4-vCPU Intel Xeon cloud host (15.7 GiB RAM, no swap; a
 different and slower machine than on 2026-11-02), with RustSTA 0.4.3 at commit
-[`6a4547b`](https://github.com/lab-emi/RustSTA/commit/6a4547b854d3d7076b9e68932bde60dbdc18a752) (CPU backend) and OpenSTA 3.1.0 from the nixpkgs OpenROAD 26Q3 build.
+[`3550739`](https://github.com/lab-emi/RustSTA/commit/35507399f3a298e8e94ff76cdbd24413e64e1236) (CPU backend) and OpenSTA 3.1.0 from the nixpkgs OpenROAD 26Q3 build.
 The native flow used the repository's current recipe and is `unqualified`: the
 component-qualification evidence that the 16-gate composer needs is not
 published. Its producer completed all 114 manifest steps.

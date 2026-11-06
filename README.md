@@ -20,12 +20,23 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
 
 Part of **[RustEDA](https://github.com/lab-emi/RustEDA)**, infrastructure for chip-design recursive self-improvement. Native tools shorten the work between inference steps; verified results guide the next iteration.
 
+## RustSTA vs OpenSTA at a glance
+
+Ibex RTL-to-GDS on IHP SG13G2 with EZ130 cells and two SRAM macros, 2026-11-05: RustEDA and LibreLane 3.0.17 (OpenROAD, Yosys, KLayout, Magic, Netgen) ran one after the other on the same 4-vCPU host from the same prepared inputs, and the same signoff scripts checked both layouts.
+
+- **1.6× faster than OpenSTA at 2 threads and 2.0× at 4** on the final Ibex netlist and SPEF at TT and SS (6.825 s and 5.317 s against 11.168 s and 10.566 s), with **17.8 % and 6.3 % less peak memory**.
+- All eight compared worst slacks agree with OpenSTA **within 0.164 ps**.
+- The flow's static timing takes 35.42 s against 183.31 s for LibreLane's OpenSTA steps (**5.2× faster**), and the native layout is timing-clean where LibreLane's has 112 capacitance and fanout violations.
+- The whole RustEDA flow finishes **4.2× sooner end to end**.
+
+LibreLane's layout fails the shared timing gate (112 maximum-capacitance and fanout violations at TT and SS) and its equivalence check does not complete, so the receipt keeps its own ratio fields null under its publication rule; the multiples here divide the recorded times. Stages are paired by phase, not as identical tasks. RustEDA is not faster everywhere: its repair before global routing takes 1.18× LibreLane's two pre-route resizer steps alone, OpenRCX runs 1.36× longer on RustEDA's DEF, and the latch-up check 1.11× longer on its layout. [All stages, gates and losses](https://lab-emi.github.io/RustEDA/benchmarks/)
+
 ## Latest development · 2026-11-05
 
 The RustEDA Ibex host campaign of 2026-11-05 (IHP SG13G2 / EZ130 with two real
 SRAMs, on a 4-vCPU Intel Xeon cloud host with 15.7 GiB RAM and no swap; a
 different and slower machine than on 2026-11-02) ran RustSTA 0.4.3 (commit
-[`6a4547b`](https://github.com/lab-emi/RustSTA/commit/6a4547b854d3d7076b9e68932bde60dbdc18a752), CPU backend) in the repository's current native recipe and
+[`3550739`](https://github.com/lab-emi/RustSTA/commit/35507399f3a298e8e94ff76cdbd24413e64e1236), CPU backend) in the repository's current native recipe and
 against OpenSTA 3.1.0 on the same final netlist, SPEF, Liberty and SDC at TT and
 SS. **Numerical agreement `passed` the 1 ps gate on this layout**: the eight
 compared worst slacks (setup and hold, TT and SS, native and OpenRCX SPEF)
@@ -217,7 +228,7 @@ OpenSTA. On identical SPEF the two agreed within 0.806 ps in run16 (2026-10-30)
 and within 0.4754 ps in R20/R21 (2026-11-01), against a 1 ps gate. The
 2026-11-02 host campaign reran the run16-class recipe with RustSTA `0c2bcc6` and
 measured 1.4052 ps, so the gate `failed`; the 2026-11-05 campaign ran the current
-recipe with RustSTA `6a4547b` and measured 0.1639 ps on its layout, so the gate
+recipe with RustSTA `3550739` and measured 0.1639 ps on its layout, so the gate
 `passed`. The whole-flow comparison with
 LibreLane is on the
 [RustEDA benchmarks page](https://lab-emi.github.io/RustEDA/benchmarks/).

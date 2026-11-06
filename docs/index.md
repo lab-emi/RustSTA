@@ -9,10 +9,21 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
   <img src="assets/ruststa-banner.gif" alt="Timing feedback for the next design iteration." width="1200">
 </picture>
 
+## RustSTA vs OpenSTA at a glance
+
+Ibex RTL-to-GDS on IHP SG13G2 with EZ130 cells and two SRAM macros, 2026-11-05: RustEDA and LibreLane 3.0.17 (OpenROAD, Yosys, KLayout, Magic, Netgen) ran one after the other on the same 4-vCPU host from the same prepared inputs, and the same signoff scripts checked both layouts.
+
+- **1.6× faster than OpenSTA at 2 threads and 2.0× at 4** on the final Ibex netlist and SPEF at TT and SS (6.825 s and 5.317 s against 11.168 s and 10.566 s), with **17.8 % and 6.3 % less peak memory**.
+- All eight compared worst slacks agree with OpenSTA **within 0.164 ps**.
+- The flow's static timing takes 35.42 s against 183.31 s for LibreLane's OpenSTA steps (**5.2× faster**), and the native layout is timing-clean where LibreLane's has 112 capacitance and fanout violations.
+- The whole RustEDA flow finishes **4.2× sooner end to end**.
+
+LibreLane's layout fails the shared timing gate (112 maximum-capacitance and fanout violations at TT and SS) and its equivalence check does not complete, so the receipt keeps its own ratio fields null under its publication rule; the multiples here divide the recorded times. Stages are paired by phase, not as identical tasks. RustEDA is not faster everywhere: its repair before global routing takes 1.18× LibreLane's two pre-route resizer steps alone, OpenRCX runs 1.36× longer on RustEDA's DEF, and the latch-up check 1.11× longer on its layout. [All stages, gates and losses](https://lab-emi.github.io/RustEDA/benchmarks/)
+
 ## Ibex host campaign · 2026-11-05
 
 In the RustEDA Ibex host campaign of 2026-11-05 (IHP SG13G2 / EZ130 with two
-real SRAMs, on a 4-vCPU cloud host), RustSTA 0.4.3 (commit [`6a4547b`](https://github.com/lab-emi/RustSTA/commit/6a4547b854d3d7076b9e68932bde60dbdc18a752)) and
+real SRAMs, on a 4-vCPU cloud host), RustSTA 0.4.3 (commit [`3550739`](https://github.com/lab-emi/RustSTA/commit/35507399f3a298e8e94ff76cdbd24413e64e1236)) and
 OpenSTA 3.1.0 analysed the same final netlist, SPEF, Liberty and SDC at TT and
 SS. **Numerical agreement `passed` the 1 ps gate**: the eight compared worst
 slacks differ by at most 0.1639 ps, and the shared timing gate passed with zero

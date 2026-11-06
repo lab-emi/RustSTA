@@ -17,7 +17,7 @@ performance.
 
 The RustEDA Ibex host campaign of 2026-11-05 (IHP SG13G2 / EZ130 with two real
 SRAMs, on a 4-vCPU cloud host) replayed the flow's recorded RustSTA 0.4.3
-(commit [`6a4547b`](https://github.com/lab-emi/RustSTA/commit/6a4547b854d3d7076b9e68932bde60dbdc18a752)) and OpenSTA 3.1.0 commands on the same final netlist, native
+(commit [`3550739`](https://github.com/lab-emi/RustSTA/commit/35507399f3a298e8e94ff76cdbd24413e64e1236)) and OpenSTA 3.1.0 commands on the same final netlist, native
 SPEF, Liberty and SDC at TT and SS, with the method of 2026-11-02 below.
 RustSTA's median wall time was 6.825 s at 2 threads and 5.317 s at 4 threads,
 against 11.168 s and 10.566 s for OpenSTA. Worst peak RSS was 148,164 and
