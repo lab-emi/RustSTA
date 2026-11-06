@@ -186,6 +186,9 @@ pub struct LoweredCorner<'a> {
     pub wires: Vec<WireRec>,
     /// CPU-prepared f64 RC arc values, shared by all propagation backends.
     pub arc_values: Vec<ArcValues>,
+    /// The delays of `arc_values` alone (`ArcValues::delay`), once only the required-time
+    /// propagation reads them ([`Self::retain_for_required_times`]); empty otherwise.
+    pub arc_delays: Vec<[f64; 8]>,
     /// Per level-ordered node `[Rise/Early, Rise/Late, Fall/Early, Fall/Late]`: the driver
     /// waveform (Thevenin resistance in kOhm, source ramp duration in ns) that set the node's
     /// prepared transition, when a cell arc into a pi load outside the lumped regime set it
@@ -198,11 +201,134 @@ pub struct LoweredCorner<'a> {
     /// launches that logic values disable, and the library transitions that a sense refinement
     /// removed from an enabled arc (`STA-REQ-0117`).
     pub slew_only_map: u32,
+    /// The incoming arcs that a cone lowering ([`LoweredCorner::lower_cone`]) left out; empty for
+    /// a full lowering.
+    pub pruned: PrunedArcs,
     /// Wall-clock seconds spent lowering into the compute ABI.
     pub lower_s: f64,
 }
 
+/// The incoming arcs that [`LoweredCorner::lower_cone`] leaves out, counted by their
+/// [`ArcClass::flags`](rusteda_compute::timing::ArcClass::flags), the only part of a class that
+/// the state and work budgets of the RC waveform preparation read. The preparation charges them
+/// as if it prepared them, so that `--max-state-gib` decides, and reports, for a cone exactly as
+/// for the whole graph (`STA-REQ-0713`, `STA-REQ-0723`).
+#[derive(Debug, Clone, Default)]
+pub struct PrunedArcs {
+    /// `(flags, arcs)`, one entry per distinct flags value, in the order first seen.
+    by_flags: Vec<(u32, u64)>,
+}
+
+impl PrunedArcs {
+    /// Counts one more left-out arc of a class with `flags`.
+    fn add(&mut self, flags: u32) {
+        match self.by_flags.iter_mut().find(|(f, _)| *f == flags) {
+            Some((_, arcs)) => *arcs += 1,
+            None => self.by_flags.push((flags, 1)),
+        }
+    }
+
+    /// The number of left-out arcs.
+    #[must_use]
+    pub fn arcs(&self) -> u64 {
+        self.by_flags.iter().map(|&(_, arcs)| arcs).sum()
+    }
+
+    /// The left-out arcs as `(flags, arcs)`, one entry per distinct flags value.
+    #[must_use]
+    pub fn by_flags(&self) -> &[(u32, u64)] {
+        &self.by_flags
+    }
+}
+
+/// The level-ordered positions that [`LoweredCorner::lower_cone`] keeps the incoming arcs of:
+/// the nodes from which a node that an arrival from `roots` reaches (over the enabled arcs, the
+/// only ones without a tag map in such a propagation) can be reached over the lowered arcs, the
+/// enabled ones and the transition-only ones of `slew_only` (`(dst, src, arc, class)` by
+/// position, sorted). `O(V + E)`.
+fn cone_positions(
+    graph: &TimingGraph,
+    roots: &[NodeId],
+    slew_only: &[(u32, u32, u32, u32)],
+) -> Vec<bool> {
+    let n = graph.num_nodes();
+    let g_arcs = graph.arcs();
+    let order = graph.order();
+    // An arrival reaches a node through an enabled incoming arc from a node it reaches; the
+    // sources of a node's incoming arcs come before it in level order.
+    let mut reached = vec![false; n];
+    for &root in roots {
+        if root.index() < n {
+            reached[graph.topo_rank(root) as usize] = true;
+        }
+    }
+    for pos in 0..n {
+        if !reached[pos] {
+            reached[pos] = graph
+                .incoming(order[pos])
+                .iter()
+                .any(|&ai| reached[graph.topo_rank(g_arcs[ai as usize].src) as usize]);
+        }
+    }
+    let mut positions: Vec<u32> = (0..n as u32).filter(|&p| reached[p as usize]).collect();
+    let mut keep = reached;
+    while let Some(pos) = positions.pop() {
+        let sources = graph
+            .incoming(order[pos as usize])
+            .iter()
+            .map(|&ai| graph.topo_rank(g_arcs[ai as usize].src));
+        let first = slew_only.partition_point(|e| e.0 < pos);
+        let extra = slew_only[first..]
+            .iter()
+            .take_while(|e| e.0 == pos)
+            .map(|e| e.1);
+        for src in sources.chain(extra) {
+            if !keep[src as usize] {
+                keep[src as usize] = true;
+                positions.push(src);
+            }
+        }
+    }
+    keep
+}
+
 impl<'a> LoweredCorner<'a> {
+    /// The prepared delay `j` (`(input transition * 2 + output transition) * 2 + bound`) of CSR
+    /// arc `k`: of its arc values, or of their delays once only those are kept.
+    #[inline]
+    #[must_use]
+    pub fn arc_delay(&self, k: usize, j: usize) -> Option<f64> {
+        match self.arc_values.get(k) {
+            Some(values) => Some(values.delay[j]),
+            None => self.arc_delays.get(k).map(|delays| delays[j]),
+        }
+    }
+
+    /// Keeps only what the required-time propagation of the timing table reads
+    /// (`BackwardPass::propagate`): the CSR, the tables, the loads and the delays of the arc
+    /// values ([`Self::arc_delays`], in the allocation of the arc values, half of it released),
+    /// and the wire records only when an arc has no value. The transitions of the arc values,
+    /// the driver waveforms, the start rows and the arc maps are released; the problem can no
+    /// longer be propagated forward.
+    pub fn retain_for_required_times(&mut self) {
+        if self.arc_values.len() >= self.csr.in_arcs.len() {
+            self.wires = Vec::new();
+        }
+        if !self.arc_values.is_empty() {
+            let mut delays: Vec<[f64; 8]> = std::mem::take(&mut self.arc_values)
+                .into_iter()
+                .map(|v| v.delay)
+                .collect();
+            delays.shrink_to_fit();
+            self.arc_delays = delays;
+        }
+        self.drives = Vec::new();
+        self.start_drives = FxHashMap::default();
+        self.starts = StartRows::default();
+        self.csr_arc_to_graph_arc = Vec::new();
+        self.graph_arc_to_csr_arc = Vec::new();
+    }
+
     /// Lowers `netview`, `graph`, `lib`, `net_loads`, `ntags`, `starts` and `tag_maps` into the
     /// `rusteda_compute::timing` ABI (`STA-REQ-0401`).
     pub fn lower(
@@ -213,6 +339,56 @@ impl<'a> LoweredCorner<'a> {
         ntags: u32,
         starts: StartRows,
         tag_maps: &ArcTagMaps,
+    ) -> Result<Self, Diag> {
+        Self::lower_into(
+            netview, graph, lib, net_loads, ntags, starts, tag_maps, None,
+        )
+    }
+
+    /// [`Self::lower`] with only the arcs that a propagation of arrivals from `roots` reads, for a
+    /// propagation whose only arrivals start at `roots` and whose values are read only where an
+    /// arrival is present, such as the clock network (`STA-REQ-0713`): the arcs into the nodes
+    /// from which a node that an arrival from `roots` reaches can be reached. Every other node
+    /// keeps its row, without incoming arcs. Arrivals pass only the enabled arcs without tag
+    /// maps, so every node with an arrival, and every node whose value it reads, keeps all its
+    /// incoming arcs: their values are those of [`Self::lower`] bit for bit, and the other
+    /// nodes have no arrival in either. The arc tables of the waveform preparation are sized to
+    /// the kept arcs; its state and work budgets are charged for the left-out arcs as well
+    /// ([`PrunedArcs`]), so that a budget rejects, with the same diagnostic, exactly what it
+    /// rejects for [`Self::lower`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn lower_cone(
+        netview: &NetlistView<'_>,
+        graph: &TimingGraph,
+        lib: &'a TimingLib,
+        net_loads: &NetLoads,
+        ntags: u32,
+        starts: StartRows,
+        tag_maps: &ArcTagMaps,
+        roots: &[NodeId],
+    ) -> Result<Self, Diag> {
+        Self::lower_into(
+            netview,
+            graph,
+            lib,
+            net_loads,
+            ntags,
+            starts,
+            tag_maps,
+            Some(roots),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn lower_into(
+        netview: &NetlistView<'_>,
+        graph: &TimingGraph,
+        lib: &'a TimingLib,
+        net_loads: &NetLoads,
+        ntags: u32,
+        starts: StartRows,
+        tag_maps: &ArcTagMaps,
+        roots: Option<&[NodeId]>,
     ) -> Result<Self, Diag> {
         let t0 = Instant::now();
         let n_nodes = graph.num_nodes();
@@ -252,6 +428,8 @@ impl<'a> LoweredCorner<'a> {
             0
         };
         let mut next_slew_only = 0usize;
+        let keep = roots.map(|roots| cone_positions(graph, roots, &slew_only));
+        let mut pruned = PrunedArcs::default();
 
         for (pos, &raw_node) in order.iter().enumerate() {
             let node_load = match netview.node_net(raw_node) {
@@ -272,6 +450,33 @@ impl<'a> LoweredCorner<'a> {
                     .count();
             let mut extras = slew_only[next_slew_only..extra_end].iter().peekable();
             next_slew_only = extra_end;
+            if keep.as_ref().is_some_and(|keep| !keep[pos]) {
+                // Left out: counted by the classes the full lowering gives these arcs.
+                for &ai in graph.incoming(raw_node) {
+                    let g_arc = &g_arcs[ai as usize];
+                    pruned.add(match g_arc.kind {
+                        ArcKind::Net { .. } => luts.classes[lib.wire_class as usize].flags,
+                        _ => {
+                            let (inst, local_arc) = g_arc
+                                .kind
+                                .inst_and_lib_arc()
+                                .expect("non-net arc has inst and lib_arc");
+                            slew_only::class_flags(
+                                netview,
+                                lib,
+                                &cell_arcs,
+                                inst,
+                                local_arc,
+                                Some(g_arc.sense),
+                            )
+                        }
+                    });
+                }
+                for &(_, _, _, e_class) in extras {
+                    pruned.add(luts.classes[e_class as usize].flags);
+                }
+                continue;
+            }
             for &ai in graph.incoming(raw_node) {
                 let g_arc = &g_arcs[ai as usize];
                 let src = graph.topo_rank(g_arc.src);
@@ -351,9 +556,11 @@ impl<'a> LoweredCorner<'a> {
             starts,
             wires: Vec::new(),
             arc_values: Vec::new(),
+            arc_delays: Vec::new(),
             drives: Vec::new(),
             start_drives: FxHashMap::default(),
             slew_only_map,
+            pruned,
             lower_s,
         })
     }
@@ -398,7 +605,22 @@ impl<'a> LoweredCorner<'a> {
         lib: &TimingLib,
         max_bytes: u64,
     ) -> Result<(), Diag> {
-        rc::prepare(self, graph, view, wire, lib, max_bytes)
+        rc::prepare(self, graph, view, wire, lib, max_bytes, true)
+    }
+
+    /// [`Self::set_wire_model`] without the wire records of the extracted net arcs (their first
+    /// moments), for a problem whose propagations read only the prepared arc values: the timing
+    /// table's analysis and the clock network propagation (AGENTS rule 9). The values are the
+    /// same.
+    pub fn set_wire_values(
+        &mut self,
+        graph: &TimingGraph,
+        view: &NetlistView<'_>,
+        wire: &dyn WireModel,
+        lib: &TimingLib,
+        max_bytes: u64,
+    ) -> Result<(), Diag> {
+        rc::prepare(self, graph, view, wire, lib, max_bytes, false)
     }
 
     /// Borrows this lowered corner as a [`TimingProblem`] for `rusteda_compute::timing`.
@@ -484,6 +706,41 @@ impl<'a> LoweredCorner<'a> {
             stats,
             lower_s: self.lower_s,
         })
+    }
+}
+
+/// Propagated arrivals and transitions looked up by node: a [`LoweredResult`], whose values are
+/// level-ordered, or [`NodeOrdered`], its node-ordered copy ([`LoweredResult::to_node_order`]),
+/// which holds the same values bit for bit.
+pub trait NodeValues: Sync {
+    /// The arrival time (ns) at `node` for `tag`, transition `tr` and bound `an`.
+    fn arrival(&self, graph: &TimingGraph, node: NodeId, tag: usize, tr: Tr, an: An) -> f64;
+    /// The transition time (ns) at `node` for transition `tr` and bound `an`.
+    fn slew(&self, graph: &TimingGraph, node: NodeId, tr: Tr, an: An) -> f64;
+}
+
+impl NodeValues for LoweredResult {
+    fn arrival(&self, graph: &TimingGraph, node: NodeId, tag: usize, tr: Tr, an: An) -> f64 {
+        LoweredResult::arrival(self, graph, node, tag, tr, an)
+    }
+
+    fn slew(&self, graph: &TimingGraph, node: NodeId, tr: Tr, an: An) -> f64 {
+        LoweredResult::slew(self, graph, node, tr, an)
+    }
+}
+
+/// Node-ordered propagation values ([`LoweredResult::to_node_order`]) looked up by node, so that
+/// a corner that keeps only them reads the values of its propagation.
+#[derive(Debug, Clone, Copy)]
+pub struct NodeOrdered<'v>(pub &'v TimingValues);
+
+impl NodeValues for NodeOrdered<'_> {
+    fn arrival(&self, _graph: &TimingGraph, node: NodeId, tag: usize, tr: Tr, an: An) -> f64 {
+        self.0.arrival(node.index(), tag, tr.index(), an.index())
+    }
+
+    fn slew(&self, _graph: &TimingGraph, node: NodeId, tr: Tr, an: An) -> f64 {
+        self.0.transition(node.index(), tr.index(), an.index())
     }
 }
 

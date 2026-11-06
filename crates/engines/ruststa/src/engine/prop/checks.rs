@@ -16,7 +16,7 @@ use super::cppr::Cppr;
 use super::exceptions::{AnalysisKind, ExceptionContext, PathAnalysisResolution};
 use super::gating::{ClockGatingSite, evaluate_gating_sites};
 use super::latch::{compute_latch_window, latch_open_pin_edge};
-use super::lower::LoweredResult;
+use super::lower::NodeValues;
 use super::relation::RelationTable;
 use super::tags::TagTable;
 use crate::engine::delay::lut::NO_TABLE;
@@ -152,7 +152,7 @@ pub fn evaluate_all_checks<C: Cppr>(
     tags: &TagTable,
     exceptions: &mut ExceptionContext,
     gating_sites: &[ClockGatingSite],
-    prop_res: &LoweredResult,
+    prop_res: &impl NodeValues,
     range_tracker: &mut crate::engine::delay::lut::RangeTracker,
 ) -> Result<Vec<SlackRecord>, Diag> {
     let mut records = Vec::new();
@@ -714,6 +714,8 @@ pub fn evaluate_all_checks<C: Cppr>(
     // 4. Timing exceptions and clock groups of every other check (`STA-REQ-0271`).
     exceptions.apply_to_records(&mut records, tags, constraints);
 
+    // The records stay with the corner's endpoints: keep them in an allocation of their size.
+    records.shrink_to_fit();
     Ok(records)
 }
 

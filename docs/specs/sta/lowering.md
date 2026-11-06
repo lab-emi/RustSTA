@@ -100,4 +100,10 @@ state of a corner, the analysis estimates it as nodes × tags × 160 bytes (arri
 predecessors in the compute state and in node order, required times and slacks of the backward
 pass). An estimate above the limit (`AnalysisOptions::max_state_bytes`; `--max-state-gib` of
 `ruststa run` and `ruststa update`, default 16 GiB, a finite number greater than 0) is error
-`T0023` naming the corner, the nodes and the tags, before any of the state is allocated.
+`T0023` naming the corner, the nodes and the tags, before any of the state is allocated. Each
+corner's estimate also counts the parsed parasitics of every analyzed corner (STA-REQ-0820). A
+full analysis with at least two worker threads per corner (one per corner with
+`AnalysisOptions::concurrent_corners`, `ruststa run --concurrent-corners`) analyzes its corners
+at once as far as their propagation states fit the limit together (the sum of their estimates,
+with the parsed parasitics counted once): a corner that does not fit with the corners already
+running is analyzed after them. Either way the results are the same.

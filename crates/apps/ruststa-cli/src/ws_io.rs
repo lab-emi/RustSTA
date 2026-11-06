@@ -16,12 +16,14 @@ use rusteda_workspace::{
     Corruption, DiagCode, Diagnostic, Error, JsonObject, Revision, Severity, Workspace, rlib,
 };
 
-use ruststa::engine::analysis::{AnalysisOptions, EngineAnalysis, Propagation, WireModelOption};
+use ruststa::engine::analysis::{
+    AnalysisOptions, EngineAnalysis, KeepLowered, Propagation, WireModelOption,
+};
 use ruststa::engine::input::constr::{CompiledConstraints, CornerLibs};
 use ruststa::engine::limits::status::{DRV_KINDS, limit_statuses};
 use ruststa::engine::limits::table::LimitsData;
 use ruststa::engine::limits::{LimitKind, MAX_LIMIT_ROWS_CEILING};
-use ruststa::engine::prop::lower::LoweredCorner;
+use ruststa::engine::prop::backward::BackwardPass;
 use ruststa::engine::prop::lower::{BackendKind, Precision};
 use ruststa::engine::prop::tags::DEFAULT_TAG_BUDGET;
 use ruststa::engine::store::{
@@ -33,7 +35,7 @@ use ruststa::engine::types::NodeId;
 use crate::args::{PrecisionArg, StoreArg, WireModelArg};
 use crate::phases::PhaseLog;
 use ruststa::engine::store::from_analysis::{
-    StoreInput, build_store_from_analysis_with_ctx, check_store_tables,
+    StoreInput, build_store_from_analysis_with_ctx, build_store_from_required, check_store_tables,
 };
 
 /// Options for running STA on a workspace revision.
@@ -55,6 +57,9 @@ pub struct StaRunOptions {
     pub pulse_rules: ruststa::engine::limits::PulseRules,
     /// How the design-rule limits of a clock map to pins (`--clock-limits`, `STA-REQ-0808`).
     pub clock_limits: ruststa::engine::limits::ClockLimitScope,
+    /// Run the corners at once with one worker thread per corner (`--concurrent-corners`,
+    /// `STA-REQ-0024`).
+    pub concurrent_corners: bool,
 }
 
 /// Code of an analysis whose wire model is not the required one (`STA-REQ-0821`).
@@ -127,6 +132,42 @@ pub struct AnalysisTables {
     pub completeness: JsonObject,
     /// Envelope `metrics`.
     pub metrics: JsonObject,
+}
+
+/// The timing table of an analysis and its envelope headers, without its pin limit table, which
+/// [`run_sta_on_revision_with`] and [`tables_of_analysis_with`] hand over before the timing table
+/// is built.
+#[derive(Debug)]
+pub struct TimingTables {
+    /// The timing table.
+    pub store: StaStoreData,
+    /// Envelope `scope`.
+    pub scope: JsonObject,
+    /// Envelope `completeness`.
+    pub completeness: JsonObject,
+    /// Envelope `metrics`.
+    pub metrics: JsonObject,
+}
+
+impl TimingTables {
+    /// These tables with the pin limit table `limits`.
+    fn with_limits(self, limits: LimitsData) -> AnalysisTables {
+        AnalysisTables {
+            store: self.store,
+            limits,
+            scope: self.scope,
+            completeness: self.completeness,
+            metrics: self.metrics,
+        }
+    }
+}
+
+/// The pin limit table of an analysis, kept by a caller that wants the tables together.
+fn keep_limits(slot: &mut Option<LimitsData>) -> impl FnMut(LimitsData) -> Result<(), Error> + '_ {
+    |limits| {
+        *slot = Some(limits);
+        Ok(())
+    }
 }
 
 /// Resolved backend and its canonical scope string (`"cpu"` or `"cuda"`).
@@ -375,6 +416,7 @@ pub fn analysis_settings(
         max_limit_rows: opts.max_limit_rows,
         pulse_rules: opts.pulse_rules,
         clock_limits: opts.clock_limits,
+        concurrent_corners: opts.concurrent_corners,
     };
     Ok((
         analysis_opts,
@@ -434,11 +476,15 @@ pub fn analysis_error(err_diags: &[JobDiag], diags: &mut Vec<Diagnostic>) -> Err
 }
 
 /// The timing and limit tables of `analysis` and their envelope headers, the analysis
-/// diagnostics added to `diags` (`STA-REQ-0302`, `STA-REQ-0806`).
+/// diagnostics added to `diags` (`STA-REQ-0302`, `STA-REQ-0806`). `required` holds the required
+/// times of every corner when the analysis computed them for its table
+/// (`KeepLowered::ForTable`); without them each corner is lowered again for its backward pass.
+/// The limit table is built first and takes the kept limit rows of the corners
+/// (`LimitsData::from_analysis_releasing`), so that the timing table is built without them.
 #[allow(clippy::too_many_arguments)]
 pub fn table_of_analysis(
-    analysis: &EngineAnalysis<'_>,
-    lowered: Option<&[LoweredCorner<'_>]>,
+    analysis: &mut EngineAnalysis<'_>,
+    required: Option<Vec<BackwardPass>>,
     corner_libs_owned: &[(String, Vec<Library>)],
     backend_scope_name: &str,
     store_precision: StorePrecision,
@@ -447,6 +493,38 @@ pub fn table_of_analysis(
     max_limit_rows: usize,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<AnalysisTables, Error> {
+    let mut limits = None;
+    let timing = tables_of_analysis_with(
+        analysis,
+        required,
+        corner_libs_owned,
+        backend_scope_name,
+        store_precision,
+        store_mode,
+        max_paths,
+        max_limit_rows,
+        diags,
+        &mut keep_limits(&mut limits),
+    )?;
+    Ok(timing.with_limits(limits.expect("the limit table is built before the timing table")))
+}
+
+/// [`table_of_analysis`] that hands the limit table to `limits_out` as soon as it is built, and
+/// before the timing table is built, so that a caller that stages it at once never holds both
+/// tables (AGENTS rule 9). An error of `limits_out` is returned before the timing table is built.
+#[allow(clippy::too_many_arguments)]
+pub fn tables_of_analysis_with(
+    analysis: &mut EngineAnalysis<'_>,
+    required: Option<Vec<BackwardPass>>,
+    corner_libs_owned: &[(String, Vec<Library>)],
+    backend_scope_name: &str,
+    store_precision: StorePrecision,
+    store_mode: StoreMode,
+    max_paths: usize,
+    max_limit_rows: usize,
+    diags: &mut Vec<Diagnostic>,
+    limits_out: &mut dyn FnMut(LimitsData) -> Result<(), Error>,
+) -> Result<TimingTables, Error> {
     for d in &analysis.diags {
         diags.push(convert_job_diag(d));
     }
@@ -462,20 +540,36 @@ pub fn table_of_analysis(
         .map_err(Error::input_rejected)?;
     let top_k = max_paths.max(100);
     let log = PhaseLog::get();
-    let store_data = PhaseLog::time(log, "store_build", || {
-        build_store_from_analysis_with_ctx(
-            analysis,
-            lowered,
-            corner_libs_owned,
-            backend_scope_name,
-            store_precision,
-            store_mode,
-            top_k,
-            Ctx::new(None, log.map(|l| l as &dyn Observer)),
-        )
-    });
     let limits = PhaseLog::time(log, "limits_build", || {
-        LimitsData::from_analysis(analysis, max_limit_rows)
+        LimitsData::from_analysis_releasing(analysis, max_limit_rows)
+    });
+    limits_out(limits)?;
+    let analysis = &*analysis;
+    let store_data = PhaseLog::time(log, "store_build", || {
+        let ctx = Ctx::new(None, log.map(|l| l as &dyn Observer));
+        match required {
+            // Each corner's required times are dropped once its rows are built.
+            Some(required) => build_store_from_required(
+                analysis,
+                required,
+                corner_libs_owned,
+                backend_scope_name,
+                store_precision,
+                store_mode,
+                top_k,
+                ctx,
+            ),
+            None => build_store_from_analysis_with_ctx(
+                analysis,
+                None,
+                corner_libs_owned,
+                backend_scope_name,
+                store_precision,
+                store_mode,
+                top_k,
+                ctx,
+            ),
+        }
     });
     // The headers are read from the in-memory table: no bytes are encoded here; `ruststa run`
     // encodes the table once, when it stages `sta.rbin`.
@@ -488,9 +582,8 @@ pub fn table_of_analysis(
                 .ok_or_else(|| Error::internal("an in-memory timing table lost its data"))?;
             Ok::<_, Error>((data, scope_obj, comp_obj, metrics_obj))
         })?;
-    Ok(AnalysisTables {
+    Ok(TimingTables {
         store: store_data,
-        limits,
         scope: scope_obj,
         completeness: comp_obj,
         metrics: metrics_obj,
@@ -505,6 +598,20 @@ pub fn run_sta_on_revision(
     opts: &StaRunOptions,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<AnalysisTables, Error> {
+    let mut limits = None;
+    let timing = run_sta_on_revision_with(ws, rev, opts, diags, &mut keep_limits(&mut limits))?;
+    Ok(timing.with_limits(limits.expect("the limit table is built before the timing table")))
+}
+
+/// [`run_sta_on_revision`] that hands the pin limit table to `limits_out` before the timing
+/// table is built ([`tables_of_analysis_with`]).
+pub fn run_sta_on_revision_with(
+    ws: &Workspace,
+    rev: &Revision,
+    opts: &StaRunOptions,
+    diags: &mut Vec<Diagnostic>,
+    limits_out: &mut dyn FnMut(LimitsData) -> Result<(), Error>,
+) -> Result<TimingTables, Error> {
     let (mut analysis_opts, backend_scope_name, store_precision, store_mode) =
         analysis_settings(opts)?;
     check_wire_model_inputs(rev, opts.require_wire_model, diags)?;
@@ -525,15 +632,17 @@ pub fn run_sta_on_revision(
         .map(|(name, libs)| CornerLibs::new(name.as_str(), libs.as_slice()))
         .collect();
     let analyzed: Vec<String> = corner_libs_owned.iter().map(|(n, _)| n.clone()).collect();
-    analysis_opts.parasitics =
-        PhaseLog::time(log, "load_parasitics", || load_parasitics(rev, &analyzed))?;
+    analysis_opts.parasitics = PhaseLog::time(log, "load_parasitics", || {
+        load_parasitics_for_one_analysis(rev, &analyzed)
+    })?;
 
     let compiled = PhaseLog::time(log, "compile_constraints", || {
         compile_constraints(&sdc_model, &frozen, &corner_refs, diags)
     })?;
     let ctx = Ctx::new(None, log.map(|l| l as &dyn Observer));
-    // A full table needs the backward pass of every corner: the analysis keeps its lowered
-    // problems for it, so the store does not lower the corners a second time.
+    // A full table needs the backward pass of every corner: each corner computes it before the
+    // next one is analyzed and releases its lowered problem, so the store does not lower the
+    // corners a second time.
     let keep_lowered = store_mode == StoreMode::Full;
     let (mut analysis, record) = EngineAnalysis::analyze_with(
         &frozen,
@@ -543,9 +652,21 @@ pub fn run_sta_on_revision(
         &analysis_opts,
         ctx,
         Propagation::Full,
-        keep_lowered,
+        if keep_lowered {
+            KeepLowered::ForTable
+        } else {
+            KeepLowered::No
+        },
     )
     .map_err(|err_diags| analysis_error(&err_diags, diags))?;
+    // Every corner has bound its parasitics: the parsed extraction is not read again, so it is
+    // released before the table is built.
+    drop(analysis_opts);
+    // Every corner has compiled its libraries into its own `TimingLib`: the table reads only how
+    // many libraries each corner has, so their parsed cells and tables are released before the
+    // table is built (AGENTS rule 9).
+    drop(corner_refs);
+    let corner_libs_owned = library_counts(corner_libs_owned);
     check_wire_model(&analysis, opts.require_wire_model, diags)?;
     // The table reads the node-ordered propagation values of each corner; the level-ordered copy
     // is not read again, so it is released before the table is built (AGENTS rule 9: on OpenC910
@@ -553,9 +674,9 @@ pub fn run_sta_on_revision(
     for corner in &mut analysis.corners {
         corner.propagated.values = Default::default();
     }
-    table_of_analysis(
-        &analysis,
-        keep_lowered.then_some(record.lowered.as_slice()),
+    tables_of_analysis_with(
+        &mut analysis,
+        keep_lowered.then_some(record.required),
         &corner_libs_owned,
         backend_scope_name,
         store_precision,
@@ -563,7 +684,18 @@ pub fn run_sta_on_revision(
         opts.max_paths,
         opts.max_limit_rows,
         diags,
+        limits_out,
     )
+}
+
+/// The libraries of every corner reduced to their number, the only part of them that the timing
+/// table records (`CornerRec::lib_count`): each library is replaced by an empty one, which holds
+/// no cell, table or template.
+fn library_counts(corners: Vec<(String, Vec<Library>)>) -> Vec<(String, Vec<Library>)> {
+    corners
+        .into_iter()
+        .map(|(corner, libs)| (corner, libs.iter().map(|_| Library::default()).collect()))
+        .collect()
 }
 
 /// Computes `(logic_levels, cell_delay_ns, wire_delay_ns, cell_delay_pct, wire_delay_pct)` for a
@@ -1092,55 +1224,114 @@ pub fn resolve_node_name(
 /// version 1 table binds one corner, a version 2 table one source per corner (STA-REQ-0700,
 /// `STA-REQ-0820`, RCLI-REQ-0075). Only the requested corners are parsed; a requested corner
 /// without a source is left out, and the analysis then rejects it (`T0070`). No table: empty.
+/// The parse is a pure function of the source and its limits, so corners whose sources and
+/// limits are byte-identical share one parse.
 pub fn load_parasitics(
     rev: &Revision,
     corners: &[String],
 ) -> Result<Vec<std::sync::Arc<ruststa::engine::delay::spef::ParasiticInput>>, Error> {
-    use rusteda_formats::spef::{CornerSetMetadata, Metadata};
+    load_parasitics_with(rev, corners, false)
+}
+
+/// [`load_parasitics`] for one analysis, which releases each parsed extraction once it has
+/// bound the corners that share it (`ParasiticInput::released_after_bind`).
+pub fn load_parasitics_for_one_analysis(
+    rev: &Revision,
+    corners: &[String],
+) -> Result<Vec<std::sync::Arc<ruststa::engine::delay::spef::ParasiticInput>>, Error> {
+    load_parasitics_with(rev, corners, true)
+}
+
+fn load_parasitics_with(
+    rev: &Revision,
+    corners: &[String],
+    release_after_bind: bool,
+) -> Result<Vec<std::sync::Arc<ruststa::engine::delay::spef::ParasiticInput>>, Error> {
+    use rusteda_formats::spef::{CornerSetMetadata, Limits, Metadata};
+    use ruststa::engine::delay::spef::ParasiticInput;
+    use std::sync::Arc;
     if !rev.has_table("parasitics") {
         return Ok(Vec::new());
     }
-    let rbin = rev.open_rbin("parasitics", "PARASIT", 1..=2)?;
-    rbin.verify_hash()?;
-    let bad_meta = |e: String| Error::input_rejected(format!("invalid PARASIT metadata: {e}"));
-    // `(corner, limits, section)` of every corner of the table.
-    let entries: Vec<(String, rusteda_formats::spef::Limits, u32)> = if rbin.format_version() == 1 {
-        let metadata = rbin.section_bytes(2)?;
-        if metadata.len() > 4096 {
-            return Err(Error::input_rejected(
-                "T0072: parasitic metadata budget exceeded",
-            ));
+    // `(corner, limits, section, earlier)` of every requested corner, `earlier` the position of
+    // an earlier one with the same limits and byte-identical source.
+    let requested: Vec<(String, Limits, u32, Option<usize>)>;
+    let content_hash;
+    {
+        let rbin = rev.open_rbin("parasitics", "PARASIT", 1..=2)?;
+        rbin.verify_hash()?;
+        content_hash = rbin.content_hash();
+        let bad_meta = |e: String| Error::input_rejected(format!("invalid PARASIT metadata: {e}"));
+        // `(corner, limits, section)` of every corner of the table.
+        let entries: Vec<(String, Limits, u32)> = if rbin.format_version() == 1 {
+            let metadata = rbin.section_bytes(2)?;
+            if metadata.len() > 4096 {
+                return Err(Error::input_rejected(
+                    "T0072: parasitic metadata budget exceeded",
+                ));
+            }
+            let meta: Metadata =
+                serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
+            vec![(meta.corner, meta.limits, 1)]
+        } else {
+            let metadata = rbin.section_bytes(1)?;
+            if metadata.len() > 64 * 4096 {
+                return Err(Error::input_rejected(
+                    "T0072: parasitic metadata budget exceeded",
+                ));
+            }
+            let set: CornerSetMetadata =
+                serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
+            set.corners
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| (c.corner, c.limits, i as u32 + 2))
+                .collect()
+        };
+        let mut planned: Vec<(String, Limits, u32, Option<usize>)> = Vec::new();
+        for (corner, limits, section) in entries {
+            if !corners.is_empty() && !corners.contains(&corner) {
+                continue;
+            }
+            // A section that cannot be read shares nothing; the parse below reports it.
+            let bytes = rbin.section_bytes(section).ok();
+            let earlier = planned.iter().position(|(_, l, s, _)| {
+                *l == limits && bytes.is_some() && rbin.section_bytes(*s).ok() == bytes
+            });
+            planned.push((corner, limits, section, earlier));
         }
-        let meta: Metadata =
-            serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
-        vec![(meta.corner, meta.limits, 1)]
-    } else {
-        let metadata = rbin.section_bytes(1)?;
-        if metadata.len() > 64 * 4096 {
-            return Err(Error::input_rejected(
-                "T0072: parasitic metadata budget exceeded",
-            ));
-        }
-        let set: CornerSetMetadata =
-            serde_json::from_slice(metadata).map_err(|e| bad_meta(e.to_string()))?;
-        set.corners
-            .into_iter()
-            .enumerate()
-            .map(|(i, c)| (c.corner, c.limits, i as u32 + 2))
-            .collect()
-    };
-    let mut out = Vec::new();
-    for (corner, limits, section) in entries {
-        if !corners.is_empty() && !corners.contains(&corner) {
-            continue;
-        }
-        let source = std::str::from_utf8(rbin.section_bytes(section)?)
-            .map_err(|_| Error::input_rejected("SPEF table is not UTF-8"))?;
-        let data = rusteda_formats::spef::read(source, limits)
-            .map_err(|e| Error::input_rejected(e.to_string()))?;
-        out.push(std::sync::Arc::new(
-            ruststa::engine::delay::spef::ParasiticInput { corner, data },
-        ));
+        requested = planned;
+        // The map is released here, so that its pages no longer count towards this process
+        // while the sources are parsed.
+    }
+    let mut out: Vec<Arc<ParasiticInput>> = Vec::with_capacity(requested.len());
+    for (corner, limits, section, earlier) in requested {
+        let data = match earlier.and_then(|i| out[i].data()) {
+            Some(data) => data,
+            None => {
+                // The table verified above, mapped again for the pages of this section only.
+                let rbin = rev.open_rbin("parasitics", "PARASIT", 1..=2)?;
+                if rbin.content_hash() != content_hash {
+                    return Err(Error::input_rejected(
+                        "the PARASIT table changed while it was read",
+                    ));
+                }
+                let source = std::str::from_utf8(rbin.section_bytes(section)?)
+                    .map_err(|_| Error::input_rejected("SPEF table is not UTF-8"))?;
+                let parsed = std::thread::scope(|scope| {
+                    scope
+                        .spawn(|| rusteda_formats::spef::read(source, limits))
+                        .join()
+                })
+                .map_err(|_| Error::internal("the SPEF parse panicked"))?;
+                Arc::new(parsed.map_err(|e| Error::input_rejected(e.to_string()))?)
+            }
+        };
+        out.push(Arc::new(if release_after_bind {
+            ParasiticInput::released_after_bind(corner, data)
+        } else {
+            ParasiticInput::new(corner, data)
+        }));
     }
     Ok(out)
 }

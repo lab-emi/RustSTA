@@ -20,6 +20,7 @@ use super::lower::{ArcTagMaps, LoweredCorner};
 use super::relation::latch_window_relations;
 use super::tags::{Tag, TagTable};
 use crate::engine::delay::load::NetLoads;
+use crate::engine::delay::lut::{LutBank, TableId, TableKind};
 use crate::engine::delay::wire::WireModel;
 use crate::engine::graph::{ArcKind, CheckArc, TimingGraph};
 use crate::engine::input::NetlistView;
@@ -463,10 +464,17 @@ pub fn lower_corner<'l>(
         wire_model,
         max_state_bytes,
         Default::default(),
+        None,
+        true,
     )
 }
 
-/// Lowers the timing graph including global early/late cell and net delay factors.
+/// Lowers the timing graph including global early/late cell and net delay factors; with
+/// `wire_records`, the RC preparation also keeps the wire records of the extracted net arcs
+/// ([`LoweredCorner::set_wire_values`] without them). The latch `D -> Q` transition tables of
+/// `latch_tables` are in `lib`'s bank ([`add_latch_gq_slew_tables`]); without them
+/// [`pin_latch_gq_slews`] appends its tables to the lowered problem's copy of the bank.
+#[allow(clippy::too_many_arguments)]
 pub fn lower_corner_with_derates<'l>(
     netview: &NetlistView<'_>,
     graph: &TimingGraph,
@@ -480,13 +488,19 @@ pub fn lower_corner_with_derates<'l>(
     wire_model: &dyn WireModel,
     max_state_bytes: u64,
     derates: crate::engine::delay::derate::TimingDerate,
+    latch_tables: Option<&LatchSlewTables>,
+    wire_records: bool,
 ) -> Result<LoweredCorner<'l>, Diag> {
     let mut lowered =
         LoweredCorner::lower(netview, graph, lib, net_loads, ntags, starts, latch_maps)?;
-    pin_latch_gq_slews(graph, launch_slews, &mut lowered);
+    pin_latch_gq_slews_with(graph, launch_slews, &mut lowered, latch_tables);
     lowered.start_drives = launch_drives.clone();
     lowered.derates = derates;
-    lowered.set_wire_model(graph, netview, wire_model, lib, max_state_bytes)?;
+    if wire_records {
+        lowered.set_wire_model(graph, netview, wire_model, lib, max_state_bytes)?;
+    } else {
+        lowered.set_wire_values(graph, netview, wire_model, lib, max_state_bytes)?;
+    }
     Ok(lowered)
 }
 
@@ -501,6 +515,59 @@ pub fn pin_latch_gq_slews(
     graph: &TimingGraph,
     launch_slews: &FxHashMap<NodeId, [f64; 4]>,
     lowered: &mut LoweredCorner<'_>,
+) {
+    pin_latch_gq_slews_with(graph, launch_slews, lowered, None);
+}
+
+/// The scalar transition table that [`pin_latch_gq_slews`] gives output transition `to` of an
+/// enabled latch `D -> Q` arc, by `(graph arc, to)`, in its library bank.
+pub type LatchSlewTables = FxHashMap<(u32, usize), TableId>;
+
+/// Whether [`pin_latch_gq_slews`] pins output transition `to` of a latch `D -> Q` arc into a
+/// `Q` with the `G -> Q` transitions `gq_slew`, and the transition it pins it to: the early one,
+/// when both are finite and ordered.
+fn pinned_gq_slew(gq_slew: [f64; 4], to: usize) -> Option<f64> {
+    let (s_early, s_late) = (gq_slew[to * 2], gq_slew[to * 2 + 1]);
+    (s_early.is_finite() && s_late.is_finite() && s_early <= s_late).then_some(s_early)
+}
+
+/// Adds to `bank`, in graph arc order, the scalar transition table of every output transition of
+/// every enabled latch `D -> Q` arc into a pin of `launch_slews` that [`pin_latch_gq_slews`]
+/// pins (`STA-REQ-0222`), and returns them. A corner adds them to its own bank before it is
+/// lowered, so that its lowered problem borrows the bank instead of copying all of it to append
+/// these few tables (AGENTS rule 9). The values are those [`pin_latch_gq_slews`] appends.
+pub fn add_latch_gq_slew_tables(
+    graph: &TimingGraph,
+    launch_slews: &FxHashMap<NodeId, [f64; 4]>,
+    bank: &mut LutBank,
+) -> LatchSlewTables {
+    let mut tables = LatchSlewTables::default();
+    for (ai, arc) in graph.arcs().iter().enumerate() {
+        if !arc.kind.is_latch_data() || graph.is_arc_disabled(ai) {
+            continue;
+        }
+        let Some(&gq_slew) = launch_slews.get(&arc.dst) else {
+            continue;
+        };
+        for to in 0..2 {
+            if let Some(slew) = pinned_gq_slew(gq_slew, to) {
+                tables.insert(
+                    (ai as u32, to),
+                    bank.add_scalar(slew, TableKind::Slew, "latch G->Q slew"),
+                );
+            }
+        }
+    }
+    tables
+}
+
+/// [`pin_latch_gq_slews`] with the transition tables of `tables` when given, which hold the
+/// values it would append.
+fn pin_latch_gq_slews_with(
+    graph: &TimingGraph,
+    launch_slews: &FxHashMap<NodeId, [f64; 4]>,
+    lowered: &mut LoweredCorner<'_>,
+    tables: Option<&LatchSlewTables>,
 ) {
     let g_arcs = graph.arcs();
     for (ai, arc) in g_arcs.iter().enumerate() {
@@ -522,13 +589,17 @@ pub fn pin_latch_gq_slews(
         let mut new_class: ArcClass = lowered.luts.classes[old_class_idx];
         let mut modified = false;
         for to in 0..2 {
-            let s_early = gq_slew[to * 2];
-            let s_late = gq_slew[to * 2 + 1];
-            if s_early.is_finite() && s_late.is_finite() && s_early <= s_late {
-                let voff = lowered.luts.data.len() as u32;
-                lowered.luts.data.to_mut().push(s_early);
-                let lut_idx = lowered.luts.luts.len() as u32;
-                lowered.luts.luts.to_mut().push(LutDesc::scalar(voff));
+            if let Some(s_early) = pinned_gq_slew(gq_slew, to) {
+                let lut_idx = match tables.and_then(|t| t.get(&(ai as u32, to))) {
+                    Some(&table) => table,
+                    None => {
+                        let voff = lowered.luts.data.len() as u32;
+                        lowered.luts.data.to_mut().push(s_early);
+                        let lut_idx = lowered.luts.luts.len() as u32;
+                        lowered.luts.luts.to_mut().push(LutDesc::scalar(voff));
+                        lut_idx
+                    }
+                };
                 new_class.slew[to] = lut_idx;
                 modified = true;
             }

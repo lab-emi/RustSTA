@@ -528,6 +528,15 @@ fn wt_spef(cap: f64) -> String {
 /// Commits a `parasitics` table of `corners` as `rusteda import --spef` writes it: version 2
 /// with every corner, or version 1 with the one corner (RCLI-REQ-0070, RCLI-REQ-0075).
 fn commit_parasitics(ws: &Workspace, corners: &[(&str, f64)], version: u32) {
+    let corners: Vec<(&str, f64, Limits)> = corners
+        .iter()
+        .map(|&(c, cap)| (c, cap, Limits::default()))
+        .collect();
+    commit_parasitics_with(ws, &corners, version);
+}
+
+/// [`commit_parasitics`] with the read limits of every corner.
+fn commit_parasitics_with(ws: &Workspace, corners: &[(&str, f64, Limits)], version: u32) {
     let inv = Invocation::new(
         "rusteda",
         "0.4.0",
@@ -536,12 +545,12 @@ fn commit_parasitics(ws: &Workspace, corners: &[(&str, f64)], version: u32) {
     );
     let head = ws.head().unwrap().to_string();
     let mut txn = ws.begin(ws.resolve_base(&head).unwrap(), &inv).unwrap();
-    let texts: Vec<String> = corners.iter().map(|(_, c)| wt_spef(*c)).collect();
+    let texts: Vec<String> = corners.iter().map(|(_, c, _)| wt_spef(*c)).collect();
     let mut w = RbinWriter::new("PARASIT", version).unwrap();
     if version == 1 {
         let meta = serde_json::to_vec(&Metadata {
             corner: corners[0].0.into(),
-            limits: Limits::default(),
+            limits: corners[0].2,
         })
         .unwrap();
         w.section_bytes(1, 1, texts[0].as_bytes()).unwrap();
@@ -551,9 +560,9 @@ fn commit_parasitics(ws: &Workspace, corners: &[(&str, f64)], version: u32) {
             corners: corners
                 .iter()
                 .zip(&texts)
-                .map(|((c, _), t)| CornerSource {
+                .map(|((c, _, limits), t)| CornerSource {
                     corner: (*c).into(),
-                    limits: Limits::default(),
+                    limits: *limits,
                     source_path: format!("{c}.spef"),
                     source_hash: Hash64::of(t.as_bytes()).to_string(),
                 })
@@ -642,6 +651,95 @@ fn every_corner_is_analyzed_with_its_own_spef() {
         "spef_rc",
     ]);
     assert_eq!(code, 0, "{r}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// STA-REQ-0820: the parse of a SPEF source is a function of its text and limits alone, so the
+// requested corners whose sources and limits are byte-identical share one parse; a corner with
+// another source or other limits is parsed on its own. Every corner is analyzed with its own.
+#[test]
+fn identical_spef_sources_share_one_parse() {
+    use std::sync::Arc;
+    let dir = temp_dir("shared-spef");
+    let wt = ruststa_fixtures::liberty::library(ruststa_fixtures::liberty::Variant::Wt15);
+    let ws = common::corners_workspace(
+        &dir,
+        &[("fast", &wt, "wt_fast.lib"), ("slow", &wt, "wt_slow.lib")],
+        WT_NETLIST,
+        "set_input_transition 0.1 [get_ports a]\nset_max_capacitance 1 [current_design]\n",
+    );
+    let other_limits = Limits {
+        max_nets: 99,
+        ..Limits::default()
+    };
+    commit_parasitics_with(
+        &ws,
+        &[
+            ("fast", 0.001, Limits::default()),
+            ("slow", 0.001, Limits::default()),
+            ("hot", 0.008, Limits::default()),
+            ("cold", 0.001, other_limits),
+        ],
+        2,
+    );
+    let head = ws.head().unwrap().to_string();
+    let rev = ws.revision(ws.resolve_query(&head).unwrap()).unwrap();
+    let parsed = |corners: &[&str]| {
+        let corners: Vec<String> = corners.iter().map(|c| c.to_string()).collect();
+        ruststa_cli::ws_io::load_parasitics(&rev, &corners)
+            .unwrap()
+            .iter()
+            .map(|p| (p.corner.clone(), p.data().unwrap()))
+            .collect::<Vec<_>>()
+    };
+    let all = parsed(&[]);
+    let names: Vec<&str> = all.iter().map(|(c, _)| c.as_str()).collect();
+    assert_eq!(names, ["fast", "slow", "hot", "cold"]);
+    assert!(Arc::ptr_eq(&all[0].1, &all[1].1));
+    assert!(!Arc::ptr_eq(&all[0].1, &all[2].1));
+    assert!(!Arc::ptr_eq(&all[0].1, &all[3].1));
+    // The shared parse is the parse of each source.
+    assert_eq!(all[3].1, all[0].1);
+    assert_ne!(all[2].1, all[0].1);
+    // Only the requested corners are read and shared.
+    let some = parsed(&["slow", "cold"]);
+    assert_eq!(some.len(), 2);
+    assert!(!Arc::ptr_eq(&some[0].1, &some[1].1));
+    let three = parsed(&["cold", "slow", "fast"]);
+    let names: Vec<&str> = three.iter().map(|(c, _)| c.as_str()).collect();
+    assert_eq!(names, ["fast", "slow", "cold"]);
+    assert!(Arc::ptr_eq(&three[0].1, &three[1].1));
+    assert!(!Arc::ptr_eq(&three[0].1, &three[2].1));
+
+    // A run of the corners that share one parse gives each its own SPEF capacitance.
+    commit_parasitics(&ws, &[("fast", 0.001), ("slow", 0.001)], 2);
+    let w = dir.join("ws").to_string_lossy().into_owned();
+    for threads in ["1", "4"] {
+        let head = ws.head().unwrap().to_string();
+        let (code, run) = run_json(&[
+            "run",
+            "-w",
+            &w,
+            "--base-rev",
+            &head,
+            "--threads",
+            threads,
+            "--require-wire-model",
+            "spef_rc",
+        ]);
+        assert_eq!(code, 0, "{run}");
+        let (code, rep) = run_json(&["report", "-w", &w, "--section", "max_capacitance"]);
+        assert_eq!(code, 0, "{rep}");
+        let cap = |corner: &str| {
+            rows(&rep, "max_capacitance")
+                .iter()
+                .find(|r| r["corner"] == corner && r["pin"] == "u/Y")
+                .unwrap()["value"]
+                .as_f64()
+                .unwrap()
+        };
+        assert_eq!(cap("fast").to_bits(), cap("slow").to_bits(), "{threads}");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 

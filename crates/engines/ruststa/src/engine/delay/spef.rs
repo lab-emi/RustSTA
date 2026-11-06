@@ -21,11 +21,96 @@ use rusteda_core::names::escape_segment;
 use rusteda_formats::spef as format;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// An extraction associated with one explicitly named library corner.
-#[derive(Debug, Clone, PartialEq)]
+/// An extraction associated with one explicitly named library corner. Corners extracted from
+/// one source share its parsed extraction.
+///
+/// An input made by [`ParasiticInput::released_after_bind`] gives its extraction up once an
+/// analysis has bound its corner, so that the parsed text is not kept resident while that
+/// analysis goes on; its size estimate and coupling count stay, so the budgets of the analysis
+/// are those of an input that keeps it. Such an input serves one analysis.
+#[derive(Debug)]
 pub struct ParasiticInput {
     pub corner: String,
-    pub data: format::Spef,
+    data: std::sync::Mutex<Option<std::sync::Arc<format::Spef>>>,
+    release_after_bind: bool,
+    estimated_state_bytes: u64,
+    coupling_records: usize,
+}
+
+impl ParasiticInput {
+    /// The extraction `data` of the corner `corner`.
+    pub fn new(corner: impl Into<String>, data: std::sync::Arc<format::Spef>) -> Self {
+        Self {
+            corner: corner.into(),
+            estimated_state_bytes: data.estimated_state_bytes(),
+            coupling_records: data.coupling_records,
+            data: std::sync::Mutex::new(Some(data)),
+            release_after_bind: false,
+        }
+    }
+
+    /// [`ParasiticInput::new`] for one analysis, which releases the extraction once it has bound
+    /// the corner.
+    pub fn released_after_bind(
+        corner: impl Into<String>,
+        data: std::sync::Arc<format::Spef>,
+    ) -> Self {
+        Self {
+            release_after_bind: true,
+            ..Self::new(corner, data)
+        }
+    }
+
+    /// The extraction; `None` once an analysis has released it.
+    pub fn data(&self) -> Option<std::sync::Arc<format::Spef>> {
+        self.slot().clone()
+    }
+
+    /// [`format::Spef::estimated_state_bytes`] of the extraction.
+    pub fn estimated_state_bytes(&self) -> u64 {
+        self.estimated_state_bytes
+    }
+
+    /// The inter-net coupling records of the extraction.
+    pub fn coupling_records(&self) -> usize {
+        self.coupling_records
+    }
+
+    /// Called once the analysis has bound the corner: releases the extraction of an input made
+    /// by [`ParasiticInput::released_after_bind`].
+    pub(crate) fn bound(&self) {
+        if self.release_after_bind {
+            *self.slot() = None;
+        }
+    }
+
+    fn slot(&self) -> std::sync::MutexGuard<'_, Option<std::sync::Arc<format::Spef>>> {
+        self.data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+impl Clone for ParasiticInput {
+    fn clone(&self) -> Self {
+        Self {
+            corner: self.corner.clone(),
+            data: std::sync::Mutex::new(self.data()),
+            release_after_bind: self.release_after_bind,
+            estimated_state_bytes: self.estimated_state_bytes,
+            coupling_records: self.coupling_records,
+        }
+    }
+}
+
+impl PartialEq for ParasiticInput {
+    fn eq(&self, other: &Self) -> bool {
+        self.corner == other.corner
+            && self.release_after_bind == other.release_after_bind
+            && self.estimated_state_bytes == other.estimated_state_bytes
+            && self.coupling_records == other.coupling_records
+            && self.data() == other.data()
+    }
 }
 
 /// Bound per-net wire capacitance and per-load, transition/bound Elmore delay.
@@ -220,12 +305,12 @@ impl Spef {
             if drivers.len() != 1 {
                 return Err(error(format!("SPEF net {name} needs exactly one driver")));
             }
-            let mut caps: Vec<[f64; 4]> = net.nodes.iter().map(|n| [n.cap_pf; 4]).collect();
+            let mut caps: Vec<[f64; 4]> = net.nodes.caps().iter().map(|&c| [c; 4]).collect();
             let mut connections = Vec::with_capacity(net.connections.len());
             let mut connected = BTreeSet::new();
             let mut root = None;
             for conn in &net.connections {
-                let rc_name = &net.nodes[conn.node as usize].name;
+                let rc_name = net.nodes.name(conn.node as usize);
                 let name = canonical(rc_name, source, !conn.port);
                 let id = *nodes.get(&name).ok_or_else(|| {
                     error(format!("SPEF connection {rc_name} is absent from netlist"))
@@ -313,7 +398,7 @@ impl Spef {
                 for component in &reduced.detached {
                     topology.detached_nodes += component.len();
                     for &node in component {
-                        topology.detached_wire_pf += net.nodes[node as usize].cap_pf;
+                        topology.detached_wire_pf += net.nodes.cap_pf(node as usize);
                         topology.detached_pins += usize::from(pins.contains_key(&node));
                     }
                 }
@@ -329,7 +414,7 @@ impl Spef {
                             named += 1;
                             members.push(match pins.get(&node) {
                                 Some(&id) => format!("pin {}", view.node_name(id)),
-                                None => format!("node {}", net.nodes[node as usize].name),
+                                None => format!("node {}", net.nodes.name(node as usize)),
                             });
                         }
                         if !members.is_empty() {
@@ -359,7 +444,7 @@ impl Spef {
                 result.delay_ns[id.index()] = delays[rc_node as usize];
             }
             // Add wire capacitance once on the canonical row, before alias aggregation.
-            result.wire_cap_pf[row.index()] = net.nodes.iter().map(|n| n.cap_pf).sum();
+            result.wire_cap_pf[row.index()] = net.nodes.caps().iter().sum();
         }
         for &net in view.canonical_nets() {
             if !view.drivers(net).is_empty()
@@ -377,6 +462,17 @@ impl Spef {
 }
 
 impl Spef {
+    /// Releases the bound per-net capacitances and pi loads and the per-load delays, keeping the
+    /// thresholds and the topology counts, for an analysis whose tables no longer read the wire
+    /// model ([`crate::engine::analysis::CornerAnalysis::retain_for_table`]). The released
+    /// binding must not be queried as a [`WireModel`] again.
+    pub fn release_bound(&mut self) {
+        self.wire_cap_pf = Vec::new();
+        self.delay_ns = Vec::new();
+        self.pi_loads = Vec::new();
+        self.primary = Vec::new();
+    }
+
     /// The non-tree networks of this binding (STA-REQ-0730, STA-REQ-0731).
     pub fn topology(&self) -> &RcTopology {
         &self.topology

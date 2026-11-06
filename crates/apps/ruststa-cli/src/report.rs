@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 
 use rusteda_workspace::text::next_line;
 use rusteda_workspace::{
-    DiagCode, Diagnostic, Envelope, Error, JsonObject, Severity, Workspace, exit,
+    DiagCode, Diagnostic, Envelope, Error, JsonObject, RawJson, Severity, Workspace, exit,
 };
 use ruststa::engine::limits::LimitKind;
 use ruststa::engine::limits::table::LimitsTable;
@@ -131,7 +131,7 @@ pub(crate) fn section_envelope_obj(
     obj.insert("total", &(total as u64))?;
     obj.insert("matched", &(matched as u64))?;
     obj.insert("shown", &(shown as u64))?;
-    obj.insert("rows", &rows)?;
+    obj.insert_raw("rows", RawJson::array(rows));
     Ok(obj)
 }
 
@@ -657,7 +657,7 @@ pub fn exec_report(
         match sec {
             ReportSection::Summary => {
                 let s_obj = build_summary_section(&store, args.corner.as_deref(), limit)?;
-                sections_obj.insert("summary", &s_obj)?;
+                sections_obj.insert_raw("summary", s_obj.into());
             }
             ReportSection::Endpoints => {
                 let s_obj = build_endpoints_section(
@@ -670,7 +670,7 @@ pub fn exec_report(
                     args.reverse,
                     limit,
                 )?;
-                sections_obj.insert("endpoints", &s_obj)?;
+                sections_obj.insert_raw("endpoints", s_obj.into());
             }
             ReportSection::Checks => {
                 let s_obj = build_endpoints_section(
@@ -683,7 +683,7 @@ pub fn exec_report(
                     args.reverse,
                     limit,
                 )?;
-                sections_obj.insert("checks", &s_obj)?;
+                sections_obj.insert_raw("checks", s_obj.into());
             }
             ReportSection::Paths => {
                 let s_obj = build_paths_section(
@@ -695,24 +695,24 @@ pub fn exec_report(
                     args.reverse,
                     limit,
                 )?;
-                sections_obj.insert("paths", &s_obj)?;
+                sections_obj.insert_raw("paths", s_obj.into());
             }
             ReportSection::Pins => {
                 let s_obj =
                     build_pins_section(&v, corner_idx, filter.as_ref(), args.reverse, limit)?;
-                sections_obj.insert("pins", &s_obj)?;
+                sections_obj.insert_raw("pins", s_obj.into());
             }
             ReportSection::Clocks => {
                 let s_obj = build_clocks_section(&v, limit)?;
-                sections_obj.insert("clocks", &s_obj)?;
+                sections_obj.insert_raw("clocks", s_obj.into());
             }
             ReportSection::Unconstrained => {
                 let s_obj = build_unconstrained_section(&v, limit)?;
-                sections_obj.insert("unconstrained", &s_obj)?;
+                sections_obj.insert_raw("unconstrained", s_obj.into());
             }
             ReportSection::Notes => {
                 let s_obj = build_notes_section(&v, limit)?;
-                sections_obj.insert("notes", &s_obj)?;
+                sections_obj.insert_raw("notes", s_obj.into());
             }
             ReportSection::HoldFix => {
                 let s_obj = crate::holdfix::hold_fix_section(
@@ -722,7 +722,7 @@ pub fn exec_report(
                     args.target_margin,
                     limit,
                 )?;
-                sections_obj.insert("hold_fix", &s_obj)?;
+                sections_obj.insert_raw("hold_fix", s_obj.into());
             }
             ReportSection::Limits
             | ReportSection::PulseWidth
@@ -799,7 +799,7 @@ pub fn exec_report(
                         limit,
                     )?
                 };
-                sections_obj.insert(name, &s_obj)?;
+                sections_obj.insert_raw(name, s_obj.into());
             }
         }
     }
@@ -811,7 +811,8 @@ pub fn exec_report(
     env.set_scope(scope)?;
     env.set_completeness(comp)?;
     env.set_metrics(metrics.clone())?;
-    env.set("sections", &sections_obj)?;
+    let sections_raw = sections_obj.to_raw();
+    env.set_raw("sections", sections_raw.clone())?;
 
     let rev_str = rev.to_string();
     if v.meta.num_ranked_paths > 0 {
@@ -823,7 +824,7 @@ pub fn exec_report(
     let mut lines = Vec::new();
     lines.push(format!("ruststa report  (rev {rev})"));
     lines.push(format!("  metrics: {}", metrics.to_raw().as_str()));
-    lines.push(format!("  sections: {}", sections_obj.to_raw().as_str()));
+    lines.push(format!("  sections: {}", sections_raw.as_str()));
     for next in &env.next_actions {
         lines.push(next_line(next));
     }

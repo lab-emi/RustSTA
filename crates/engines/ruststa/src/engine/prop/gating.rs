@@ -13,7 +13,7 @@ use super::checks::{EndpointCheckKind, SlackRecord, resolve_path_group};
 use super::clocks::ideal::IdealClockModel;
 use super::clocks::{ClockModel, SENSE_NEG, SENSE_POS};
 use super::cppr::Cppr;
-use super::lower::LoweredResult;
+use super::lower::NodeValues;
 use super::relation::{non_negative_relation, setup_relation};
 use super::tags::TagTable;
 use crate::engine::graph::TimingGraph;
@@ -161,7 +161,7 @@ pub fn evaluate_gating_sites<C: Cppr>(
     clock_model: &IdealClockModel,
     cppr_model: &C,
     tags: &TagTable,
-    prop_res: &LoweredResult,
+    prop_res: &impl NodeValues,
     mut on_slack: impl FnMut(SlackRecord),
 ) -> Result<(), Diag> {
     if tags.is_empty() {

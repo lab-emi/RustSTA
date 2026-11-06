@@ -15,7 +15,7 @@ use super::checks::{ASYNC_DEFAULT_GROUP, EndpointCheckKind, SlackRecord};
 use super::clocks::ClockModel;
 use super::clocks::ideal::IdealClockModel;
 use super::gating::ClockGatingSite;
-use super::lower::LoweredResult;
+use super::lower::NodeValues;
 use super::tags::TagTable;
 use crate::engine::graph::{DisableReason, TimingGraph};
 use crate::engine::input::constr::{CompiledConstraints, DisabledTiming};
@@ -224,9 +224,25 @@ pub struct CornerEndpoints {
     pub legacy_unconstrained: usize,
     /// Corner-level timing summary (`STA-REQ-0226`).
     pub summary: CornerSummary,
+    /// True once [`Self::records`] were released ([`Self::release_records`]).
+    released: bool,
 }
 
 impl CornerEndpoints {
+    /// Releases the individual check evaluations ([`Self::records`]) once nothing reads them
+    /// again: the endpoint records, the path groups and the summary stay.
+    pub fn release_records(&mut self) {
+        self.records = Vec::new();
+        self.released = true;
+    }
+
+    /// True when the individual check evaluations were released ([`Self::release_records`]), so
+    /// that [`Self::records`] is empty although the corner has checks.
+    #[must_use]
+    pub fn records_released(&self) -> bool {
+        self.released
+    }
+
     /// Builds [`CornerEndpoints`] from the evaluated `records` and classifies every candidate
     /// endpoint of the corner (`STA-REQ-0225`, `STA-REQ-0226`).
     #[allow(clippy::too_many_arguments)]
@@ -239,7 +255,7 @@ impl CornerEndpoints {
         clock_model: &IdealClockModel,
         tags: &TagTable,
         gating_sites: &[ClockGatingSite],
-        prop_res: &LoweredResult,
+        prop_res: &impl NodeValues,
         records: Vec<SlackRecord>,
         constant_nodes: &[bool],
     ) -> Self {
@@ -526,6 +542,7 @@ impl CornerEndpoints {
             unconstrained,
             legacy_unconstrained,
             summary,
+            released: false,
         }
     }
 
@@ -557,7 +574,7 @@ fn keep_worse(slot: &mut Option<SlackRecord>, cand: &SlackRecord) {
 
 fn node_has_any_arrival(
     graph: &TimingGraph,
-    prop_res: &LoweredResult,
+    prop_res: &impl NodeValues,
     tags: &TagTable,
     node: NodeId,
 ) -> bool {

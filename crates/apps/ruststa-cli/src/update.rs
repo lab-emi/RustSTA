@@ -137,7 +137,7 @@ pub fn update_sta_on_revision(
         Err(reason) => full_reason = Some(*reason),
     }
 
-    let (analysis, stats) = match incremental {
+    let (mut analysis, stats) = match incremental {
         Some(done) => done,
         None => {
             let analysis = EngineAnalysis::analyze(
@@ -171,7 +171,7 @@ pub fn update_sta_on_revision(
         completeness,
         metrics,
     } = table_of_analysis(
-        &analysis,
+        &mut analysis,
         None,
         &corner_libs,
         backend,
@@ -184,12 +184,12 @@ pub fn update_sta_on_revision(
     drop(analysis);
 
     if verify_full && full_reason.is_none() {
-        let full =
+        let mut full =
             EngineAnalysis::analyze(&frozen, &corner_refs, compiled, &analysis_opts, Ctx::NONE)
                 .map_err(|d| analysis_error(&d, diags))?;
         let mut scratch = Vec::new();
         let full_tables = table_of_analysis(
-            &full,
+            &mut full,
             None,
             &corner_libs,
             backend,
@@ -466,6 +466,7 @@ pub fn exec_update(
         require_wire_model: args.require_wire_model,
         pulse_rules: crate::args::pulse_rules(args.pulse_groups, args.pulse_pins),
         clock_limits: crate::args::clock_limits(args.clock_limits),
+        concurrent_corners: false,
     };
 
     let step_res = (|| {

@@ -87,9 +87,11 @@ pub fn into_owned_lowered(lowered: LoweredCorner<'_>) -> LoweredCorner<'static> 
         starts: lowered.starts,
         wires: lowered.wires,
         arc_values: lowered.arc_values,
+        arc_delays: lowered.arc_delays,
         drives: lowered.drives,
         start_drives: lowered.start_drives,
         slew_only_map: lowered.slew_only_map,
+        pruned: lowered.pruned,
         lower_s: lowered.lower_s,
     }
 }

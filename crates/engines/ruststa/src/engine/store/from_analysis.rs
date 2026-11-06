@@ -32,6 +32,7 @@ use crate::engine::prop::endpoints::EndpointStatus;
 use crate::engine::prop::latch::lower_corner_with_derates;
 use crate::engine::prop::lower::LoweredCorner;
 use crate::engine::prop::starts::build_start_rows;
+use crate::engine::store::layout::PATH_CHAIN_STEP_WORDS;
 use crate::engine::store::{
     ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport,
     CornerLimitsReport, CornerRec, DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec,
@@ -201,12 +202,139 @@ impl StepClock<'_> {
     }
 }
 
+/// [`build_store_from_analysis_with_ctx`] that takes the kept `lowered` corners and drops each
+/// one as soon as the backward pass of its corner is done, so that the rest of the table is
+/// built without them. The table is the same.
+#[allow(clippy::too_many_arguments)]
+pub fn build_store_from_analysis_releasing(
+    analysis: &EngineAnalysis<'_>,
+    lowered: Vec<LoweredCorner<'_>>,
+    corner_libs_owned: &[(String, Vec<Library>)],
+    backend_name: &str,
+    precision: StorePrecision,
+    store_mode: StoreMode,
+    top_k_paths: usize,
+    ctx: Ctx<'_>,
+) -> StaStoreData {
+    build_store_kept(
+        &StoreInput::of(analysis),
+        Kept::Owned(lowered.into_iter().map(Some).collect()),
+        corner_libs_owned,
+        backend_name,
+        precision,
+        store_mode,
+        top_k_paths,
+        ctx,
+    )
+}
+
+/// [`build_store_from_analysis_with_ctx`] with the required times and slacks of every corner that
+/// the analysis computed for its table (`KeepLowered::ForTable`, `PropagationRecord::required`),
+/// in corner order, instead of a backward pass over each corner's lowered problem. Each pass is
+/// dropped once its corner's rows are built. The table is the same.
+#[allow(clippy::too_many_arguments)]
+pub fn build_store_from_required(
+    analysis: &EngineAnalysis<'_>,
+    required: Vec<BackwardPass>,
+    corner_libs_owned: &[(String, Vec<Library>)],
+    backend_name: &str,
+    precision: StorePrecision,
+    store_mode: StoreMode,
+    top_k_paths: usize,
+    ctx: Ctx<'_>,
+) -> StaStoreData {
+    build_store_kept(
+        &StoreInput::of(analysis),
+        Kept::Required(required.into_iter().map(Some).collect()),
+        corner_libs_owned,
+        backend_name,
+        precision,
+        store_mode,
+        top_k_paths,
+        ctx,
+    )
+}
+
+/// What the backward pass of each corner reuses.
+enum Kept<'l, 'a> {
+    Borrowed(Option<&'l [LoweredCorner<'a>]>),
+    /// Each problem is dropped once the pass of its corner is done.
+    Owned(Vec<Option<LoweredCorner<'a>>>),
+    /// The passes themselves, each taken by the rows of its corner.
+    Required(Vec<Option<BackwardPass>>),
+}
+
+impl<'a> Kept<'_, 'a> {
+    fn get(&self, corner: usize) -> Option<&LoweredCorner<'a>> {
+        match self {
+            Kept::Borrowed(lowered) => lowered.and_then(|l| l.get(corner)),
+            Kept::Owned(lowered) => lowered.get(corner).and_then(Option::as_ref),
+            Kept::Required(_) => None,
+        }
+    }
+
+    fn release(&mut self, corner: usize) {
+        if let Kept::Owned(lowered) = self
+            && let Some(slot) = lowered.get_mut(corner)
+        {
+            *slot = None;
+        }
+    }
+
+    /// The backward pass of corner `ca` (index `corner`): the one computed by the analysis, or one
+    /// over the corner's kept or lowered-again problem.
+    fn backward_pass(
+        &mut self,
+        analysis: &StoreInput<'_>,
+        ca: &CornerAnalysis,
+        corner: usize,
+    ) -> BackwardPass {
+        if let Kept::Required(passes) = self
+            && let Some(bp) = passes.get_mut(corner).and_then(Option::take)
+        {
+            return bp;
+        }
+        // The seeds of the pass are the corner's check records (`KeepLowered::ForTable` releases
+        // them once it has computed the required times the table is built from).
+        assert!(
+            !ca.endpoints.records_released(),
+            "the check records of corner {} were released: build its table from its required \
+             times (build_store_from_required)",
+            ca.corner_name
+        );
+        compute_corner_backward_pass(analysis, ca, self.get(corner))
+    }
+}
+
 /// [`build_store`] reporting its steps to the observer of `ctx`, with the kept `lowered` corners
 /// of the analysis when it has them.
 #[allow(clippy::too_many_arguments)]
 pub fn build_store_with_ctx(
     analysis: &StoreInput<'_>,
     lowered: Option<&[LoweredCorner<'_>]>,
+    corner_libs_owned: &[(String, Vec<Library>)],
+    backend_name: &str,
+    precision: StorePrecision,
+    store_mode: StoreMode,
+    top_k_paths: usize,
+    ctx: Ctx<'_>,
+) -> StaStoreData {
+    build_store_kept(
+        analysis,
+        Kept::Borrowed(lowered),
+        corner_libs_owned,
+        backend_name,
+        precision,
+        store_mode,
+        top_k_paths,
+        ctx,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_store_kept(
+    analysis: &StoreInput<'_>,
+    mut lowered: Kept<'_, '_>,
     corner_libs_owned: &[(String, Vec<Library>)],
     backend_name: &str,
     precision: StorePrecision,
@@ -527,7 +655,9 @@ pub fn build_store_with_ctx(
     if store_mode == StoreMode::Full {
         let total_cn = n_corners * n_nodes;
         for (c_idx, ca) in analysis.corners.iter().enumerate() {
-            let bp = compute_corner_backward_pass(analysis, ca, lowered.and_then(|l| l.get(c_idx)));
+            let bp = lowered.backward_pass(analysis, ca, c_idx);
+            // The pass was the only reader of the corner's lowered problem.
+            lowered.release(c_idx);
             clock.lap("store.backward_pass");
             // `NODE_REC` is allocated once the first pass has released its per-tag required times,
             // so that the two never coexist (AGENTS rule 9).
@@ -745,40 +875,63 @@ pub fn build_store_with_ctx(
         }
     }
 
-    // `PATH_CHAIN`: the header and the steps of every ranked path, in rank order. A chunk of
-    // paths is traced in parallel and appended in order, so the words do not depend on the
-    // number of threads.
-    const TRACE_CHUNK: usize = 1 << 16;
+    // `PATH_CHAIN`: the header and the steps of every ranked path, in rank order. The steps of
+    // every path are counted first, so that the chain is one allocation of its final size; every
+    // path is then traced in parallel straight into its own range of it. The words do not depend
+    // on the number of threads, and no traced path is held anywhere else (AGENTS Rule 9: bounded
+    // memory at OpenC910 scale, where every one of millions of endpoints has a ranked path).
+    let path_words = |cp: &CandPath<'_>| {
+        let mut steps = 0usize;
+        for_each_path_step(
+            analysis,
+            &analysis.corners[cp.corner_idx],
+            &pin_index,
+            &node_bucket,
+            cp.rec,
+            |_, _, _, _, _, _, _| steps += 1,
+        );
+        PATH_CHAIN_HEADER_WORDS + PATH_CHAIN_STEP_WORDS * steps
+    };
+    let words: Vec<usize> = cand_paths.par_iter().map(path_words).collect();
     let mut path_chain_ptr = Vec::with_capacity(n_ranked + 1);
-    path_chain_ptr.push(0);
-    let mut path_chain: Vec<u32> = Vec::new();
-    for chunk in cand_paths.chunks(TRACE_CHUNK) {
-        let traced: Vec<Vec<u32>> = chunk
-            .par_iter()
-            .map(|cp| {
-                let ca = &analysis.corners[cp.corner_idx];
-                let check_value = compute_check_intrinsic(analysis, ca, &pin_index, cp.rec);
-                let mut words = Vec::with_capacity(PATH_CHAIN_HEADER_WORDS + 16 * 3);
-                words.extend_from_slice(&pack_f64_words(canon_f64(cp.rec.required)));
-                words.extend_from_slice(&pack_f64_words(canon_f64(check_value)));
-                for_each_path_step(
-                    analysis,
-                    ca,
-                    &pin_index,
-                    &node_bucket,
-                    cp.rec,
-                    |node, tr, kind, tag_slot, nb, _, _| {
-                        words.extend_from_slice(&pack_chain_step(node, tr, kind, tag_slot, nb));
-                    },
-                );
-                words
-            })
-            .collect();
-        for words in traced {
-            path_chain.extend_from_slice(&words);
-            path_chain_ptr.push(path_chain.len() as u64);
-        }
+    path_chain_ptr.push(0u64);
+    for &n in &words {
+        let end = path_chain_ptr[path_chain_ptr.len() - 1] + n as u64;
+        path_chain_ptr.push(end);
     }
+    let mut path_chain = vec![0u32; path_chain_ptr[n_ranked] as usize];
+    let mut ranges: Vec<&mut [u32]> = Vec::with_capacity(n_ranked);
+    let mut rest = path_chain.as_mut_slice();
+    for &n in &words {
+        let (range, tail) = std::mem::take(&mut rest).split_at_mut(n);
+        ranges.push(range);
+        rest = tail;
+    }
+    drop(words);
+    cand_paths
+        .par_iter()
+        .zip(ranges)
+        .with_min_len(64)
+        .for_each(|(cp, out)| {
+            let ca = &analysis.corners[cp.corner_idx];
+            let check_value = compute_check_intrinsic(analysis, ca, &pin_index, cp.rec);
+            out[..2].copy_from_slice(&pack_f64_words(canon_f64(cp.rec.required)));
+            out[2..PATH_CHAIN_HEADER_WORDS]
+                .copy_from_slice(&pack_f64_words(canon_f64(check_value)));
+            let mut at = PATH_CHAIN_HEADER_WORDS;
+            for_each_path_step(
+                analysis,
+                ca,
+                &pin_index,
+                &node_bucket,
+                cp.rec,
+                |node, tr, kind, tag_slot, nb, _, _| {
+                    out[at..at + PATH_CHAIN_STEP_WORDS]
+                        .copy_from_slice(&pack_chain_step(node, tr, kind, tag_slot, nb));
+                    at += PATH_CHAIN_STEP_WORDS;
+                },
+            );
+        });
     clock.lap("store.trace_paths");
 
     // `PATHS` and `PATH_POINTS`: the top-K paths with their arrivals and slews.
@@ -1056,24 +1209,24 @@ fn compute_corner_backward_pass(
     ca: &CornerAnalysis,
     kept: Option<&LoweredCorner<'_>>,
 ) -> BackwardPass {
-    let n_nodes = analysis.graph.num_nodes();
     let ntags = ca.tags.len().max(1);
-    let mut bp = BackwardPass::required_and_slack_only(n_nodes, ntags);
-
-    for rec in &ca.endpoints.records {
-        let an = rec.kind.data_bound();
-        bp.seed_required(rec.endpoint, rec.tag.index(), rec.data_tr, an, rec.required);
-    }
     // The node-ordered values of the corner hold the propagated arrivals and transitions, so the
     // pass does not need the level-ordered result, which a caller may already have released.
+    if let Some(lowered) = kept {
+        return BackwardPass::for_table(
+            analysis.graph,
+            lowered,
+            ntags,
+            &ca.endpoints.records,
+            &ca.node_values,
+        );
+    }
+    let mut bp =
+        BackwardPass::seeded_for_table(analysis.graph.num_nodes(), ntags, &ca.endpoints.records);
     let values = ByNode {
         values: &ca.node_values,
         order: analysis.graph.order(),
     };
-    if let Some(lowered) = kept {
-        bp.propagate(analysis.graph, lowered, &values);
-        return bp;
-    }
 
     if let Ok(start_build) = build_start_rows(
         analysis.netview,
@@ -1101,6 +1254,8 @@ fn compute_corner_backward_pass(
             &ca.wire_model,
             u64::MAX,
             analysis.constraints.timing_derate,
+            None,
+            false,
         )
         .expect("the lowering of a validated analysis is deterministic");
         bp.propagate(analysis.graph, &lowered, &values);

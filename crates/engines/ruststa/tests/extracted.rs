@@ -341,10 +341,10 @@ fn extracted_incremental_resize_matches_full() {
 }
 
 fn incremental_resize_matches_full(text: &str) {
-    let input = Arc::new(ParasiticInput {
-        corner: "default".into(),
-        data: spef::read(text, spef::Limits::default()).unwrap(),
-    });
+    let input = Arc::new(ParasiticInput::new(
+        "default",
+        Arc::new(spef::read(text, spef::Limits::default()).unwrap()),
+    ));
     let sdc = "create_clock -name vclk -period 5\nset_input_delay -clock vclk -max 0.2 [get_ports a]\nset_input_delay -clock vclk -min 0.1 [get_ports a]\nset_output_delay -clock vclk -max 0.2 [get_ports y]\nset_output_delay -clock vclk -min 0.1 [get_ports y]\nset_input_transition 0.1 [get_ports a]\nset_load 0.01 [get_ports y]\n";
     let mut session = TimingSession::new(
         design(),
@@ -402,10 +402,10 @@ fn extracted_timing_does_not_depend_on_worker_count() {
     );
     let frozen = g.freeze();
     let options = AnalysisOptions {
-        parasitics: vec![Arc::new(ParasiticInput {
-            corner: "default".into(),
-            data: spef::read(&text, spef::Limits::default()).unwrap(),
-        })],
+        parasitics: vec![Arc::new(ParasiticInput::new(
+            "default",
+            Arc::new(spef::read(&text, spef::Limits::default()).unwrap()),
+        ))],
         max_state_bytes: 1 << 26,
         ..Default::default()
     };
@@ -497,10 +497,10 @@ fn dual_pdk_extracted_incremental_matches_full() {
         .freeze();
         let (sdc, _) = rusteda_formats::sdc::read_str(&bounded("sdc"));
         let corner = case["corner"].as_str().unwrap().to_owned();
-        let input = Arc::new(ParasiticInput {
-            corner: corner.clone(),
-            data: spef::read(&bounded("spef"), spef::Limits::default()).unwrap(),
-        });
+        let input = Arc::new(ParasiticInput::new(
+            corner.clone(),
+            Arc::new(spef::read(&bounded("spef"), spef::Limits::default()).unwrap()),
+        ));
         let original = case["original"].as_str().unwrap().to_owned();
         let mut session = TimingSession::new_multi_corner(
             frozen.thaw().unwrap(),
@@ -538,10 +538,10 @@ fn extracted_cpu_cuda_agree() {
 #[cfg(feature = "cuda")]
 fn cpu_cuda_agree(text: &str) {
     use ruststa::engine::{analysis::EngineAnalysis, prop::lower::BackendKind};
-    let input = Arc::new(ParasiticInput {
-        corner: "default".into(),
-        data: spef::read(text, spef::Limits::default()).unwrap(),
-    });
+    let input = Arc::new(ParasiticInput::new(
+        "default",
+        Arc::new(spef::read(text, spef::Limits::default()).unwrap()),
+    ));
     let options = AnalysisOptions {
         parasitics: vec![input],
         max_state_bytes: 1 << 24,
@@ -591,10 +591,10 @@ fn cpu_cuda_agree(text: &str) {
 fn propagated_clock_is_explicit_and_replaces_ideal_latency() {
     use ruststa::engine::{analysis::EngineAnalysis, prop::clocks::ClockModel, types::ClockId};
     let frozen = design().freeze();
-    let input = Arc::new(ParasiticInput {
-        corner: "default".into(),
-        data: spef::read(&source(), spef::Limits::default()).unwrap(),
-    });
+    let input = Arc::new(ParasiticInput::new(
+        "default",
+        Arc::new(spef::read(&source(), spef::Limits::default()).unwrap()),
+    ));
     let options = AnalysisOptions {
         parasitics: vec![input],
         max_state_bytes: 1 << 24,
@@ -663,10 +663,10 @@ fn propagated_clock_is_explicit_and_replaces_ideal_latency() {
 fn propagated_extracted_cpu_cuda_agree() {
     use ruststa::engine::{analysis::EngineAnalysis, prop::lower::BackendKind};
     let frozen = design().freeze();
-    let input = Arc::new(ParasiticInput {
-        corner: "default".into(),
-        data: spef::read(&source(), spef::Limits::default()).unwrap(),
-    });
+    let input = Arc::new(ParasiticInput::new(
+        "default",
+        Arc::new(spef::read(&source(), spef::Limits::default()).unwrap()),
+    ));
     let options = AnalysisOptions {
         parasitics: vec![input],
         max_state_bytes: 1 << 24,
@@ -705,4 +705,94 @@ fn propagated_extracted_cpu_cuda_agree() {
             }
         }
     }
+}
+
+// STA-REQ-0713, STA-REQ-0723: the propagated clock network is lowered and prepared as a cone
+// (LoweredCorner::lower_cone), but its RC preparation is charged the state and work budgets of
+// the whole graph: for every budget it is rejected exactly when, and with the diagnostic with
+// which, the preparation of the whole graph is.
+#[test]
+fn cone_preparation_is_charged_the_budgets_of_the_whole_graph() {
+    use ruststa::engine::{
+        delay::load::NetLoads,
+        graph::TimingGraph,
+        prop::lower::{ArcTagMaps, GraphStartBuilder, LoweredCorner},
+    };
+    // Two independent buffer stages: the clock `clk -> u -> y` and the data `d -> v -> z`.
+    let mut g = GateNetlist::new("top").unwrap();
+    let buf = g
+        .add_cell_type("wt_buf_1", &[("A", PinDir::Input), ("Y", PinDir::Output)])
+        .unwrap();
+    for (input, output, inst) in [("clk", "y", "u"), ("d", "z", "v")] {
+        g.add_port(input, PortDir::Input, None).unwrap();
+        g.add_port(output, PortDir::Output, None).unwrap();
+        let i = g.add_instance(inst, buf).unwrap();
+        g.connect(i, "A", Conn::Net(g.find_net(input, None).unwrap()))
+            .unwrap();
+        g.connect(i, "Y", Conn::Net(g.find_net(output, None).unwrap()))
+            .unwrap();
+    }
+    let text = [("clk", "y", "u"), ("d", "z", "v")]
+        .iter()
+        .map(|(input, output, inst)| {
+            format!(
+                "*D_NET {input} 0.03\n*CONN\n*P {input} I\n*I {inst}:A I\n*CAP\n1 {input} 0.01\n2 {inst}:A 0.02\n*RES\n1 {input} {inst}:A 2\n*END\n*D_NET {output} 0.04\n*CONN\n*P {output} O\n*I {inst}:Y O\n*CAP\n1 {inst}:Y 0.01\n2 {output} 0.03\n*RES\n1 {inst}:Y {output} 3\n*END\n"
+            )
+        })
+        .collect::<String>();
+    let text = format!(
+        "*SPEF \"ieee 1481-1999\"\n*DESIGN top\n*DIVIDER /\n*DELIMITER :\n*BUS_DELIMITER []\n*T_UNIT 1 NS\n*C_UNIT 1 PF\n*R_UNIT 1 KOHM\n{text}"
+    );
+    let frozen = g.freeze();
+    let libs = std::slice::from_ref(lib());
+    let nv = NetlistView::new(&frozen, libs).unwrap();
+    let tl = TimingLib::from_corner("default", libs).unwrap();
+    let graph = TimingGraph::build(&nv, libs).unwrap();
+    let parsed = spef::read(&text, spef::Limits::default()).unwrap();
+    let model = Spef::bind(&parsed, &nv, &tl, &NetLoadOverrides::default(), 1 << 20).unwrap();
+    let loads = NetLoads::compute(&frozen, &tl, &model, &NetLoadOverrides::default());
+    let clk = (0..nv.num_nodes() as u32)
+        .map(NodeId)
+        .find(|&n| nv.node_name_str(n) == "clk")
+        .unwrap();
+    let starts = || GraphStartBuilder::new(2).build();
+    let full =
+        LoweredCorner::lower(&nv, &graph, &tl, &loads, 2, starts(), &ArcTagMaps::new()).unwrap();
+    let cone = LoweredCorner::lower_cone(
+        &nv,
+        &graph,
+        &tl,
+        &loads,
+        2,
+        starts(),
+        &ArcTagMaps::new(),
+        &[clk],
+    )
+    .unwrap();
+    assert_eq!(full.pruned.arcs(), 0);
+    assert_eq!(
+        cone.csr.in_arcs.len(),
+        3,
+        "the clock stage keeps its three arcs"
+    );
+    assert_eq!(
+        cone.csr.in_arcs.len() as u64 + cone.pruned.arcs(),
+        full.csr.in_arcs.len() as u64
+    );
+    let outcome = |lowered: &LoweredCorner<'_>, budget: u64| {
+        let mut lowered = lowered.clone();
+        lowered
+            .set_wire_values(&graph, &nv, &model, &tl, budget)
+            .map_err(|d| (d.code, d.message))
+    };
+    let mut codes = std::collections::BTreeSet::new();
+    for budget in (0..1 << 15).step_by(8) {
+        let whole = outcome(&full, budget);
+        assert_eq!(outcome(&cone, budget), whole, "budget {budget}");
+        codes.insert(whole.err().map(|(code, _)| code));
+    }
+    // The scan covers both budget rejections and the preparation.
+    assert!(codes.contains(&Some("T0023".into())), "{codes:?}");
+    assert!(codes.contains(&Some("T0078".into())), "{codes:?}");
+    assert!(codes.contains(&None), "{codes:?}");
 }

@@ -91,7 +91,7 @@ on `workspace.lock`, write a compact audit entry to `history.jsonl`, and exit `4
 ```text
 ruststa run -w <WS> --base-rev <REV> [--corner <NAME>]... [--backend cpu|cuda|gpu]
             [--precision f64|f32] [--max-paths <N>] [--max-state-gib <GIB>]
-            [--sta-store full|summary] [--check [--tolerance <NS>]] [-m <TEXT>]
+            [--concurrent-corners] [--sta-store full|summary] [--check [--tolerance <NS>]] [-m <TEXT>]
 ```
 
 | Option | Meaning |
@@ -102,6 +102,7 @@ ruststa run -w <WS> --base-rev <REV> [--corner <NAME>]... [--backend cpu|cuda|gp
 | `--precision f64\|f32` | Floating-point precision of propagation (default `f64`) |
 | `--max-paths <N>` | Number of worst paths included in `top_paths` (default `5`; presentation only) |
 | `--max-state-gib <GIB>` | Limit of the estimated propagation state of one corner (nodes × tags × 160 bytes; default `16`); above it the run stops with `T0023` before allocating |
+| `--concurrent-corners` | Analyze the corners at once already with one worker thread per corner (by default only with two per corner, e.g. `--threads 4` for two corners); the results are the same, the peak memory holds the corners' states together |
 | `--sta-store full\|summary` | `sta.rbin` storage mode (`full`, default, retains per-pin `NODE_REC` and `TAG_EXTRA`; `summary` omits them) |
 | `--check` | Also run the independent checker and commit both `sta` and `sta_check` in the new revision |
 | `--tolerance <NS>` | Slack tolerance in nanoseconds when `--check` is given |

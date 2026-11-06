@@ -59,6 +59,20 @@ pub struct LutBank {
 }
 
 impl LutBank {
+    /// Appends the scalar table `value` of kind `kind`, labelled `construct` in out-of-range
+    /// diagnostics, and returns its id.
+    pub fn add_scalar(&mut self, value: f64, kind: TableKind, construct: &str) -> TableId {
+        let voff = self.data.len() as u32;
+        self.data.push(value);
+        let id = self.luts.len() as TableId;
+        self.luts.push(LutDesc::scalar(voff));
+        self.meta.push(TableMeta {
+            kind,
+            construct: construct.to_string(),
+        });
+        id
+    }
+
     /// Compiles a Liberty [`Table`] into the bank, resolving template variables and default
     /// indices from `templates` when not overridden on the table itself (`STA-REQ-0014`,
     /// `STA-REQ-0108`, `STA-REQ-0114`).

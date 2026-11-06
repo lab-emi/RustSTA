@@ -207,8 +207,8 @@ impl BackwardPass {
                         if s == absent(an_i) || !s.is_finite() {
                             continue;
                         }
-                        let d = if let Some(rec) = lowered.arc_values.get(k) {
-                            rec.delay[(ti * 2 + to) * 2 + an_i]
+                        let d = if let Some(d) = lowered.arc_delay(k, (ti * 2 + to) * 2 + an_i) {
+                            d
                         } else if cls.is_wire() {
                             lowered.wires.get(k).map_or(0.0, |w| w.delay[to * 2 + an_i])
                         } else {
@@ -424,8 +424,9 @@ impl BackwardPass {
                             if s == absent(an_i) || !s.is_finite() {
                                 continue;
                             }
-                            let d = if let Some(rec) = lowered.arc_values.get(k) {
-                                rec.delay[(ti * 2 + to) * 2 + an_i]
+                            let d = if let Some(d) = lowered.arc_delay(k, (ti * 2 + to) * 2 + an_i)
+                            {
+                                d
                             } else if cls.is_wire() {
                                 lowered.wires.get(k).map_or(0.0, |w| w.delay[to * 2 + an_i])
                             } else {

@@ -40,8 +40,9 @@ pub use crate::engine::paths::search::{
     hold_relation_ns, propagate_clock_sense, setup_relation_ns,
 };
 use crate::engine::paths::search::{pulse_width_ns, source_edges};
+use crate::engine::prop::checks::SlackRecord;
 use crate::engine::prop::lower::{
-    BackendKind, IdealSchedule, LoweredCorner, LoweredResult, Precision,
+    BackendKind, IdealSchedule, LoweredCorner, LoweredResult, Precision, TimingValues,
 };
 use crate::engine::types::{An, ClockId, NodeId, TagId, Tr};
 
@@ -293,6 +294,40 @@ impl BackwardPass {
     #[must_use]
     pub fn required_and_slack_only(n_nodes: usize, ntags: usize) -> Self {
         Self::allocate(n_nodes, ntags, true)
+    }
+
+    /// The pass of a timing table over `n_nodes` nodes and `ntags` tags
+    /// ([`Self::required_and_slack_only`]), seeded with the required time of every check record
+    /// of a corner, in record order (`STA-REQ-0227`).
+    #[must_use]
+    pub fn seeded_for_table(n_nodes: usize, ntags: usize, records: &[SlackRecord]) -> Self {
+        let mut bp = Self::required_and_slack_only(n_nodes, ntags);
+        for rec in records {
+            let an = rec.kind.data_bound();
+            bp.seed_required(rec.endpoint, rec.tag.index(), rec.data_tr, an, rec.required);
+        }
+        bp
+    }
+
+    /// The required times and slacks of every pin of a corner as its timing table records them:
+    /// [`Self::seeded_for_table`] with the corner's check `records`, propagated over its lowered
+    /// problem `lowered` with its node-ordered propagation `values` (`STA-REQ-0227`,
+    /// `STA-REQ-0302`). Only what [`LoweredCorner::retain_for_required_times`] keeps is read.
+    #[must_use]
+    pub fn for_table(
+        graph: &TimingGraph,
+        lowered: &LoweredCorner<'_>,
+        ntags: usize,
+        records: &[SlackRecord],
+        values: &TimingValues,
+    ) -> Self {
+        let mut bp = Self::seeded_for_table(graph.num_nodes(), ntags, records);
+        let values = ByNode {
+            values,
+            order: graph.order(),
+        };
+        bp.propagate(graph, lowered, &values);
+        bp
     }
 
     fn allocate(n_nodes: usize, ntags: usize, lean: bool) -> Self {

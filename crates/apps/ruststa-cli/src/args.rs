@@ -485,6 +485,12 @@ pub struct RunArgs {
     #[arg(long = "max-state-gib", default_value_t = 16.0, value_name = "GIB")]
     pub max_state_gib: f64,
 
+    /// Analyze the corners at once already with one worker thread per corner (by default only
+    /// with two per corner); the results are the same, the peak memory holds the states of the
+    /// corners together, within `--max-state-gib` (`STA-REQ-0024`).
+    #[arg(long = "concurrent-corners")]
+    pub concurrent_corners: bool,
+
     /// Rows kept per corner and check kind in the `limits` table; every check is counted
     /// (`STA-REQ-0810`).
     #[arg(

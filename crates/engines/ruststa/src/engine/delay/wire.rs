@@ -462,6 +462,14 @@ impl ResolvedWireModel {
     pub fn is_ideal(&self) -> bool {
         matches!(self, Self::Ideal(_))
     }
+
+    /// Releases the bound values of extracted parasitics ([`super::spef::Spef::release_bound`]);
+    /// the scope stays the same. The other models hold no per-net state worth releasing.
+    pub fn release_bound(&mut self) {
+        if let Self::Extracted(bound) = self {
+            bound.release_bound();
+        }
+    }
 }
 
 impl WireModel for ResolvedWireModel {

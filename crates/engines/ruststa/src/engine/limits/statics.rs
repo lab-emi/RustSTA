@@ -352,6 +352,7 @@ pub fn static_transitions(
                             to,
                             late,
                             d_in[ti],
+                            None,
                         ) {
                             Ok(v) => (v.slew, v.drive),
                             Err(_) => continue,
