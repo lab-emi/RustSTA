@@ -1,5 +1,32 @@
 # RC waveform acceptance
 
+The current output-charge kernel separates the full linearized NLDM interval
+used to reduce the load from the subsequently fitted driving-source ramp
+(STA-REQ-0733, STA-REQ-0734). The former one-step API and its historical evidence
+below are retained. In the IHP/EZ campaign, the new kernel preserves all 12
+weak/ideal controls (332 values, maximum 0.506 ps) and the three original baseline
+libraries' 128-resize incremental/full controls. A further 128 resizes per library
+exercise a 10 kOhm / 2+20 fF pi under global 0.95/1.05 derates.
+
+Thirteen held-out original-library scalar cases, freshly run on both edges
+(26 arcs), reduce the maximum strong-pi raw-delay difference from 23.9 ps to
+0.614 ps. Three GF slew comparisons still exceed 1 ps (1.255, 1.394 and
+1.707 ps). Separate Ngspice controls verify the specified
+linear RC waveform to about 0.0013 ps; they do not characterize the original
+transistors. A fresh 141-point smooth-resistance synthetic control observes a
+1.057 ps reference slew step where the f64 model changes by 0.0057 ps. Such
+reference approximations are recorded, not copied into cell-specific corrections.
+Full Ref18/Ref20 original-SDC, TT/SS, CPPR-off and same-SPEF comparisons remain
+failed at 1.155/1.256 ps on their worst setup value. These are diagnostic designs,
+not a qualified two-source RTL2GDS signoff or benchmark. The unchanged 1 ps gate
+must pass on the final full extracted configuration.
+
+`rusteda-compute/tests/rc_transient.rs` also has a distinct
+`simulator_output_charge_interval_and_waveform` external test. It simulates both
+the charge-reduction experiment and the independently fitted source circuit,
+with explicit work/time/memory bounds. Its charge and waveform errors are
+separate from the original-library STA comparisons.
+
 Version 0.3 uses a three-moment passive pi, a charge-matched finite-ramp
 Thevenin driver and per-sink threshold/slew propagation; version 0.4.2 takes the
 effective capacitance from one Newton-Raphson correction of that driver and drives

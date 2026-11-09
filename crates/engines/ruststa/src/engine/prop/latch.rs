@@ -450,11 +450,81 @@ pub fn lower_corner<'l>(
     wire_model: &dyn WireModel,
     max_state_bytes: u64,
 ) -> Result<LoweredCorner<'l>, Diag> {
+    lower_corner_with_derates(
+        netview,
+        graph,
+        lib,
+        net_loads,
+        ntags,
+        starts,
+        launch_slews,
+        launch_drives,
+        latch_maps,
+        wire_model,
+        max_state_bytes,
+        Default::default(),
+    )
+}
+
+/// Lowers the timing graph including global early/late cell and net delay factors.
+pub fn lower_corner_with_derates<'l>(
+    netview: &NetlistView<'_>,
+    graph: &TimingGraph,
+    lib: &'l TimingLib,
+    net_loads: &NetLoads,
+    ntags: u32,
+    starts: rusteda_compute::timing::StartRows,
+    launch_slews: &FxHashMap<NodeId, [f64; 4]>,
+    launch_drives: &FxHashMap<NodeId, [Option<(f64, f64)>; 4]>,
+    latch_maps: &ArcTagMaps,
+    wire_model: &dyn WireModel,
+    max_state_bytes: u64,
+    derates: crate::engine::delay::derate::TimingDerate,
+) -> Result<LoweredCorner<'l>, Diag> {
+    lower_corner_with_derates_observed(
+        netview,
+        graph,
+        lib,
+        net_loads,
+        ntags,
+        starts,
+        launch_slews,
+        launch_drives,
+        latch_maps,
+        wire_model,
+        max_state_bytes,
+        derates,
+        false,
+    )
+}
+
+/// The private diagnostic checkout's explicitly selected normal-analysis data lowering.
+/// Generic storage reconstruction and incremental callers retain the unobserved wrapper.
+pub(crate) fn lower_corner_with_derates_observed<'l>(
+    netview: &NetlistView<'_>,
+    graph: &TimingGraph,
+    lib: &'l TimingLib,
+    net_loads: &NetLoads,
+    ntags: u32,
+    starts: rusteda_compute::timing::StartRows,
+    launch_slews: &FxHashMap<NodeId, [f64; 4]>,
+    launch_drives: &FxHashMap<NodeId, [Option<(f64, f64)>; 4]>,
+    latch_maps: &ArcTagMaps,
+    wire_model: &dyn WireModel,
+    max_state_bytes: u64,
+    derates: crate::engine::delay::derate::TimingDerate,
+    diagnostic_data_phase: bool,
+) -> Result<LoweredCorner<'l>, Diag> {
     let mut lowered =
         LoweredCorner::lower(netview, graph, lib, net_loads, ntags, starts, latch_maps)?;
     pin_latch_gq_slews(graph, launch_slews, &mut lowered);
     lowered.start_drives = launch_drives.clone();
-    lowered.set_wire_model(graph, netview, wire_model, lib, max_state_bytes)?;
+    lowered.derates = derates;
+    if diagnostic_data_phase {
+        lowered.set_wire_model_diagnostic_data(graph, netview, wire_model, lib, max_state_bytes)?;
+    } else {
+        lowered.set_wire_model(graph, netview, wire_model, lib, max_state_bytes)?;
+    }
     Ok(lowered)
 }
 

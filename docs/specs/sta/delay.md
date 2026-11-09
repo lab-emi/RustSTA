@@ -78,8 +78,11 @@ maximum instead. Port loads (`set_load`) are added: the `-max` value in the late
 output-pin capacitances (STA-REQ-0121) and wire-model capacitances (STA-REQ-0122 to 0125) are added
 to form the total net capacitance `C_net`.
 
-**STA-REQ-0111** In the `Ideal` and `WireloadLumped` wire models, net arcs have zero delay and copy
-transitions (`slew[driver][tr][an]`) unchanged from the driver to each load pin.
+**STA-REQ-0111** In the `Ideal` and `WireloadLumped` wire models, net arcs have no
+physical RC delay. Equal waveform conventions copy transitions unchanged. Differing
+library conventions convert the slew interval and its library derate, and shift the
+arrival reference from the source output threshold to the destination input threshold
+(STA-REQ-0016).
 
 **STA-REQ-0112** A cell arc with sense `positive_unate` maps an input rise to an output rise and a
 fall to a fall; `negative_unate` maps rise to fall and fall to rise; `non_unate` maps each input

@@ -176,6 +176,8 @@ pub struct LoweredCorner<'a> {
     pub luts: CompiledLutBank<'a>,
     /// Number of propagation tags `T >= 1`.
     pub ntags: u32,
+    /// Global early/late delay factors, shared by all propagation backends.
+    pub derates: crate::engine::delay::derate::TimingDerate,
     /// Per level-ordered node capacitive loads `[Rise/Early, Rise/Late, Fall/Early, Fall/Late]` in pF.
     pub load: Vec<[f64; 4]>,
     /// Startpoint rows in level-ordered node coordinates.
@@ -344,6 +346,7 @@ impl<'a> LoweredCorner<'a> {
             graph_arc_to_csr_arc,
             luts,
             ntags,
+            derates: Default::default(),
             load,
             starts,
             wires: Vec::new(),
@@ -395,7 +398,22 @@ impl<'a> LoweredCorner<'a> {
         lib: &TimingLib,
         max_bytes: u64,
     ) -> Result<(), Diag> {
-        rc::prepare(self, graph, view, wire, lib, max_bytes)
+        rc::prepare(self, graph, view, wire, lib, max_bytes, false)
+    }
+
+    /// The final data preparation with the private diagnostic observer enabled.
+    ///
+    /// This entry is confined to the independent two-pin diagnostic checkout. Clock waveform
+    /// iterations retain `set_wire_model`, so the observation cannot precede the data seeds.
+    pub(crate) fn set_wire_model_diagnostic_data(
+        &mut self,
+        graph: &TimingGraph,
+        view: &NetlistView<'_>,
+        wire: &dyn WireModel,
+        lib: &TimingLib,
+        max_bytes: u64,
+    ) -> Result<(), Diag> {
+        rc::prepare(self, graph, view, wire, lib, max_bytes, true)
     }
 
     /// Borrows this lowered corner as a [`TimingProblem`] for `rusteda_compute::timing`.

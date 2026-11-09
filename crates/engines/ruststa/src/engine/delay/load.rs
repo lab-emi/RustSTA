@@ -6,7 +6,7 @@
 //! Engine section B. The load of a net is the sum, in `NET_PINS` order, of the capacitances of
 //! its load pins (rise or fall, early or late), the output-pin capacitance of every driver, the
 //! `set_load -pin_load` and `-wire_load` values, and the wire capacitance that the wire model
-//! ([`WireModel`](super::wire::WireModel)) adds.
+//! ([`WireModel`]) adds.
 
 use rustc_hash::FxHashMap;
 use rusteda_core::netlist::FrozenNetlist;

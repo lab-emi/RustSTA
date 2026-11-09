@@ -184,7 +184,7 @@ fn exceptions_change_the_checks_they_name() {
 }
 
 // STA-REQ-0150, STA-REQ-0159, STA-REQ-0157, STA-REQ-0271: case analysis disables the arcs it
-// controls in `ruststa run` and leaves endpoints without data arrival; together with all
+// controls in `ruststa run` and proves constant endpoints disabled; together with all
 // exceptions the independent checker still agrees.
 #[test]
 fn case_analysis_and_exceptions_together() {
@@ -200,7 +200,7 @@ fn case_analysis_and_exceptions_together() {
     let (_, run) = run_and_check(&dir, &sdc_text);
     assert!(run["completeness"]["disabled_arcs"].as_u64().expect("arcs") > 0);
     assert_eq!(
-        run["completeness"]["unconstrained_by_reason"]["no_data_arrival"],
+        run["completeness"]["unconstrained_by_reason"]["disabled"],
         1
     );
     let _ = fs::remove_dir_all(dir);

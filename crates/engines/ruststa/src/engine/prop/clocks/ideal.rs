@@ -3,7 +3,7 @@
 
 //! Ideal clocks (owner: E5).
 //!
-//! Engine section C. The [`ClockModel`](super::ClockModel) of Phase 2a: a clock edge reaches every
+//! Engine section C. The [`ClockModel`] of Phase 2a: a clock edge reaches every
 //! pin of its clock network at the edge's waveform time plus the clock's source and network
 //! latency (`set_clock_latency`), with the clock's ideal transition (`set_clock_transition`). The
 //! transition at a pin follows the sense of the clock network from the clock source to the pin.

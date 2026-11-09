@@ -20,7 +20,6 @@ use rusteda_core::job::{Ctx, Diag, Event};
 use rusteda_core::liberty::{Direction, Library};
 
 use crate::engine::analysis::{CornerAnalysis, EngineAnalysis};
-use crate::engine::delay::derate::NoDerate;
 use crate::engine::graph::{CheckKind, DisableReason, TimingGraph};
 use crate::engine::input::NetlistView;
 use crate::engine::input::constr::CompiledConstraints;
@@ -30,7 +29,7 @@ use crate::engine::prop::backward::{BackwardPass, ByNode};
 use crate::engine::prop::checks::{EndpointCheckKind, SlackRecord};
 use crate::engine::prop::clocks::ClockModel;
 use crate::engine::prop::endpoints::EndpointStatus;
-use crate::engine::prop::latch::lower_corner;
+use crate::engine::prop::latch::lower_corner_with_derates;
 use crate::engine::prop::lower::LoweredCorner;
 use crate::engine::prop::starts::build_start_rows;
 use crate::engine::store::{
@@ -956,6 +955,12 @@ pub fn build_store_with_ctx(
         precision,
         store_mode,
         exceptions_applied,
+        global_timing_derate: (!analysis.constraints.timing_derate.is_identity()).then(|| {
+            [
+                analysis.constraints.timing_derate.for_bound(An::Early),
+                analysis.constraints.timing_derate.for_bound(An::Late),
+            ]
+        }),
         completeness: CompletenessReport {
             analyzed_endpoints: n_endpoints,
             unconstrained_endpoints: unconstrained.len(),
@@ -1079,11 +1084,11 @@ fn compute_corner_backward_pass(
         &ca.tags,
         &ca.exceptions,
         &ca.net_loads,
-        &NoDerate,
+        &analysis.constraints.timing_derate,
     ) {
         // The same graph, starts and RC data passed analysis preflight already; the lowering is
         // the analysis's own (`lower_corner`), so the arc values equal those of a kept problem.
-        let lowered = lower_corner(
+        let lowered = lower_corner_with_derates(
             analysis.netview,
             analysis.graph,
             &ca.lib,
@@ -1095,6 +1100,7 @@ fn compute_corner_backward_pass(
             &ca.latch_maps,
             &ca.wire_model,
             u64::MAX,
+            analysis.constraints.timing_derate,
         )
         .expect("the lowering of a validated analysis is deterministic");
         bp.propagate(analysis.graph, &lowered, &values);

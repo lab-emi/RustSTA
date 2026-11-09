@@ -1006,7 +1006,8 @@ set_output_delay -clock clk 0.3 [get_ports y]
     assert_eq!(status_of("y"), EndpointStatus::Constrained);
     assert_eq!(status_of("r3/D"), EndpointStatus::Unclocked);
     assert_eq!(status_of("r4/D"), EndpointStatus::NoArrival);
-    assert_eq!(status_of("r5/D"), EndpointStatus::NoArrival);
+    // A proved tie-cell value is disabled, while the unannotated input r4/D remains a gap.
+    assert_eq!(status_of("r5/D"), EndpointStatus::Disabled);
     assert_eq!(status_of("z"), EndpointStatus::UnconstrainedOutput);
 
     let summary = &analysis.sta_summary;
@@ -1014,9 +1015,9 @@ set_output_delay -clock clk 0.3 [get_ports y]
     assert_eq!(summary.unconstrained_endpoints, 4);
     let unc = &analysis.completeness.unconstrained_endpoints;
     assert_eq!(unc.unclocked, 1);
-    assert_eq!(unc.no_arrival, 2);
+    assert_eq!(unc.no_arrival, 1);
     assert_eq!(unc.unconstrained_output, 1);
-    assert_eq!(unc.disabled, 0);
+    assert_eq!(unc.disabled, 1);
 
     // Also verify Disabled status when check arcs on r2 are disabled via set_disable_timing.
     let sdc_dis = format!("{sdc}set_disable_timing [get_cells r2]\n");
@@ -1029,7 +1030,7 @@ set_output_delay -clock clk 0.3 [get_ports y]
     assert_eq!(r2_ep.status, EndpointStatus::Disabled);
     assert_eq!(
         analysis_dis.completeness.unconstrained_endpoints.disabled,
-        1
+        2
     );
 }
 
