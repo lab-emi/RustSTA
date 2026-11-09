@@ -79,11 +79,15 @@ corner.
 `input_threshold_pct_fall`, `output_threshold_pct_rise`, `output_threshold_pct_fall`,
 `slew_lower_threshold_pct_rise`, `slew_lower_threshold_pct_fall`, `slew_upper_threshold_pct_rise`,
 `slew_upper_threshold_pct_fall` and `slew_derate_from_library` (default `1.0`). They are recorded in
-the corner metadata; libraries combined in the same corner must agree on these attributes (a
-mismatch within one corner is a T error). In the lumped NLDM delay model (`Ideal` and
-`WireloadLumped`), delay, transition and constraint tables are already characterised in library slew
-units and are evaluated without scaling by `slew_derate_from_library` (`slew_derate_from_library`
-and trip-point thresholds apply only to RC interconnect slew degradation in Phase 2b).
+each cell's metadata. Valid libraries combined in one corner may differ; a malformed
+threshold interval or nonpositive slew derate is a T0013 error. The first library defines
+the top-level port convention. Cell delay, transition and constraint tables retain their
+original library units. A net converts slew between the driver's and receiver's intervals
+and derates; its arrival reference changes between their output/input thresholds.
+The extracted solver retains the source waveform convention for slew, then converts
+the resulting abstract transition to the receiving library. Delay uses the
+receiver input threshold on that waveform. No PDK file is
+rewritten to normalize these conventions.
 
 ## Constraints
 
@@ -92,7 +96,8 @@ include `create_clock`, `set_input_delay`, `set_output_delay`, `set_load`, `set_
 `set_driving_cell`, `set_clock_uncertainty`, `set_clock_latency`, `set_clock_transition`,
 `set_case_analysis`, `set_logic_zero`, `set_logic_one`, `set_disable_timing`, `set_false_path`,
 `set_multicycle_path`, `set_max_delay`, `set_min_delay`, `set_clock_groups`, `set_max_time_borrow`,
-`set_wire_load_model`, `set_wire_load_mode`, `group_path`, `set_units`, and design-rule commands,
+`set_wire_load_model`, `set_wire_load_mode`, `group_path`, `set_units`, global early/late
+`set_timing_derate`, and design-rule commands,
 together with the object queries `get_ports`, `get_pins`, `get_cells`, `get_nets`, `get_clocks`,
 `all_inputs`, `all_outputs`, `all_clocks`, `all_registers` and `current_design`. Unsupported
 commands are reported with diagnostic codes so that no constraint is silently ignored.
@@ -107,3 +112,11 @@ an edge-triggered delay with warning `T0041`; `set_load -subtract_pin_load` is a
 load with warning `T0042`; and `set_operating_conditions` with `-min`, `-max`, `-min_library`,
 `-max_library` or `-analysis_type bc_wc|on_chip_variation` gets warning `T0043`, each corner being
 analysed with its own libraries.
+
+
+Global `set_timing_derate -early` / `-late` factors scale cell and net delay,
+including driving-cell and propagated-clock delays. They do not scale transition
+times or setup/hold/recovery/removal constraints. The factors are positive finite
+values; command order replaces each selected factor. Unsupported object, edge,
+clock/data-only, check, dynamic and incremental scopes fail explicitly. The SCOPE
+record includes nonidentity factors in `global_timing_derate` order [early, late].

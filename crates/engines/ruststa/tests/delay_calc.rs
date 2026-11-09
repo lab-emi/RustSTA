@@ -1074,33 +1074,18 @@ endmodule
     }
 }
 
-// STA-REQ-0010, STA-REQ-0016: duplicate cell definition in a corner (`T0012`) and differing
-// thresholds within one corner (`T0013`) are rejected with errors.
+// Duplicate cell definitions and invalid threshold metadata fail; valid mixed libraries are supported.
 #[test]
-fn duplicate_cell_and_threshold_mismatch_errors() {
-    let text_15 = library(Variant::Wt15);
-    let text_thr = library(Variant::Thresholds);
-
-    let err_dup = TimingLib::from_liberty_texts("nom", &[("a.lib", &text_15), ("b.lib", &text_15)])
-        .unwrap_err();
-    assert_eq!(err_dup.code, "T0012");
-    assert!(
-        err_dup.message.contains("defined more than once"),
-        "{}",
-        err_dup.message
-    );
-
-    let err_thr = TimingLib::from_liberty_texts(
-        "nom",
-        &[("wt_15.lib", &text_15), ("wt_thresholds.lib", &text_thr)],
-    )
-    .unwrap_err();
-    assert_eq!(err_thr.code, "T0013");
-    assert!(
-        err_thr.message.contains("slew_derate_from_library"),
-        "{}",
-        err_thr.message
-    );
+fn duplicate_cell_and_invalid_threshold_errors() {
+    let text = library(Variant::Wt15);
+    let err =
+        TimingLib::from_liberty_texts("nom", &[("a.lib", &text), ("b.lib", &text)]).unwrap_err();
+    assert_eq!(err.code, "T0012");
+    let lib = read_text(&text, "a.lib").unwrap();
+    let mut invalid = CornerThresholds::from_library(&lib);
+    invalid.slew_derate_from_library = 0.0;
+    let err = TimingLib::from_corner_with_thresholds("nom", &[(&lib, invalid)]).unwrap_err();
+    assert_eq!(err.code, "T0013");
 }
 
 // STA-REQ-0015, STA-REQ-0120: aggregated warnings for unanalyzed arcs (`T0015`, once per type)

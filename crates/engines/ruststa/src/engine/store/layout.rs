@@ -869,6 +869,9 @@ pub struct ScopeReport {
     pub precision: StorePrecision,
     pub store_mode: StoreMode,
     pub exceptions_applied: Vec<String>,
+    /// Global static early/late cell and net delay factors, absent for identity derating.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub global_timing_derate: Option<[f64; 2]>,
     pub completeness: CompletenessReport,
     /// The counts of the pin limit checks of each corner, in corner order; absent in a table
     /// whose analysis did not check limits (`STA-REQ-0807`).

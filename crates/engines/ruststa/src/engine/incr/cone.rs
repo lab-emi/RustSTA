@@ -4,7 +4,7 @@
 //! Forward and backward cone propagation with bitwise change detection (`owner: E11`;
 //! `STA-REQ-0452` to `STA-REQ-0455`).
 //!
-//! Maps timing state across [`GateNetlist`] or [`FrozenNetlist`] edits in canonical `freeze()`
+//! Maps timing state across [`GateNetlist`] or [`rusteda_core::netlist::FrozenNetlist`] edits in canonical `freeze()`
 //! node order, seeds the level-ordered forward cone (`Scope::Cone` in `rusteda_compute::timing`),
 //! and propagates per-tag required times backward in reverse level order with bitwise
 //! (`to_bits() == to_bits()`) change cutoffs so that every value is bitwise identical to a full

@@ -537,6 +537,8 @@ fn propagated_clock_is_explicit_and_replaces_ideal_latency() {
     session.swap_cell_by_name("u", "wt_buf_2").unwrap();
     session.verify_against_full().unwrap();
     let driving = format!("{sdc}\nset_driving_cell -lib_cell wt_buf_1 [get_ports a]\n");
+    // This synthetic cell has zero load sensitivity: it cannot fit a finite
+    // Thevenin driver into a resistive pi. Fail with a structured diagnostic.
     let rejected = EngineAnalysis::analyze_single_corner(
         &frozen,
         std::slice::from_ref(lib()),
