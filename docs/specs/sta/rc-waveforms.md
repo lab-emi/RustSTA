@@ -7,7 +7,38 @@ Cfar=B*B/C, Rpi=C*C/(-B*B*B), Cnear=A-Cfar; degenerate resistance gives A lumped
 Include physical Liberty/port capacitance before moments; reject overflow and
 nonpassive reductions. No topology or capacitance is discarded to meet a gate.
 
-**STA-REQ-0728**: Fit a finite-ramp Thevenin driver to NLDM's lower and
+**STA-REQ-0733**: Select the effective capacitance by a bounded, f64 charge
+experiment over the full linearized NLDM output transition. For a candidate C,
+let Tq = s(C)*derate/(upper-lower). Drive both the physical pi and a single
+capacitance C through the same Thevenin resistance with a unit ramp of duration
+Tq. Solve [C*Vnominal(Tq) - Cnear*Vroot(Tq) - Cfar*Vfar(Tq)]/Ctotal = 0 inside
+[Cnear,Ctotal]. Then independently fit the actual source duration Tf at the
+resulting Ceff to the lower/delay trip-point interval, as in STA-REQ-0728. Lookup
+the cell delay at Ceff; propagate the physical pi-root waveform of Tf to the
+wires. Tq is a load-reduction experiment and Tf is the fitted driving waveform:
+they are distinct. Do not assert a zero charge residual at Tf. The resistance
+proxy and the lumped regime of STA-REQ-0727 are unchanged. There are no library-
+name branches, measured-cell correction constants or fitted reference offsets.
+This replaces the one-step capacitance selection of STA-REQ-0728; that public
+kernel remains available for compatibility and historical controls.
+
+**STA-REQ-0734**: Bound the scalar charge solve by 64 iterations, 512 NLDM
+callback evaluations and eight residual-decreasing Newton line-search trials
+per iteration, followed by bracketed bisection when the Newton trial is unusable.
+The constant scalar workspace has a conservative 512-byte admission minimum;
+the default allowance is 4096 bytes and no per-iteration collection is allocated.
+Reject an unbracketed/nonfinite model, reciprocal normalized derivative above
+1e12, exhausted work, normalized charge residual above 1e-12 or estimated
+relative capacitance error above 1e-11. The public compute Budget permits tighter
+resource bounds and has finite absolute ceilings. Preserve the independent,
+bounded duration and voltage-crossing solvers. Include the new worst-case callback
+and ramp work in the per-job preflight before arc allocation. Validate original
+Sky130, GF180 7T/9T and IHP/EZ libraries, incremental/full equality, external
+transient circuits and unchanged 0.001 ns reference gates. A reference mismatch
+is a failed gate even when setup/hold slack is positive; model-equation agreement
+is not transistor-level or complete-flow qualification.
+
+**STA-REQ-0728 (historical one-step kernel)**: Fit a finite-ramp Thevenin driver to NLDM's lower and
 output-delay trip-point times and take its effective capacitance from one
 Newton-Raphson correction (replaces STA-REQ-0726). The resistance proxy is unchanged: the forward
 NLDM delay/load sensitivity over 1 fF above the total pi load, `(d(Ctotal + 1 fF) - d(Ctotal)) /
@@ -44,14 +75,14 @@ characterized table transition of a lumped load (3 to 5 % below it on the defaul
 PDK cells), and below this ratio the external nodal transient of the pi and of its
 lumped total coincide to 1e-4 of the transition, so the characterization replaces
 the fit. The comparison is per arc and output transition (rise and fall have
-separate resistances). Above the ratio the one-step capacitance of STA-REQ-0728 applies;
+separate resistances). Above the ratio the charge selection of STA-REQ-0733 applies;
 the transition is discontinuous at the ratio, as observed of a reference timing
 tool, whose reported effective capacitance equals the total there.
 
 **STA-REQ-0729**: Interconnect delay and transition per sink (replaces STA-REQ-0722). When the
 transition at the driver pin was set by a cell arc into the net's pi load outside the lumped
 regime (STA-REQ-0728, STA-REQ-0727, clock-to-output launches included), the sink voltage is that
-driver's pi root response (its resistance and refitted source ramp) through a single pole of the
+driver's pi root response (its resistance and independently fitted source ramp) through a single pole of the
 sink's first moment: for root poles a, b with weight w and sink moment tau, the sink response is
 w*H(a,tau) + (1-w)*H(b,tau), with H the ramp response of two cascaded poles (the equal-pole limit
 within a relative 1e-6). The delay runs from the root's output trip point to the sink's input

@@ -14,7 +14,8 @@ pub(super) fn prepare(
     lib: &TimingLib,
     max_bytes: u64,
 ) -> Result<(), Diag> {
-    if wire.scope_name() != "spef_rc" {
+    let extracted = wire.scope_name() == "spef_rc";
+    if !extracted && !lib.has_mixed_thresholds() && lowered.derates.is_identity() {
         return Ok(());
     }
     let n = lowered.csr.nodes();
@@ -26,15 +27,19 @@ pub(super) fn prepare(
         return Err(Diag::error("T0023", "RC arc state budget exceeded"));
     }
     let mut work = 0u64;
+    let charge_evaluations = rc::charge::Budget::default().max_evaluations as u64;
     for a in lowered.csr.in_arcs.iter() {
         let cls = lowered.luts.classes[a.class as usize];
         // A wire: three bracketed sink crossings (64 doublings, 100 bisections, two cascades
-        // each) and one root crossing (STA-REQ-0729); a cell arc: the one-step correction with
-        // one duration fit (56 x 48) and three root crossings (STA-REQ-0728).
-        let evaluations = if cls.is_wire() {
+        // each) and one root crossing (STA-REQ-0729); a cell arc: bounded charge callback work
+        // (two table + five ramp evaluations each), one duration fit and three root crossings.
+        // STA-REQ-0733, STA-REQ-0734. Keep the per-job work rejection before allocation.
+        let evaluations = if !extracted {
+            1
+        } else if cls.is_wire() {
             3 * (64 + 100) * 2 + 80
         } else {
-            56 * 48 * 2 + 3 * 80 + 4
+            7 * charge_evaluations + 56 * 48 * 2 + 3 * 80
         };
         for ti in 0..2 {
             for to in 0..2 {
@@ -99,7 +104,8 @@ pub(super) fn prepare(
                         }
                         let j = (ti * 2 + to) * 2 + an;
                         let q = value.slew;
-                        lowered.arc_values[k].delay[j] = value.delay;
+                        lowered.arc_values[k].delay[j] =
+                            value.delay * lowered.derates.for_bound(An::ALL[an]);
                         lowered.arc_values[k].slew[j] = q;
                         let dst = &mut slews[v][to * 2 + an];
                         if an == 0 && q < *dst || an == 1 && q > *dst {
@@ -150,24 +156,39 @@ pub(crate) fn arc_value(
     an: usize,
     drive: Option<(f64, f64)>,
 ) -> Result<RcArcValue, Diag> {
-    let t = lib.thresholds.rc(to == 1);
     let (tr, bound) = (Tr::ALL[to], An::ALL[an]);
     if let ArcKind::Net { net } = raw.kind {
+        let source = lib.node_thresholds(view, raw.src);
+        let destination = lib.node_thresholds(view, raw.dst);
+        let converted_slew = source.convert_slew(destination, s, to == 1);
+        if wire.scope_name() != "spef_rc" {
+            let value = wire.load_delay(net, raw.dst, tr, bound, converted_slew);
+            return Ok(RcArcValue {
+                delay: value.delay + source.net_reference_shift(destination, s, to == 1),
+                slew: value.slew,
+                tau: None,
+                drive: None,
+            });
+        }
+        // RC keeps the driver waveform's slew convention. NLDM presents its
+        // resulting abstract slew to the receiving library by interval/derate
+        // conversion; remeasuring a curved RC waveform at the receiver's slew
+        // thresholds would change the characterized-ramp model at a boundary.
+        let mut t = source.rc(to == 1);
+        t.input = destination.rc(to == 1).input;
         let tau = wire
             .elmore(raw.dst, tr, bound)
             .ok_or_else(|| Diag::error("T0077", "extracted first moment absent"))?;
         let primary = wire.primary_input(net);
         let pi = match (drive, wire.physical_load(net, tr, bound)) {
-            (Some(drive), Some(DriverLoad::Pi { c_near, c_far, r })) if !primary && r > 0.0 => {
-                Some((
-                    drive,
-                    Pi {
-                        near: c_near,
-                        far: c_far,
-                        resistance: r,
-                    },
-                ))
-            }
+            (Some(drive), Some(DriverLoad::Pi { c_near, c_far, r })) if r > 0.0 => Some((
+                drive,
+                Pi {
+                    near: c_near,
+                    far: c_far,
+                    resistance: r,
+                },
+            )),
             _ => None,
         };
         let (d, q) = match pi {
@@ -177,11 +198,12 @@ pub(crate) fn arc_value(
         .map_err(|e| Diag::error("T0077", e.to_string()))?;
         return Ok(RcArcValue {
             delay: d,
-            slew: q,
+            slew: source.convert_slew(destination, q, to == 1),
             tau: Some(tau),
             drive: None,
         });
     }
+    let t = lib.node_thresholds(view, raw.dst).rc(to == 1);
     let load = match view.node_net(raw.dst) {
         NetTarget::Net(net) => wire.physical_load(net, tr, bound),
         _ => None,

@@ -890,6 +890,7 @@ fn build_synthetic_scale_store(n_cells: usize) -> StaStoreData {
     }];
 
     let scope = ScopeReport {
+        global_timing_derate: None,
         top: String::from("top"),
         corners: vec![String::from("default")],
         wire_model: String::from("ideal"),

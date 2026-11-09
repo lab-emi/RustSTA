@@ -981,6 +981,7 @@ pub fn build_sta_store(
         precision: options.precision,
         store_mode: options.store_mode,
         exceptions_applied: Vec::new(),
+        global_timing_derate: None,
         completeness: CompletenessReport {
             analyzed_endpoints: n_endpoints,
             unconstrained_endpoints: unconstrained.len(),

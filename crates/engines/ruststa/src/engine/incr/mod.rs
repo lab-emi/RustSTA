@@ -82,6 +82,7 @@ pub fn into_owned_lowered(lowered: LoweredCorner<'_>) -> LoweredCorner<'static> 
             data: Cow::Owned(lowered.luts.data.into_owned()),
         },
         ntags: lowered.ntags,
+        derates: lowered.derates,
         load: lowered.load,
         starts: lowered.starts,
         wires: lowered.wires,
