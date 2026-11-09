@@ -176,6 +176,8 @@ pub struct LoweredCorner<'a> {
     pub luts: CompiledLutBank<'a>,
     /// Number of propagation tags `T >= 1`.
     pub ntags: u32,
+    /// Global early/late delay factors, shared by all propagation backends.
+    pub derates: crate::engine::delay::derate::TimingDerate,
     /// Per level-ordered node capacitive loads `[Rise/Early, Rise/Late, Fall/Early, Fall/Late]` in pF.
     pub load: Vec<[f64; 4]>,
     /// Startpoint rows in level-ordered node coordinates.
@@ -344,6 +346,7 @@ impl<'a> LoweredCorner<'a> {
             graph_arc_to_csr_arc,
             luts,
             ntags,
+            derates: Default::default(),
             load,
             starts,
             wires: Vec::new(),

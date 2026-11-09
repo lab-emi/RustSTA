@@ -22,7 +22,6 @@ use rusteda_core::liberty::Library;
 use rusteda_core::netlist::FrozenNetlist;
 use rusteda_formats::sdc::AnalysisType;
 
-use crate::engine::delay::derate::NoDerate;
 use crate::engine::delay::load::{NetLoadOverrides, NetLoads};
 use crate::engine::delay::lut::RangeTracker;
 use crate::engine::delay::wire::{Ideal, ResolvedWireModel, WireloadConfig};
@@ -43,7 +42,7 @@ use crate::engine::prop::cppr::NoCppr;
 use crate::engine::prop::endpoints::{CornerEndpoints, EndpointRecord};
 use crate::engine::prop::exceptions::ExceptionContext;
 use crate::engine::prop::gating::{ClockGatingSite, discover_gating_sites};
-use crate::engine::prop::latch::{build_latch_tag_maps, lower_corner};
+use crate::engine::prop::latch::{build_latch_tag_maps, lower_corner_with_derates};
 use crate::engine::prop::lower::{
     self, ArcTagMaps, BackendKind, LoweredCorner, LoweredResult, Precision, TimingValues,
 };
@@ -751,12 +750,6 @@ fn setup_corner<'l>(
         wire_model.is_ideal() || corner_rc.is_some(),
     );
     if let Some(input) = corner_rc {
-        if !constraints.driving_cells.is_empty() {
-            return Err(Diag::error(
-                "T0077",
-                "set_driving_cell is unsupported in extracted waveform mode; use port transition annotations",
-            ));
-        }
         if options.wire_model != WireModelOption::Auto {
             return Err(Diag::error(
                 "T0070",
@@ -819,11 +812,16 @@ fn setup_corner<'l>(
             .saturating_add(options.parasitics.iter().fold(0u64, |n, p| {
                 n.saturating_add(p.data.estimated_state_bytes())
             }))
-            .saturating_add(if corner_rc.is_some() {
-                graph.arcs().len() as u64 * 192
-            } else {
-                0
-            });
+            .saturating_add(
+                if corner_rc.is_some()
+                    || lib.has_mixed_thresholds()
+                    || !constraints.timing_derate.is_identity()
+                {
+                    graph.arcs().len() as u64 * 192 + graph.num_nodes() as u64 * 128
+                } else {
+                    0
+                },
+            );
     if state_bytes > options.max_state_bytes {
         let gib = |b: u64| b as f64 / f64::from(1u32 << 30);
         return Err(Diag::error(
@@ -850,7 +848,7 @@ fn setup_corner<'l>(
         &tags,
         &exceptions,
         &net_loads,
-        &NoDerate,
+        &constraints.timing_derate,
     )?;
 
     // 6. Build latch `D -> Q` tag-mapping records (`STA-REQ-0221`, `STA-REQ-0222`).
@@ -866,7 +864,7 @@ fn setup_corner<'l>(
     // 7. Lower onto `rusteda_compute::timing` and pin latch `G -> Q` slews (`STA-REQ-0222`,
     // `STA-REQ-0401`).
     let ntags = tags.len().max(1) as u32;
-    let lowered = lower_corner(
+    let lowered = lower_corner_with_derates(
         netview,
         graph,
         lib,
@@ -878,6 +876,7 @@ fn setup_corner<'l>(
         &latch_maps,
         &wire_model,
         options.max_state_bytes,
+        constraints.timing_derate,
     )?;
 
     Ok(CornerSetup {
@@ -1097,6 +1096,7 @@ fn analyze_one_corner(
         &gating_sites,
         &propagated,
         check_records,
+        constant,
     );
     clock.finish();
 

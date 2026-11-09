@@ -36,6 +36,8 @@ pub struct DriveCellEffect {
     pub incr_delay_ns: f64,
     /// Port transition time `slew(s_in, c_eff)` (ns, `>= 0`).
     pub slew_ns: f64,
+    /// Thevenin waveform into an extracted pi load, when the driver model requires one.
+    pub drive: Option<(f64, f64)>,
 }
 
 /// Output of startpoint seeding for one corner (`STA-REQ-0201`, `STA-REQ-0217`–`STA-REQ-0219`).
@@ -78,8 +80,24 @@ pub fn build_start_rows<D: Derate>(
     let cell_arcs = map_cell_arcs(netview, lib)?;
 
     // 1. Evaluate `set_driving_cell` specifications per port (`STA-REQ-0218`).
-    let driving_cells =
-        driving_cell_effects(netview, graph, lib, constraints, &canon_totals, derate);
+    let driving_cells = driving_cell_effects(
+        netview,
+        graph,
+        lib,
+        constraints,
+        &canon_totals,
+        net_loads,
+        derate,
+    );
+    if driving_cells
+        .values()
+        .flatten()
+        .flatten()
+        .flatten()
+        .any(|e| !e.incr_delay_ns.is_finite() || !e.slew_ns.is_finite())
+    {
+        return Err(Diag::error("T0077", "nonfinite driving-cell waveform"));
+    }
 
     // Helper returning `(incr_drive_delay_ns, port_slew_ns)` for `(node, tr, an)`.
     // `set_driving_cell` replaces `set_input_transition` for the transitions and bounds it covers
@@ -159,7 +177,7 @@ pub fn build_start_rows<D: Derate>(
     // `set_disable_timing` (`STA-REQ-0156`). The launches that logic values disable carry their
     // transition as slew-only arcs (`STA-REQ-0117`); a user-disabled one carries nothing.
     let mut launch_slews: FxHashMap<NodeId, [f64; 4]> = FxHashMap::default();
-    let mut launch_drives: FxHashMap<NodeId, [Option<(f64, f64)>; 4]> = FxHashMap::default();
+    let mut launch_drives = port_drives(&driving_cells);
     let wins = |an: An, s: f64, old: f64| match an {
         An::Early => s < old,
         An::Late => s > old,
@@ -437,6 +455,7 @@ pub(crate) fn driving_cell_effects<D: Derate>(
     lib: &TimingLib,
     constraints: &CompiledConstraints,
     canon_totals: &[[[f64; 2]; 2]],
+    net_loads: &NetLoads,
     derate: &D,
 ) -> FxHashMap<NodeId, [[Option<DriveCellEffect>; 2]; 2]> {
     let n_nodes = graph.num_nodes();
@@ -447,9 +466,17 @@ pub(crate) fn driving_cell_effects<D: Derate>(
             continue;
         }
         let net_cap = node_net_cap(netview, canon_totals, port_node);
+        let loads = std::array::from_fn(|tr| {
+            std::array::from_fn(|an| match netview.node_net(port_node) {
+                NetTarget::Net(net) => {
+                    net_loads.physical_load(net, Tr::ALL[tr], An::ALL[an], net_cap[tr][an])
+                }
+                _ => DriverLoad::Lumped { c: net_cap[tr][an] },
+            })
+        });
         let entry = driving_cells.entry(port_node).or_insert([[None; 2]; 2]);
         for spec in specs {
-            let evaled = eval_driving_cell(spec, port_node, lib, derate, net_cap);
+            let evaled = eval_driving_cell_loads(spec, port_node, lib, derate, loads);
             for tr in Tr::ALL {
                 if !edge_matches(spec.edge, tr) {
                     continue;
@@ -466,6 +493,19 @@ pub(crate) fn driving_cell_effects<D: Derate>(
         }
     }
     driving_cells
+}
+
+/// Driver waveforms attached to the input-port slew seeds.
+pub(crate) fn port_drives(
+    effects: &FxHashMap<NodeId, [[Option<DriveCellEffect>; 2]; 2]>,
+) -> FxHashMap<NodeId, [Option<(f64, f64)>; 4]> {
+    effects
+        .iter()
+        .filter_map(|(&node, values)| {
+            let drives = std::array::from_fn(|k| values[k / 2][k % 2].and_then(|v| v.drive));
+            drives.iter().any(Option::is_some).then_some((node, drives))
+        })
+        .collect()
 }
 
 /// `(incr_drive_delay_ns, port_slew_ns)` of port `node` for `(tr, an)`: `set_driving_cell`
@@ -555,6 +595,22 @@ pub fn eval_driving_cell<D: Derate>(
     derate: &D,
     net_cap: [[f64; 2]; 2],
 ) -> [[Option<DriveCellEffect>; 2]; 2] {
+    eval_driving_cell_loads(
+        spec,
+        port_node,
+        lib,
+        derate,
+        net_cap.map(|caps| caps.map(|c| DriverLoad::Lumped { c })),
+    )
+}
+
+fn eval_driving_cell_loads<D: Derate>(
+    spec: &DrivingCellSpec,
+    port_node: NodeId,
+    lib: &TimingLib,
+    derate: &D,
+    loads: [[DriverLoad; 2]; 2],
+) -> [[Option<DriveCellEffect>; 2]; 2] {
     let mut out = [[None; 2]; 2];
     let Some(tc) = lib.cell(&spec.lib_cell) else {
         return out;
@@ -595,34 +651,60 @@ pub fn eval_driving_cell<D: Derate>(
         }
         for in_tr in Tr::ALL {
             let outs = pa.out_transitions(in_tr);
-            let s_in_val = s_in[in_tr.index()];
+            let s_in_val =
+                lib.thresholds
+                    .convert_slew(tc.thresholds, s_in[in_tr.index()], in_tr == Tr::Fall);
             for to in Tr::ALL {
                 if !outs[to.index()] {
                     continue;
                 }
                 for an in An::ALL {
-                    let c_net = net_cap[to.index()][an.index()];
-                    let c_eff = if mult != 0.0 { c_net / mult } else { c_net };
-                    let ds_full =
-                        lib.arc_delay(arc_id, to, an, s_in_val, DriverLoad::Lumped { c: c_eff });
+                    let load = loads[to.index()][an.index()];
+                    let scale = if mult != 0.0 { mult } else { 1.0 };
+                    let load = match load {
+                        DriverLoad::Lumped { c } => DriverLoad::Lumped { c: c / scale },
+                        DriverLoad::Pi { c_near, c_far, r } => DriverLoad::Pi {
+                            c_near: c_near / scale,
+                            c_far: c_far / scale,
+                            r: r * scale,
+                        },
+                    };
+                    let (ds_full, drive) = lib.arc_delay_drive_3d(arc_id, to, s_in_val, load, 0.0);
                     let ds_zero =
                         lib.arc_delay(arc_id, to, an, s_in_val, DriverLoad::Lumped { c: 0.0 });
-                    let raw_incr = ds_full.delay - ds_zero.delay;
+                    let raw_incr = ds_full.delay - ds_zero.delay
+                        + tc.thresholds.net_reference_shift(
+                            lib.thresholds,
+                            ds_full.slew - ds_zero.slew,
+                            to == Tr::Fall,
+                        );
                     let incr_delay_ns = if spec.dont_scale {
                         raw_incr
                     } else {
                         raw_incr * derate.factor(DelayKind::Cell, PathKind::Data, port_node, an, to)
                     };
-                    let slew_ns = ds_full.slew.max(0.0);
+                    let slew_ns = tc.thresholds.convert_slew(
+                        lib.thresholds,
+                        ds_full.slew.max(0.0),
+                        to == Tr::Fall,
+                    );
                     let slot = &mut out[to.index()][an.index()];
                     *slot = Some(match *slot {
                         None => DriveCellEffect {
                             incr_delay_ns,
                             slew_ns,
+                            drive,
                         },
                         Some(prev) => DriveCellEffect {
                             incr_delay_ns: an.merge(incr_delay_ns, prev.incr_delay_ns),
                             slew_ns: an.merge(slew_ns, prev.slew_ns),
+                            drive: if (an == An::Early && slew_ns < prev.slew_ns)
+                                || (an == An::Late && slew_ns > prev.slew_ns)
+                            {
+                                drive
+                            } else {
+                                prev.drive
+                            },
                         },
                     });
                 }

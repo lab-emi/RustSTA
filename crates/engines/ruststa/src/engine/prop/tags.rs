@@ -3,7 +3,7 @@
 
 //! Propagation tags: a launching clock edge with an exception state (owner: E5).
 //!
-//! Engine section C. Each node carries arrivals per tag ([`TagId`](super::super::types::TagId)),
+//! Engine section C. Each node carries arrivals per tag ([`TagId`]),
 //! stored densely per node. The number of tags is bounded by a budget; exceeding it is an error,
 //! never a silent merge.
 

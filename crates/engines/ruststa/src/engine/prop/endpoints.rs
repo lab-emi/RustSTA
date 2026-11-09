@@ -241,6 +241,7 @@ impl CornerEndpoints {
         gating_sites: &[ClockGatingSite],
         prop_res: &LoweredResult,
         records: Vec<SlackRecord>,
+        constant_nodes: &[bool],
     ) -> Self {
         // 1. Collect all candidate endpoints. A dense node -> slot index replaces a map with
         // millions of entries (OpenC910); the first insertion of a node fixes its initial status,
@@ -329,7 +330,9 @@ impl CornerEndpoints {
             if ep.status == EndpointStatus::Constrained {
                 continue;
             }
-            if disabled_nodes.contains(&node) {
+            if disabled_nodes.contains(&node)
+                || constant_nodes.get(node.index()).copied().unwrap_or(false)
+            {
                 ep.status = EndpointStatus::Disabled;
                 unconstrained.disabled += 1;
                 continue;
