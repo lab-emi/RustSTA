@@ -86,7 +86,9 @@ See [the waveform definition](../specs/sta/rc-waveforms.md).
 The deterministic CPU waveform pass prepares 128-byte per-arc records for both
 CPU and CUDA propagation. --max-state-gib bounds these arrays and conservative
 numeric work; excess is T0078. All numeric iterations have fixed ceilings and
-charge residuals are checked. A changed load re-evaluates neighboring arcs.
+charge residuals are checked. Effective-load charge is averaged over the full
+linearized output transition; the source ramp used by the wires is fitted
+separately at that load. A changed load re-evaluates neighboring arcs.
 
 Explicit `set_propagated_clock` on primary clocks uses cell and wire delay in
 the clock network. Generated clocks, unsupported internal clock sources and
@@ -100,9 +102,11 @@ separates independent transient equations, real-PDK input coverage and the uncha
 1 ps gate against a reference tool's default model. A successful import or run
 does not mean the design meets setup/hold or signoff requirements.
 
-Extracted waveform timing currently uses port transition annotations. A
-`set_driving_cell` port annotation fails with T0077 rather than combining it
-with an unvalidated waveform convention. Ideal/lumped modes retain that feature.
+Extracted waveform timing uses explicit port transitions or the compiled
+`set_driving_cell` model, including its input-transition annotations. Driving-cell
+ports follow the same characterized driver and physical-sink threshold model;
+their displayed time reference can differ from a reference tool's pre-driver
+input-delay row. Physical sink arrivals remain compared.
 
 ## Topology edits after extraction
 

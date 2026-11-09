@@ -148,7 +148,7 @@ pub fn build_model(
                 .iter()
                 .any(|l| !l.source && l.clock.is_none_or(|c| c == cid))
         {
-            diags.push(Diag::warning("T0076",format!("clock {}: propagated network replaces ideal network latency/transition annotations; source set_input_transition is used",clock.name)));
+            diags.push(Diag::warning("T0076",format!("clock {}: propagated network replaces ideal network latency/transition annotations; source driving-cell/input-transition annotations are used",clock.name)));
         }
         if ambiguous[ci] {
             return Err(Diag::error(
@@ -157,12 +157,10 @@ pub fn build_model(
             ));
         }
         for &src in &clock.sources {
-            if !matches!(view.node_kind(src), NodeKind::PortBit { .. })
-                || constraints.driving_cells.contains_key(&src)
-            {
+            if !matches!(view.node_kind(src), NodeKind::PortBit { .. }) {
                 return Err(Diag::error(
                     "T0075",
-                    "propagated clock requires a primary-port source with set_input_transition; internal/driving-cell clock sources are unsupported",
+                    "propagated clock requires a primary-port source; internal clock sources are unsupported",
                 ));
             }
         }
@@ -177,8 +175,21 @@ pub fn build_model(
         lib,
         constraints,
         &crate::engine::prop::starts::canonical_net_totals(view, loads),
-        &crate::engine::delay::derate::NoDerate,
+        loads,
+        &constraints.timing_derate,
     );
+    if driving_cells
+        .values()
+        .flatten()
+        .flatten()
+        .flatten()
+        .any(|effect| !effect.incr_delay_ns.is_finite() || !effect.slew_ns.is_finite())
+    {
+        return Err(Diag::error(
+            "T0077",
+            "nonfinite driving-cell waveform; the extracted driver requires characterized load sensitivity",
+        ));
+    }
     let mut lowered = LoweredCorner::lower(
         view,
         graph,
@@ -188,6 +199,8 @@ pub fn build_model(
         GraphStartBuilder::new(2).build(),
         &ArcTagMaps::new(),
     )?;
+    lowered.derates = constraints.timing_derate;
+    lowered.start_drives = crate::engine::prop::starts::port_drives(&driving_cells);
     let mut propagate_all = |launched: &[(NodeId, [[f64; 2]; 2])],
                              model: &IdealClockModel|
      -> Result<Vec<Option<TimingValues>>, Diag> {
@@ -225,12 +238,16 @@ pub fn build_model(
                     let mut arr = [0.0; 2];
                     let mut slew = [0.0; 2];
                     for an in An::ALL {
-                        arr[an.index()] = model.source_latency(cid, edge, an);
-                        slew[an.index()] = constraints
-                            .input_transitions
-                            .get(&src)
-                            .and_then(|t| t.slew_ns[an.index()][edge.index()])
-                            .unwrap_or(0.0);
+                        let (increment, transition) =
+                            crate::engine::prop::starts::resolve_port_drive(
+                                &driving_cells,
+                                constraints,
+                                src,
+                                edge,
+                                an,
+                            );
+                        arr[an.index()] = model.source_latency(cid, edge, an) + increment;
+                        slew[an.index()] = transition;
                     }
                     starts.set_tagged(graph, src, edge.index() as u32, edge, arr, slew);
                 }

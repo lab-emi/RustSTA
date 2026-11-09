@@ -722,6 +722,9 @@ pub fn envelope_headers_from_store(
     }
     scope.insert("clock_model", &scope_rep.clock_model)?;
     scope.insert("cppr", &scope_rep.cppr)?;
+    if let Some(factors) = scope_rep.global_timing_derate {
+        scope.insert("global_timing_derate", &factors)?;
+    }
     scope.insert("backend", &scope_rep.backend)?;
     let prec_str = match scope_rep.precision {
         StorePrecision::F64 => "f64",

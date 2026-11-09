@@ -32,6 +32,46 @@ pub(super) fn compile_other_cmd(
     out: &mut CompiledConstraints,
 ) {
     match &cmd.kind {
+        CmdKind::SetTimingDerate {
+            factor,
+            early_late,
+            edge,
+            clock,
+            data,
+            net_delay,
+            cell_delay,
+            cell_check,
+            static_derate,
+            dynamic,
+            increment,
+            objects,
+        } => {
+            if *edge != EdgeScope::Both
+                || *clock
+                || *data
+                || *net_delay
+                || *cell_delay
+                || *cell_check
+                || *static_derate
+                || *dynamic
+                || *increment
+                || objects.is_some()
+            {
+                out.diags.push(with_loc(
+                    Diag::error(
+                        "D0010",
+                        "only global early/late timing derates are supported",
+                    ),
+                    loc,
+                ));
+                return;
+            }
+            for an in early_late_indices(*early_late) {
+                if let Err(diag) = out.timing_derate.set(An::ALL[an], *factor) {
+                    out.diags.push(with_loc(diag, loc));
+                }
+            }
+        }
         CmdKind::SetUnits {
             time,
             capacitance,

@@ -84,7 +84,7 @@ impl TimingLib {
                     far: c_far,
                     resistance: r,
                 },
-                self.thresholds.rc(out == Tr::Fall),
+                self.cells[pa.cell].thresholds.rc(out == Tr::Fall),
                 eval,
             ) {
                 Ok(p) => (
@@ -142,7 +142,7 @@ impl TimingLib {
                     far: c_far,
                     resistance: r,
                 },
-                self.thresholds.rc(out == Tr::Fall),
+                self.cells[pa.cell].thresholds.rc(out == Tr::Fall),
                 eval,
             ) {
                 Ok((delay, slew, _)) => DelaySlew { delay, slew },

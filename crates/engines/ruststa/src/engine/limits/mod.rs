@@ -5,9 +5,9 @@
 //! `STA-REQ-0819`).
 //!
 //! After the propagation of a corner, every clock pin with `min_pulse_width` or `minimum_period`
-//! timing groups is checked against the propagated clock waveform at the pin ([`pulse`]), and every
+//! timing groups is checked against the propagated clock waveform at the pin (`pulse`), and every
 //! pin and net driver against the electrical design rules `max_transition`, `max_capacitance` and
-//! `max_fanout` of the corner's libraries and of the constraints ([`drv`]). The checks visit each
+//! `max_fanout` of the corner's libraries and of the constraints (`drv`). The checks visit each
 //! node, net and clock pin once (`O(V + E)`); the rows they report are kept in a bounded heap per
 //! kind (AGENTS rule 3.4), worst slack first, while the counts cover every check. The rows of all
 //! corners form the `limits` table of a revision ([`table`]).

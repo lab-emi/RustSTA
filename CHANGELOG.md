@@ -5,6 +5,14 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
 
 ## [Unreleased]
 
+### Added
+- Global early/late timing derates, per-cell mixed-library slew conventions, and
+  driving-cell waveforms on propagated primary clocks and extracted input nets.
+  Scope metadata records applied derates. Unsupported derate scopes fail explicitly.
+- Constant endpoints retain their explicit disabled classification, including
+  propagated tie-cell values, instead of appearing as missing timing arrivals.
+
+
 ### Documented
 - **Driver transitions near a reference's discontinuities (STA-REQ-0728):** on the final layouts
   of the eight suite designs (both default PDKs, three corners, native and reference-extracted

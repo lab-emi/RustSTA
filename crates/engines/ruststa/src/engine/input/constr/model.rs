@@ -639,6 +639,8 @@ pub enum SynthConstraint {
 /// `STA-REQ-0217` to `STA-REQ-0221`, `STA-REQ-0250` to `STA-REQ-0270`).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CompiledConstraints {
+    /// Global early/late cell and net delay scaling.
+    pub timing_derate: crate::engine::delay::derate::TimingDerate,
     /// Raw `Sdc::units` header from the input constraint table.
     pub sdc_units: SdcUnits,
     /// Explicit unit strings from `set_units` commands.

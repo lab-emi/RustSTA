@@ -10,8 +10,7 @@ use rusteda_core::job::Diag;
 ///
 /// In the lumped NLDM delay model (`Ideal` and `WireloadLumped`), lookup tables are already
 /// indexed in library slew units and are evaluated without scaling by `slew_derate_from_library`.
-/// These attributes are recorded in the corner metadata and checked for consistency across all
-/// libraries combined in the same corner.
+/// Each cell retains these attributes; net boundaries convert between library conventions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CornerThresholds {
     pub input_threshold_pct_rise: f64,
@@ -42,6 +41,45 @@ impl Default for CornerThresholds {
 }
 
 impl CornerThresholds {
+    /// Validates the waveform convention used by the bounded crossing solver.
+    pub(crate) fn validate(self) -> Result<(), &'static str> {
+        for fall in [false, true] {
+            let t = self.rc(fall);
+            if ![t.lower, t.upper, t.input, t.output, t.derate]
+                .iter()
+                .all(|v| v.is_finite())
+                || t.lower <= 0.0
+                || t.upper >= 1.0
+                || t.lower >= t.upper
+                || t.input <= 0.0
+                || t.input >= 1.0
+                || t.output <= 0.0
+                || t.output >= 1.0
+                || t.derate <= 0.0
+                || t.derate > 1.0
+            {
+                return Err("invalid delay/slew trip points or slew derate");
+            }
+        }
+        Ok(())
+    }
+
+    /// Converts a library slew to another library's slew unit for the same linear waveform.
+    pub fn convert_slew(self, destination: Self, slew: f64, fall: bool) -> f64 {
+        if self == destination {
+            return slew;
+        }
+        let src = self.rc(fall);
+        let dst = destination.rc(fall);
+        slew * src.derate / (src.upper - src.lower) * (dst.upper - dst.lower) / dst.derate
+    }
+
+    /// Shifts the arrival reference from a driver's output to a sink's input threshold.
+    pub fn net_reference_shift(self, destination: Self, slew: f64, fall: bool) -> f64 {
+        let src = self.rc(fall);
+        let dst = destination.rc(fall);
+        slew * src.derate / (src.upper - src.lower) * (dst.input - src.output)
+    }
     /// Read the parsed library metadata, never infer physics from a library name.
     pub fn from_library(l: &rusteda_core::liberty::Library) -> Self {
         let d = Self::default();

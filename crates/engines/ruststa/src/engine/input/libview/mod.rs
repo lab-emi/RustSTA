@@ -5,7 +5,7 @@
 //!
 //! Engine section B. Each corner resolves the netlist's cells by name in its own libraries; a cell
 //! defined twice in one corner is an error. The view gives typed timing arcs
-//! ([`LibArc`](super::super::types::LibArc)): combinational (also `_rise`/`_fall`), clock edges,
+//! ([`LibArc`]): combinational (also `_rise`/`_fall`), clock edges,
 //! the setup, hold, recovery and removal checks, and the three-state enable and disable arcs.
 //! Preset and clear arcs are kept but not propagated; minimum pulse width and minimum period arcs
 //! become the pulse checks of their pin ([`PulseCheck`], `STA-REQ-0800`); non-sequential, skew,
@@ -294,6 +294,8 @@ pub struct TimingCell {
     pub name: String,
     /// Name of the library that defined this cell in the corner.
     pub library: String,
+    /// Original threshold and slew convention of this cell's library.
+    pub thresholds: CornerThresholds,
     /// Cell area from Liberty.
     pub area: f64,
     /// True when the cell has `ff` or `latch` groups or clock-edge / setup / hold arcs.
@@ -337,7 +339,7 @@ pub struct TimingLib {
     pub arcs: Vec<PropArc>,
     /// Compiled lookup tables and [`ArcClass`] descriptors for the corner.
     pub lut_bank: LutBank,
-    /// Trip-point thresholds and `slew_derate_from_library` of the corner (`STA-REQ-0016`).
+    /// Threshold convention of the first library, used for top-level ports.
     pub thresholds: CornerThresholds,
     /// Index in `lut_bank.classes` of the wire [`ArcClass`] (`flags = ArcClass::WIRE`).
     pub wire_class: u32,
@@ -348,6 +350,38 @@ pub struct TimingLib {
 }
 
 impl TimingLib {
+    /// Threshold convention at a netlist pin, or the first library's convention at a port.
+    pub fn node_thresholds(
+        &self,
+        view: &crate::engine::input::NetlistView<'_>,
+        node: crate::engine::types::NodeId,
+    ) -> CornerThresholds {
+        match view.node_kind(node) {
+            crate::engine::input::NodeKind::InstancePin { cell, .. } => self
+                .cell(view.cell_name(cell))
+                .map_or(self.thresholds, |c| c.thresholds),
+            crate::engine::input::NodeKind::PortBit {
+                dir: Direction::Input | Direction::Inout,
+                ..
+            } => {
+                // An input-delay annotation is referenced to the receiving input
+                // threshold, even though this port drives its internal net.
+                CornerThresholds {
+                    output_threshold_pct_rise: self.thresholds.input_threshold_pct_rise,
+                    output_threshold_pct_fall: self.thresholds.input_threshold_pct_fall,
+                    ..self.thresholds
+                }
+            }
+            _ => self.thresholds,
+        }
+    }
+
+    /// True if net boundaries need slew or arrival-reference conversion.
+    pub fn has_mixed_thresholds(&self) -> bool {
+        self.cells.iter().any(|c| c.thresholds != self.thresholds)
+            || self.thresholds.input_threshold_pct_rise != self.thresholds.output_threshold_pct_rise
+            || self.thresholds.input_threshold_pct_fall != self.thresholds.output_threshold_pct_fall
+    }
     /// Builds the library view for `corner` from parsed [`Library`] slices, reading
     /// [`CornerThresholds`] from the parsed library metadata.
     pub fn from_corner(corner: impl Into<String>, libs: &[Library]) -> Result<Self, Diag> {
@@ -377,8 +411,8 @@ impl TimingLib {
 
     /// Builds the library view for `corner` from `(library, thresholds)` pairs.
     ///
-    /// - Rejects libraries within the same corner that disagree on trip-point thresholds or
-    ///   `slew_derate_from_library` with `T0013` (`STA-REQ-0016`).
+    /// - Retains every cell's original trip points and slew derate for net-boundary conversion.
+    /// - Rejects invalid trip points with `T0013`.
     /// - Rejects duplicate cell definitions within the same corner with `T0012` (`STA-REQ-0010`).
     /// - Rejects malformed lookup tables with `T0014` (`STA-REQ-0014`, `STA-REQ-0114`).
     pub fn from_corner_with_thresholds(
@@ -389,10 +423,13 @@ impl TimingLib {
         let thresholds = libs
             .first()
             .map_or_else(CornerThresholds::default, |(_, t)| *t);
-        if let Some((first_lib, first_thr)) = libs.first() {
-            for (lib, thr) in &libs[1..] {
-                first_thr.check_compatible(&corner, &first_lib.name, thr, &lib.name)?;
-            }
+        for &(lib, thr) in libs {
+            thr.validate().map_err(|message| {
+                Diag::error(
+                    "T0013",
+                    format!("corner '{corner}', library '{}': {message}", lib.name),
+                )
+            })?;
         }
 
         let mut view = Self {
@@ -407,7 +444,7 @@ impl TimingLib {
             cap_unit_pf: libs.first().map_or(1.0, |(l, _)| l.cap_unit_pf),
         };
 
-        for &(lib, _) in libs {
+        for &(lib, thresholds) in libs {
             let (tu, cu) = (lib.time_unit_ns, lib.cap_unit_pf);
             for c in &lib.cells {
                 if let Some(&prev_idx) = view.by_name.get(&c.name) {
@@ -425,6 +462,7 @@ impl TimingLib {
                 let mut tc = TimingCell {
                     name: c.name.clone(),
                     library: lib.name.clone(),
+                    thresholds,
                     area: c.area,
                     is_sequential: !c.sequentials.is_empty(),
                     pins: c.pins.iter().map(|p| build_pin(lib, p, tu, cu)).collect(),

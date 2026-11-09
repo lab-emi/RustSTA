@@ -633,10 +633,10 @@ fn schema_table_driven_phase2a_coverage() {
             }
         }
     }
-    assert_eq!(interpreted_cmds, 28);
+    assert_eq!(interpreted_cmds, 29);
     assert_eq!(drc_cmds, 6);
     assert_eq!(synth_cmds, 7);
-    assert_eq!(phase2b_cmds, 10);
+    assert_eq!(phase2b_cmds, 9);
     assert_eq!(phase2b_opts, 22);
     assert!(phase2a_opts >= 130);
 
@@ -987,7 +987,7 @@ fn diagnostics_codes_severities_and_source_locations() {
     // 6. D0010 (Phase 2b command) and D0011 (Phase 2b option)
     {
         let script = "create_clock -name clk -period 2.0 [get_ports clk]\n\
-                      set_timing_derate -early 0.95\n\
+                      set_timing_derate -early -cell_check 0.95\n\
                       set_false_path -through [get_pins u_buf/A]\n";
         let (sdc, _) = rusteda_formats::sdc::read_str(script);
         let corners = [CornerLibs::new("default", std::slice::from_ref(&lib_ns))];
