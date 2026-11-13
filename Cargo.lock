@@ -476,7 +476,7 @@ dependencies = [
 [[package]]
 name = "rusteda-cli-common"
 version = "0.1.0"
-source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d#6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d"
+source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=26d8548093c8696ae425238f8ae0c6a590e72f5d#26d8548093c8696ae425238f8ae0c6a590e72f5d"
 dependencies = [
  "clap",
  "clap_complete",
@@ -494,7 +494,7 @@ dependencies = [
 [[package]]
 name = "rusteda-compute"
 version = "0.1.0"
-source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d#6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d"
+source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=26d8548093c8696ae425238f8ae0c6a590e72f5d#26d8548093c8696ae425238f8ae0c6a590e72f5d"
 dependencies = [
  "bytemuck",
  "cudarc",
@@ -505,7 +505,7 @@ dependencies = [
 [[package]]
 name = "rusteda-core"
 version = "0.1.0"
-source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d#6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d"
+source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=26d8548093c8696ae425238f8ae0c6a590e72f5d#26d8548093c8696ae425238f8ae0c6a590e72f5d"
 dependencies = [
  "bytemuck",
  "rustc-hash",
@@ -514,7 +514,7 @@ dependencies = [
 [[package]]
 name = "rusteda-formats"
 version = "0.1.0"
-source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d#6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d"
+source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=26d8548093c8696ae425238f8ae0c6a590e72f5d#26d8548093c8696ae425238f8ae0c6a590e72f5d"
 dependencies = [
  "flate2",
  "rayon",
@@ -528,7 +528,7 @@ dependencies = [
 [[package]]
 name = "rusteda-workspace"
 version = "0.1.0"
-source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d#6a62ae47d99ff6407e5e8e9a568a8c93a6f4970d"
+source = "git+https://github.com/lab-emi/RustEDA-Common.git?rev=26d8548093c8696ae425238f8ae0c6a590e72f5d#26d8548093c8696ae425238f8ae0c6a590e72f5d"
 dependencies = [
  "bytemuck",
  "memmap2",
