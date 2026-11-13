@@ -42,7 +42,6 @@ ruststa.workspace = true
 ruststa-check.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
-crossterm.workspace = true
 bytemuck.workspace = true
 rustc-hash.workspace = true
 rayon.workspace = true

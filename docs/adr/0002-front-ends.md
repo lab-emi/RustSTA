@@ -24,8 +24,9 @@ dependencies (AGENTS rules 9.2) and designs reach tens of millions of endpoints.
 - The command line becomes a library plus a thin binary with the application commands `show` and
   `completions`, coded messages on standard error and results on standard output (CLI-REQ).
 - Dependencies, exact versions and licenses: clap 4.6.7 with `color` and `suggestions` (MIT OR
-  Apache-2.0; anstream, anstyle and colorchoice MIT OR Apache-2.0, strsim MIT), clap_complete
-  4.6.11 (MIT OR Apache-2.0), crossterm 0.29.0 (MIT; the terminal width of the progress line).
+  Apache-2.0; anstream, anstyle and colorchoice MIT OR Apache-2.0, strsim MIT) and clap_complete
+  4.6.11 (MIT OR Apache-2.0). crossterm 0.29.0 (MIT) was listed for the terminal width of a
+  progress line; no source of the command line uses it, and the dependency was removed.
 
 ## Consequences
 - Checker verdicts and difference lines move from standard error to standard output; Liberty
