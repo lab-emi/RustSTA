@@ -117,7 +117,7 @@ an additional 184 bytes per node for jobs/results.
 
 ## Quick start
 
-Install [Rust with rustup](https://rustup.rs/) and Git. The checkout pins Rust 1.97.1.
+Install [Rust with rustup](https://rustup.rs/) and Git. The checkout pins Rust 1.100.0.
 The default build needs no GPU or Python runtime.
 
 ```console,lab

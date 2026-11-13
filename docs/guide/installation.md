@@ -17,7 +17,7 @@ export PATH="$PWD/target/release:$PATH"
 ruststa --version
 ```
 
-`rust-toolchain.toml` pins Rust 1.97.1. Rustup selects and installs that toolchain
+`rust-toolchain.toml` pins Rust 1.100.0. Rustup selects and installs that toolchain
 when you invoke Cargo in the checkout. `rusteda` manages the disk workspace;
 `ruststa` performs timing analysis and reads timing results.
 
