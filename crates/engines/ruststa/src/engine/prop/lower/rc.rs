@@ -3,9 +3,10 @@
 
 //! Tag-independent f64 waveform preparation (STA-REQ-0723).
 use super::*;
-use rayon::prelude::*;
 use rusteda_compute::rc::{self, Pi};
 use rusteda_compute::timing::{ArcClass, ArcValues, lut::lookup};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 /// The worst slew, its driver waveform and that waveform's root crossing at one node, per
 /// [tr * 2 + an].
@@ -71,7 +72,8 @@ pub(super) fn prepare(
     // The arcs that a cone lowering left out are charged as if they were prepared, so that the
     // budgets decide, and report, as for the whole graph (STA-REQ-0713).
     let charged_arcs = (arcs as u64).saturating_add(lowered.pruned.arcs());
-    // The state of a level also holds one job and one result per node while it runs.
+    // The sweep also holds, per node, its rows, its count of unfinished sources and its finished
+    // wave, and one load entry per arc, while it runs.
     let bytes = (n as u64)
         .saturating_mul(32 + 96 + 56 + 128)
         .saturating_add(charged_arcs.saturating_mul(192));
@@ -134,62 +136,12 @@ pub(super) fn prepare(
     // The arc values hold every delay and transition; the wire records only keep the first
     // moments for the callers that compare or report them.
     let mut wires = vec![WireRec::default(); if wire_records { arcs } else { 0 }];
-    let mut slews = vec![[absent(0), absent(1), absent(0), absent(1)]; n];
-    // The driver resistance of the transition in `slews` (STA-REQ-0729).
-    let mut drives = vec![[None; 4]; n];
-    // The root crossings of the waveforms in `drives`, only while the waveforms are prepared:
-    // `root_of[v]` indexes `roots` for a node with any.
-    let mut root_of = vec![u32::MAX; n];
-    let mut roots: Vec<[Option<DriveRoot>; 4]> = Vec::new();
     let shared: &LoweredCorner<'_> = lowered;
-    let spans = independent_spans(shared, graph, n);
-    for &(begin, end) in &spans {
-        let in_ptr = &shared.csr.in_ptr;
-        let (first, last) = (in_ptr[begin] as usize, in_ptr[end] as usize);
-        let mut values = &mut arc_values[first..last];
-        let mut records = wires.get_mut(first..last).unwrap_or_default();
-        let mut jobs = Vec::with_capacity(end - begin);
-        for v in begin..end {
-            let count = (in_ptr[v + 1] - in_ptr[v]) as usize;
-            let (value, rest) = std::mem::take(&mut values).split_at_mut(count);
-            values = rest;
-            let (record, rest) =
-                std::mem::take(&mut records).split_at_mut(count.min(records.len()));
-            records = rest;
-            jobs.push((v, value, record));
-        }
-        let (read_slews, read_drives) = (&slews, &drives);
-        let read_roots = (root_of.as_slice(), roots.as_slice());
-        let done: Vec<Result<NodeWave, Diag>> = jobs
-            .into_par_iter()
-            .with_min_len(16)
-            .map(|(v, value, record)| {
-                node_wave(
-                    shared,
-                    graph,
-                    view,
-                    wire,
-                    lib,
-                    v,
-                    value,
-                    record,
-                    read_slews,
-                    read_drives,
-                    read_roots,
-                )
-            })
-            .collect();
-        // In order, so the first error of the topological sweep is the one reported.
-        for (v, wave) in (begin..end).zip(done) {
-            let root;
-            (slews[v], drives[v], root) = wave?;
-            if root.iter().any(Option::is_some) {
-                root_of[v] = roots.len() as u32;
-                roots.push(root);
-            }
-        }
-    }
-    drop((root_of, roots));
+    let drives = if sources_precede(shared) {
+        sweep_ready(shared, graph, view, wire, lib, &mut arc_values, &mut wires)?
+    } else {
+        sweep_in_order(shared, graph, view, wire, lib, &mut arc_values, &mut wires)?
+    };
     lowered.arc_values = arc_values;
     lowered.wires = wires;
     lowered.drives = drives;
@@ -197,33 +149,264 @@ pub(super) fn prepare(
     Ok(())
 }
 
-/// Ranges of `0..n` whose nodes read only earlier ranges: the levels when every lowered arc
-/// rises in level, otherwise one node per range, which is the topological sweep.
-fn independent_spans(
+/// Whether every lowered arc reads a node that precedes its destination in the topological order,
+/// so that the finished state of a node's sources is final when the node is prepared.
+fn sources_precede(lowered: &LoweredCorner<'_>) -> bool {
+    let in_ptr = &lowered.csr.in_ptr;
+    (0..lowered.csr.nodes()).all(|v| {
+        lowered.csr.in_arcs[in_ptr[v] as usize..in_ptr[v + 1] as usize]
+            .iter()
+            .all(|arc| (arc.src as usize) < v)
+    })
+}
+
+/// The finished waves of the sources that [`node_wave`] reads.
+trait Sources {
+    /// The worst slew, its driver waveform and that waveform's root crossing at `src` for
+    /// [tr * 2 + an] = `j`.
+    fn wave(&self, src: usize, j: usize) -> (f64, Option<(f64, f64)>, Option<DriveRoot>);
+}
+
+/// The waves of an in-order sweep: a node not yet swept reads as absent.
+struct Swept<'s> {
+    slews: &'s [[f64; 4]],
+    drives: &'s [[Option<(f64, f64)>; 4]],
+    /// `root_of[v]` indexes `roots` for a node with any root crossing.
+    root_of: &'s [u32],
+    roots: &'s [[Option<DriveRoot>; 4]],
+}
+
+impl Sources for Swept<'_> {
+    fn wave(&self, src: usize, j: usize) -> (f64, Option<(f64, f64)>, Option<DriveRoot>) {
+        let root = self
+            .roots
+            .get(self.root_of[src] as usize)
+            .and_then(|r| r[j]);
+        (self.slews[src][j], self.drives[src][j], root)
+    }
+}
+
+/// The finished wave of one node in a dependency-ordered sweep.
+#[derive(Debug)]
+struct Wave {
+    slew: [f64; 4],
+    drive: [Option<(f64, f64)>; 4],
+    /// The root crossings, only for a node with any.
+    root: Option<Box<[Option<DriveRoot>; 4]>>,
+}
+
+impl Sources for [OnceLock<Wave>] {
+    fn wave(&self, src: usize, j: usize) -> (f64, Option<(f64, f64)>, Option<DriveRoot>) {
+        // A node starts only once all of its sources have finished (`sweep_ready`).
+        let w = self[src]
+            .get()
+            .expect("the sources of a node finish before it starts");
+        (w.slew[j], w.drive[j], w.root.as_ref().and_then(|r| r[j]))
+    }
+}
+
+/// [`node_wave`] of every node in topological order, one at a time: the sweep when an arc reads a
+/// node that does not precede its destination. Returns the driver waveforms of the nodes, or the
+/// first error in that order.
+fn sweep_in_order(
     lowered: &LoweredCorner<'_>,
     graph: &TimingGraph,
-    n: usize,
-) -> Vec<(usize, usize)> {
-    let starts = graph.levels().level_start();
-    let spans: Vec<(usize, usize)> = starts
-        .windows(2)
-        .map(|w| (w[0] as usize, w[1] as usize))
-        .collect();
+    view: &NetlistView<'_>,
+    wire: &dyn WireModel,
+    lib: &TimingLib,
+    arc_values: &mut [ArcValues],
+    wires: &mut [WireRec],
+) -> Result<Vec<[Option<(f64, f64)>; 4]>, Diag> {
+    let n = lowered.csr.nodes();
     let in_ptr = &lowered.csr.in_ptr;
-    let rising = starts.first() == Some(&0)
-        && starts.last().map(|&end| end as usize) == Some(n)
-        && spans.iter().all(|&(begin, end)| {
-            (begin..end).all(|v| {
-                lowered.csr.in_arcs[in_ptr[v] as usize..in_ptr[v + 1] as usize]
-                    .iter()
-                    .all(|arc| (arc.src as usize) < begin)
-            })
-        });
-    if rising {
-        spans
-    } else {
-        (0..n).map(|v| (v, v + 1)).collect()
+    let mut slews = vec![[absent(0), absent(1), absent(0), absent(1)]; n];
+    // The driver resistance of the transition in `slews` (STA-REQ-0729).
+    let mut drives = vec![[None; 4]; n];
+    // The root crossings of the waveforms in `drives`, only while the waveforms are prepared:
+    // `root_of[v]` indexes `roots` for a node with any.
+    let mut root_of = vec![u32::MAX; n];
+    let mut roots: Vec<[Option<DriveRoot>; 4]> = Vec::new();
+    for v in 0..n {
+        let (first, last) = (in_ptr[v] as usize, in_ptr[v + 1] as usize);
+        let record = wires.get_mut(first..last).unwrap_or_default();
+        let swept = Swept {
+            slews: &slews,
+            drives: &drives,
+            root_of: &root_of,
+            roots: &roots,
+        };
+        let root;
+        (slews[v], drives[v], root) = node_wave(
+            lowered,
+            graph,
+            view,
+            wire,
+            lib,
+            v,
+            &mut arc_values[first..last],
+            record,
+            &swept,
+        )?;
+        if root.iter().any(Option::is_some) {
+            root_of[v] = roots.len() as u32;
+            roots.push(root);
+        }
     }
+    Ok(drives)
+}
+
+/// What every task of [`sweep_ready`] shares.
+struct Ready<'s, 'a> {
+    lowered: &'s LoweredCorner<'a>,
+    graph: &'s TimingGraph,
+    view: &'s NetlistView<'s>,
+    wire: &'s dyn WireModel,
+    lib: &'s TimingLib,
+    /// The rows of the arc tables of each node, taken by the one task that prepares it.
+    rows: Vec<Mutex<(&'s mut [ArcValues], &'s mut [WireRec])>>,
+    /// The number of arcs into each node whose source has not finished.
+    pending: Vec<AtomicU32>,
+    /// CSR offsets (`n + 1`) and destinations of the arcs out of each node.
+    load_ptr: Vec<u32>,
+    loads: Vec<u32>,
+    waves: Vec<OnceLock<Wave>>,
+    /// The failed node earliest in topological order, and its error.
+    failed: Mutex<Option<(usize, Diag)>>,
+}
+
+impl Ready<'_, '_> {
+    /// Prepares `v`, then each node that it leaves without unfinished sources: one in this task,
+    /// the others in new tasks of `scope`.
+    fn run<'scope>(&'scope self, scope: &rayon::Scope<'scope>, mut v: usize) {
+        loop {
+            let wave = {
+                let mut rows = self.rows[v].lock().unwrap_or_else(PoisonError::into_inner);
+                let (values, records) = &mut *rows;
+                node_wave(
+                    self.lowered,
+                    self.graph,
+                    self.view,
+                    self.wire,
+                    self.lib,
+                    v,
+                    values,
+                    records,
+                    self.waves.as_slice(),
+                )
+            };
+            match wave {
+                Ok((slew, drive, root)) => {
+                    let root = root.iter().any(Option::is_some).then(|| Box::new(root));
+                    let _ = self.waves[v].set(Wave { slew, drive, root });
+                }
+                Err(e) => {
+                    // The nodes that read this one never start.
+                    let mut failed = self.failed.lock().unwrap_or_else(PoisonError::into_inner);
+                    if failed.as_ref().is_none_or(|(first, _)| v < *first) {
+                        *failed = Some((v, e));
+                    }
+                    return;
+                }
+            }
+            let mut next = None;
+            for &w in &self.loads[self.load_ptr[v] as usize..self.load_ptr[v + 1] as usize] {
+                if self.pending[w as usize].fetch_sub(1, Ordering::AcqRel) == 1 {
+                    if let Some(other) = next.replace(w as usize) {
+                        scope.spawn(move |scope| self.run(scope, other));
+                    }
+                }
+            }
+            match next {
+                Some(w) => v = w,
+                None => return,
+            }
+        }
+    }
+}
+
+/// [`node_wave`] of every node, each as soon as the last of its sources has finished, on the
+/// rayon pool (`sources_precede` holds). A node reads only the final state of its sources, so the
+/// values are those of the in-order sweep in every bit, whatever the schedule; there are no level
+/// barriers at which threads wait for the slowest node of a level. Returns the driver waveforms
+/// of the nodes, or the error of the failed node earliest in topological order: the error that
+/// the in-order sweep returns, since every node before it, and every source of it, succeeds.
+fn sweep_ready(
+    lowered: &LoweredCorner<'_>,
+    graph: &TimingGraph,
+    view: &NetlistView<'_>,
+    wire: &dyn WireModel,
+    lib: &TimingLib,
+    arc_values: &mut [ArcValues],
+    wires: &mut [WireRec],
+) -> Result<Vec<[Option<(f64, f64)>; 4]>, Diag> {
+    let n = lowered.csr.nodes();
+    let in_ptr = &lowered.csr.in_ptr;
+    let in_arcs = &lowered.csr.in_arcs;
+    let mut rows = Vec::with_capacity(n);
+    let (mut values, mut records) = (arc_values, wires);
+    for v in 0..n {
+        let count = (in_ptr[v + 1] - in_ptr[v]) as usize;
+        let (value, rest) = std::mem::take(&mut values).split_at_mut(count);
+        values = rest;
+        let (record, rest) = std::mem::take(&mut records).split_at_mut(count.min(records.len()));
+        records = rest;
+        rows.push(Mutex::new((value, record)));
+    }
+    let mut load_ptr = vec![0u32; n + 1];
+    for arc in in_arcs.iter() {
+        load_ptr[arc.src as usize + 1] += 1;
+    }
+    for v in 0..n {
+        load_ptr[v + 1] += load_ptr[v];
+    }
+    let mut fill = load_ptr.clone();
+    let mut loads = vec![0u32; in_arcs.len()];
+    for v in 0..n {
+        for arc in &in_arcs[in_ptr[v] as usize..in_ptr[v + 1] as usize] {
+            let at = &mut fill[arc.src as usize];
+            loads[*at as usize] = v as u32;
+            *at += 1;
+        }
+    }
+    drop(fill);
+    let ready = Ready {
+        lowered,
+        graph,
+        view,
+        wire,
+        lib,
+        rows,
+        pending: (0..n)
+            .map(|v| AtomicU32::new(in_ptr[v + 1] - in_ptr[v]))
+            .collect(),
+        load_ptr,
+        loads,
+        waves: (0..n).map(|_| OnceLock::new()).collect(),
+        failed: Mutex::new(None),
+    };
+    let starts: Vec<usize> = (0..n).filter(|&v| in_ptr[v] == in_ptr[v + 1]).collect();
+    rayon::scope(|scope| {
+        let ready = &ready;
+        for chunk in starts.chunks(64) {
+            scope.spawn(move |scope| {
+                for &v in chunk {
+                    ready.run(scope, v);
+                }
+            });
+        }
+    });
+    let Ready { waves, failed, .. } = ready;
+    if let Some((_, e)) = failed.into_inner().unwrap_or_else(PoisonError::into_inner) {
+        return Err(e);
+    }
+    Ok(waves
+        .into_iter()
+        .map(|w| {
+            w.into_inner()
+                .expect("every node finishes when none fails")
+                .drive
+        })
+        .collect())
 }
 
 /// The arcs into the node `v`, from the finished state of its sources. Writes only this node's
@@ -239,9 +422,7 @@ fn node_wave(
     v: usize,
     arc_values: &mut [ArcValues],
     wires: &mut [WireRec],
-    slews: &[[f64; 4]],
-    drives: &[[Option<(f64, f64)>; 4]],
-    (root_of, roots): (&[u32], &[[Option<DriveRoot>; 4]]),
+    sources: &(impl Sources + ?Sized),
 ) -> Result<NodeWave, Diag> {
     let node = graph.order()[v];
     let mut own_slew = [absent(0), absent(1), absent(0), absent(1)];
@@ -267,13 +448,10 @@ fn node_wave(
                     continue;
                 }
                 for an in 0..2 {
-                    let s = slews[in_arc.src as usize][ti * 2 + an];
+                    let (s, drive, root) = sources.wave(in_arc.src as usize, ti * 2 + an);
                     if s == absent(an) {
                         continue;
                     }
-                    let root = roots
-                        .get(root_of[in_arc.src as usize] as usize)
-                        .and_then(|r| r[ti * 2 + an]);
                     let value = arc_value(
                         &lowered.luts,
                         &cls,
@@ -285,7 +463,7 @@ fn node_wave(
                         s,
                         to,
                         an,
-                        drives[in_arc.src as usize][ti * 2 + an],
+                        drive,
                         root,
                     )?;
                     if let (Some(tau), Some(record)) = (value.tau, record.as_deref_mut()) {

@@ -191,6 +191,9 @@ pub struct NetlistView<'a> {
     net_port_bit: Vec<u32>,
     /// For each cell pin slot `0..cell_pin_dir.len()`, true when the pin is a three-state output.
     cell_pin_tristate: Vec<bool>,
+    /// For each instance pin row `0..n_pins`, its instance row: [`FrozenNetlist::pin_instance`]
+    /// tabulated once, so node queries do not repeat its binary search.
+    pin_inst: Vec<u32>,
     /// For each raw net row `0..n_nets`, its resolved target (`0..n_nets`, `CONST0`, or `CONST1`).
     canon_target: Vec<u32>,
     /// Distinct canonical net rows after union-find, in increasing `NetRow` order.
@@ -707,6 +710,8 @@ impl<'a> NetlistView<'a> {
             });
         }
 
+        let pin_inst = (0..n_pins).map(|p| frozen.pin_instance(p)).collect();
+
         Ok(NetlistView {
             frozen,
             n_port_bits,
@@ -716,6 +721,7 @@ impl<'a> NetlistView<'a> {
             port_bit_port,
             net_port_bit,
             cell_pin_tristate,
+            pin_inst,
             canon_target,
             canonical_nets,
             const_nets,
@@ -829,7 +835,7 @@ impl<'a> NetlistView<'a> {
             }
         } else {
             let pin_row = node.0 - self.n_port_bits;
-            let inst = self.frozen.pin_instance(pin_row);
+            let inst = self.pin_inst[pin_row as usize];
             let cell = self.frozen.instances[inst as usize].cell;
             let cell_pin = self.frozen.pin_cellpin[pin_row as usize];
             let slot = self.frozen.cell_pin_start[cell as usize] as usize + cell_pin as usize;
@@ -1037,7 +1043,12 @@ impl<'a> NetlistView<'a> {
     /// Writes `node`'s canonical name to `out` without intermediate allocation.
     #[inline]
     pub fn write_node_name(&self, node: NodeId, out: &mut impl fmt::Write) -> fmt::Result {
-        write_node_name_raw(self.frozen, self.n_port_bits, node, out)
+        if node.0 < self.n_port_bits {
+            write_node_name_raw(self.frozen, self.n_port_bits, node, out)
+        } else {
+            let pin_row = node.0 - self.n_port_bits;
+            write_pin_name_raw(self.frozen, pin_row, self.pin_inst[pin_row as usize], out)
+        }
     }
 
     /// Zero-allocation [`fmt::Display`] handle for `net`'s canonical name.
@@ -1150,14 +1161,23 @@ fn write_node_name_raw(
         write_net_name_raw(frozen, NetRow(nr), out)
     } else {
         let pin_row = node.0 - n_port_bits;
-        let inst_row = frozen.pin_instance(pin_row) as usize;
-        let inst_rec = &frozen.instances[inst_row];
-        let inst_name = str_of(frozen, inst_rec.name);
-        let cp = frozen.pin_cellpin[pin_row as usize] as usize;
-        let slot = frozen.cell_pin_start[inst_rec.cell as usize] as usize + cp;
-        let pin_name = str_of(frozen, frozen.cell_pin_name[slot]);
-        write!(out, "{inst_name}/{pin_name}")
+        write_pin_name_raw(frozen, pin_row, frozen.pin_instance(pin_row), out)
     }
+}
+
+/// Writes `inst/pin` for instance pin `pin_row` of instance `inst_row`.
+fn write_pin_name_raw(
+    frozen: &FrozenNetlist<'_>,
+    pin_row: u32,
+    inst_row: u32,
+    out: &mut impl fmt::Write,
+) -> fmt::Result {
+    let inst_rec = &frozen.instances[inst_row as usize];
+    let inst_name = str_of(frozen, inst_rec.name);
+    let cp = frozen.pin_cellpin[pin_row as usize] as usize;
+    let slot = frozen.cell_pin_start[inst_rec.cell as usize] as usize + cp;
+    let pin_name = str_of(frozen, frozen.cell_pin_name[slot]);
+    write!(out, "{inst_name}/{pin_name}")
 }
 
 fn write_net_name_raw(
