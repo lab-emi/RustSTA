@@ -54,7 +54,7 @@ checks and rise/fall transitions.
 
 This documentation release claims no general RustSTA-vs-OpenSTA speedup and no
 sign-off equivalence. Head-to-heads on single tasks and hosts are published
-with their scope; see [the published head-to-heads](../guide/performance.md#published-head-to-head-2026-11-05). A missing reference executable is `unverified`.
+with their scope; see [the published head-to-heads](../guide/performance.md#published-head-to-head-2026-11-13). A missing reference executable is `unverified`.
 For performance comparisons, report complete command wall time and peak RSS
 beside timing agreement; see [measurement guidance](../guide/performance.md).
 

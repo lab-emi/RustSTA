@@ -11,14 +11,48 @@ RustSTA analyzes gate-level Verilog, Liberty, SDC and SPEF with persistent multi
 
 ## RustSTA vs OpenSTA at a glance
 
-Ibex RTL-to-GDS on IHP SG13G2 with EZ130 cells and two SRAM macros, 2026-11-05: RustEDA and LibreLane 3.0.17 (OpenROAD, Yosys, KLayout, Magic, Netgen) ran one after the other on the same 4-vCPU host from the same prepared inputs, and the same signoff scripts checked both layouts.
+Ibex RTL-to-GDS on IHP SG13G2 with EZ130 cells and two SRAM macros, 2026-11-13: RustEDA and LibreLane 3.0.17 (OpenROAD, Yosys, KLayout, Magic, Netgen) ran one after the other on the same 4-vCPU host from the same prepared inputs, and the same signoff scripts checked both layouts. Every RustEDA engine was built with Rust 1.100.0, and RustEDA's step graph ran under its Rust executor, `rusteda flow exec`.
 
-- **1.6× faster than OpenSTA at 2 threads and 2.0× at 4** on the final Ibex netlist and SPEF at TT and SS (6.825 s and 5.317 s against 11.168 s and 10.566 s), with **17.8 % and 6.3 % less peak memory**.
-- All eight compared worst slacks agree with OpenSTA **within 0.164 ps**.
-- The flow's static timing takes 35.42 s against 183.31 s for LibreLane's OpenSTA steps (**5.2× faster**), and the native layout is timing-clean where LibreLane's has 112 capacitance and fanout violations.
-- The whole RustEDA flow finishes **4.2× sooner end to end**.
+- **1.6× faster than OpenSTA at 2 threads and 2.0× at 4** on the final Ibex netlist and SPEF at TT and SS (4.692 s and 3.403 s against 7.349 s and 6.881 s), with **13.6 % less peak memory at 2 threads but 11.8 % more at 4** (197,060 against 176,252 KiB); the cause of the 4-thread increase is not yet investigated.
+- All eight compared worst slacks agree with OpenSTA **within 0.270 ps**.
+- The flow's static timing takes 26.96 s against 138.93 s for LibreLane's OpenSTA steps (**5.2× faster**), and the native layout is timing-clean where LibreLane's has 112 capacitance and fanout violations.
+- The frontend STA and ECO stage, whose ECO rounds and planning helpers are now `rusteda` commands built by this module, takes 13.85 s against 48.36 s for LibreLane's four resizer repair steps (**3.5× faster**); in same-load runs it took a median 13.21 s against 18.20 s for LibreLane's two resizer steps before global routing alone (**0.73×**, ranges do not overlap; 1.18× on 2026-11-05).
+- The whole RustEDA flow finishes **4.4× sooner end to end** (751.54 s against 3,283.05 s).
 
-LibreLane's layout fails the shared timing gate (112 maximum-capacitance and fanout violations at TT and SS) and its equivalence check does not complete, so the receipt keeps its own ratio fields null under its publication rule; the multiples here divide the recorded times. Stages are paired by phase, not as identical tasks. RustEDA is not faster everywhere: its repair before global routing takes 1.18× LibreLane's two pre-route resizer steps alone, OpenRCX runs 1.36× longer on RustEDA's DEF, and the latch-up check 1.11× longer on its layout. [All stages, gates and losses](https://lab-emi.github.io/RustEDA/benchmarks/)
+LibreLane's layout fails the shared timing gate (112 maximum-capacitance and fanout violations at TT and SS) and its equivalence check does not complete, so the receipt keeps its own ratio fields null under its publication rule; the multiples here divide the recorded times. Stages are paired by phase, not as identical tasks. Against the three losses of 2026-11-05, in same-load runs: repair before global routing now takes 0.73× the time of LibreLane's two pre-route resizer steps (ranges do not overlap; 1.18× on 2026-11-05), OpenRCX on RustEDA's layout is level with its time on LibreLane's (1.00×, ranges overlap; 1.36× on 2026-11-05) and the latch-up check on RustEDA's layout takes 0.76× its time on LibreLane's (1.11× with the checker of that campaign). RustEDA is still not faster or not better everywhere: RustSTA's peak memory at 4 threads is 11.8 % above OpenSTA's, the shared timing gate (RustSTA and OpenSTA on each layout's OpenRCX SPEF) is level (0.98×, ranges overlap), RustROAD's standalone extraction takes 1.22× OpenRCX's time at 4 threads, and the native layout keeps less hold margin. [All stages, gates and losses](https://lab-emi.github.io/RustEDA/benchmarks/#ibex-host-campaign-2026-11-13)
+
+## Ibex host campaign · 2026-11-13
+
+In the RustEDA Ibex host campaign of 2026-11-13 (IHP SG13G2 / EZ130 with two
+real SRAMs, on a 4-vCPU cloud host), RustSTA 0.4.3 (commit [`d453782`](https://github.com/lab-emi/RustSTA/commit/d453782b118224ee27517857a59ad5a597a0fb4c), built
+with Rust 1.100.0) and OpenSTA 3.1.0 analysed the same final netlist, SPEF,
+Liberty and SDC at TT and SS. **Numerical agreement `passed` the 1 ps gate**:
+the eight compared worst slacks differ by at most 0.2697 ps, and the shared
+timing gate passed with zero setup, hold, slew, capacitance and fanout
+violations.
+
+On the native SPEF, RustSTA's complete pipeline took a median 4.692 s at
+2 threads and 3.403 s at 4 threads; OpenSTA's two per-corner processes took
+7.349 s and 6.881 s (1.57× and 2.02×). Worst peak RSS was 152,088 and
+197,060 KiB against 176,060 and 176,252 KiB. **RustSTA was faster at both
+thread counts, but its peak memory at 4 threads is 11.8 % above OpenSTA's**,
+where it was 6.3 % below on 2026-11-05, on another host; at 2 threads it is
+13.6 % below. The cause of the increase is not yet investigated. Times are
+medians of three interleaved measured repetitions after one warm-up.
+
+Since 2026-11-05 the frontend ECO rounds and planning helpers became `rusteda`
+commands built by this module, and the one analysis change, `c55e325`, prepares
+each node's RC waveforms as soon as its sources are done. The frontend stage
+took 13.85 s in the flow; in same-load runs it took a median 13.21 s against
+18.20 s for LibreLane's two resizer steps before global routing (0.73×, ranges
+do not overlap; 1.18× on 2026-11-05). The host is a different virtual machine
+from 2026-11-05's, on which every LibreLane stage took less time, so the two
+campaigns' times are history, not a before/after.
+
+[Scope and all eight compared values](development-status.md) ·
+[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-13) ·
+[Where RustEDA still loses or is at parity](https://lab-emi.github.io/RustEDA/benchmarks/#where-rusteda-still-loses-or-is-at-parity-2026-11-13) ·
+[All benchmarks](https://lab-emi.github.io/RustEDA/benchmarks/)
 
 ## Ibex host campaign · 2026-11-05
 

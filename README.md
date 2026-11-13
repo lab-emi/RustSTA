@@ -22,16 +22,89 @@ Part of **[RustEDA](https://github.com/lab-emi/RustEDA)**, infrastructure for ch
 
 ## RustSTA vs OpenSTA at a glance
 
-Ibex RTL-to-GDS on IHP SG13G2 with EZ130 cells and two SRAM macros, 2026-11-05: RustEDA and LibreLane 3.0.17 (OpenROAD, Yosys, KLayout, Magic, Netgen) ran one after the other on the same 4-vCPU host from the same prepared inputs, and the same signoff scripts checked both layouts.
+Ibex RTL-to-GDS on IHP SG13G2 with EZ130 cells and two SRAM macros, 2026-11-13: RustEDA and LibreLane 3.0.17 (OpenROAD, Yosys, KLayout, Magic, Netgen) ran one after the other on the same 4-vCPU host from the same prepared inputs, and the same signoff scripts checked both layouts. Every RustEDA engine was built with Rust 1.100.0, and RustEDA's step graph ran under its Rust executor, `rusteda flow exec`.
 
-- **1.6× faster than OpenSTA at 2 threads and 2.0× at 4** on the final Ibex netlist and SPEF at TT and SS (6.825 s and 5.317 s against 11.168 s and 10.566 s), with **17.8 % and 6.3 % less peak memory**.
-- All eight compared worst slacks agree with OpenSTA **within 0.164 ps**.
-- The flow's static timing takes 35.42 s against 183.31 s for LibreLane's OpenSTA steps (**5.2× faster**), and the native layout is timing-clean where LibreLane's has 112 capacitance and fanout violations.
-- The whole RustEDA flow finishes **4.2× sooner end to end**.
+- **1.6× faster than OpenSTA at 2 threads and 2.0× at 4** on the final Ibex netlist and SPEF at TT and SS (4.692 s and 3.403 s against 7.349 s and 6.881 s), with **13.6 % less peak memory at 2 threads but 11.8 % more at 4** (197,060 against 176,252 KiB); the cause of the 4-thread increase is not yet investigated.
+- All eight compared worst slacks agree with OpenSTA **within 0.270 ps**.
+- The flow's static timing takes 26.96 s against 138.93 s for LibreLane's OpenSTA steps (**5.2× faster**), and the native layout is timing-clean where LibreLane's has 112 capacitance and fanout violations.
+- The frontend STA and ECO stage, whose ECO rounds and planning helpers are now `rusteda` commands built by this module, takes 13.85 s against 48.36 s for LibreLane's four resizer repair steps (**3.5× faster**); in same-load runs it took a median 13.21 s against 18.20 s for LibreLane's two resizer steps before global routing alone (**0.73×**, ranges do not overlap; 1.18× on 2026-11-05).
+- The whole RustEDA flow finishes **4.4× sooner end to end** (751.54 s against 3,283.05 s).
 
-LibreLane's layout fails the shared timing gate (112 maximum-capacitance and fanout violations at TT and SS) and its equivalence check does not complete, so the receipt keeps its own ratio fields null under its publication rule; the multiples here divide the recorded times. Stages are paired by phase, not as identical tasks. RustEDA is not faster everywhere: its repair before global routing takes 1.18× LibreLane's two pre-route resizer steps alone, OpenRCX runs 1.36× longer on RustEDA's DEF, and the latch-up check 1.11× longer on its layout. [All stages, gates and losses](https://lab-emi.github.io/RustEDA/benchmarks/)
+LibreLane's layout fails the shared timing gate (112 maximum-capacitance and fanout violations at TT and SS) and its equivalence check does not complete, so the receipt keeps its own ratio fields null under its publication rule; the multiples here divide the recorded times. Stages are paired by phase, not as identical tasks. Against the three losses of 2026-11-05, in same-load runs: repair before global routing now takes 0.73× the time of LibreLane's two pre-route resizer steps (ranges do not overlap; 1.18× on 2026-11-05), OpenRCX on RustEDA's layout is level with its time on LibreLane's (1.00×, ranges overlap; 1.36× on 2026-11-05) and the latch-up check on RustEDA's layout takes 0.76× its time on LibreLane's (1.11× with the checker of that campaign). RustEDA is still not faster or not better everywhere: RustSTA's peak memory at 4 threads is 11.8 % above OpenSTA's, the shared timing gate (RustSTA and OpenSTA on each layout's OpenRCX SPEF) is level (0.98×, ranges overlap), RustROAD's standalone extraction takes 1.22× OpenRCX's time at 4 threads, and the native layout keeps less hold margin. [All stages, gates and losses](https://lab-emi.github.io/RustEDA/benchmarks/#ibex-host-campaign-2026-11-13)
 
-## Latest development · 2026-11-05
+## Latest development · 2026-11-13
+
+The RustEDA Ibex host campaign of 2026-11-13 (IHP SG13G2 / EZ130 with two real
+SRAMs, on a 4-vCPU Intel Xeon cloud host reporting 2.10 GHz, with 15.7 GiB RAM
+and no swap) ran RustSTA 0.4.3 (commit
+[`d453782`](https://github.com/lab-emi/RustSTA/commit/d453782b118224ee27517857a59ad5a597a0fb4c), CPU backend, built with Rust 1.100.0) in the repository's current native
+recipe, under the Rust step-graph executor `rusteda flow exec`, and against
+OpenSTA 3.1.0 on the same final netlist, SPEF, Liberty and SDC at TT and SS.
+**Numerical agreement `passed` the 1 ps gate**: the eight compared worst slacks
+(setup and hold, TT and SS, native and OpenRCX SPEF) differ by 0.0064–0.2697 ps,
+and the RustEDA producer completed all 114 manifest steps. The shared timing
+gate passed on the native layout with zero setup, hold, slew, capacitance and
+fanout violations; the native layout keeps less hold margin than LibreLane's
+(TT worst hold slack 0.108 ns against 0.172 ns), and both meet hold.
+
+What changed for RustSTA since 2026-11-05:
+
+- The frontend ECO rounds and planning helpers are now `rusteda` commands built
+  by this module, so the receipt labels the stage "frontend STA, ECO rounds and
+  planning helpers (RustSTA)" instead of "(RustSTA, Python)". It took 13.85 s in
+  the flow. In 5 interleaved same-load repetitions on the campaign's host, it
+  took a median 13.21 s (12.48–14.11 s) against 18.20 s (16.16–19.27 s) for
+  LibreLane's two resizer steps before global routing (**0.73×, ranges do not
+  overlap**; 1.18× on 2026-11-05) and 43.83 s for all four of its resizer steps
+  (0.30×). It still re-times the whole design with RustSTA after each ECO round
+  and uses more CPU: a median 25.35 s against 17.03 s for the two steps.
+- The one analysis change, [`c55e325`](https://github.com/lab-emi/RustSTA/commit/c55e3256a8edf1692c746b54f03ccc365fb76f18),
+  prepares each node's RC waveforms as soon as its sources are done, instead of
+  waiting for the whole previous graph level.
+
+The head-to-head replays the flow's recorded commands on the native SPEF at 2
+and 4 threads, with the same scope as before (RustSTA: init, import, one run
+covering both corners and eight reports; OpenSTA: one process per corner).
+**RustSTA was faster at both thread counts, and used less peak memory at
+2 threads but more at 4.**
+
+| | RustSTA 0.4.3 | OpenSTA 3.1.0 |
+| --- | ---: | ---: |
+| Median wall, 2 threads (fastest) | 4.692 s (4.441 s) | 7.349 s (7.218 s) |
+| Median wall, 4 threads (fastest) | 3.403 s (3.292 s) | 6.881 s (6.738 s) |
+| CPU time per run, 2 / 4 threads | 6.19–6.56 s / 6.25–6.42 s | 8.63–9.03 s / 9.69–10.63 s |
+| Worst peak RSS, 2 threads | 152,088 KiB | 176,060 KiB |
+| Worst peak RSS, 4 threads | **197,060 KiB** | 176,252 KiB |
+
+OpenSTA took 1.57× (2 threads) and 2.02× (4 threads) RustSTA's median wall
+time. **RustSTA's worst peak RSS is 13.6 % below OpenSTA's at 2 threads and
+11.8 % above it at 4 threads**, where on 2026-11-05 it was 6.3 % below
+(169,188 against 180,528 KiB). The effect of `c55e325` on peak memory was not
+measured, and the cause of the increase is not yet investigated. Wall times are
+medians of three measured repetitions after one warm-up, interleaved; peak RSS
+is the worst of the three. This is one task on one host.
+
+In the flow, signoff timing (RustSTA and OpenSTA) took 26.96 s against
+138.93 s for LibreLane's OpenSTA steps. The shared timing gate, which runs
+RustSTA and OpenSTA on each layout's OpenRCX SPEF, is level between the two
+layouts in same-load runs: a median 17.02 s on the native layout against
+17.32 s on LibreLane's (0.98×, ranges overlap), not faster beyond noise.
+
+Against 2026-11-05, as history: OpenSTA then took 1.64× and 1.99× RustSTA's
+median wall time (6.825 s and 5.317 s), the frontend stage took 26.04 s and
+signoff timing 35.42 s. This campaign ran on a different virtual machine
+(2.10 GHz instead of 2.80 GHz), on which every LibreLane stage took less time
+with byte-identical DEF and netlists, and the native route changed (same
+placement and cells), so the two campaigns' times are not a before/after of
+RustSTA.
+
+[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-13) ·
+[Host campaign 2026-11-13](https://lab-emi.github.io/RustEDA/benchmarks/#ibex-host-campaign-2026-11-13) ·
+[Shared gates](https://lab-emi.github.io/RustEDA/benchmarks/#shared-gates-2026-11-13) ·
+[Where RustEDA still loses or is at parity](https://lab-emi.github.io/RustEDA/benchmarks/#where-rusteda-still-loses-or-is-at-parity-2026-11-13) ·
+[All benchmarks](https://lab-emi.github.io/RustEDA/benchmarks/)
+
+## Ibex host campaign · 2026-11-05
 
 The RustEDA Ibex host campaign of 2026-11-05 (IHP SG13G2 / EZ130 with two real
 SRAMs, on a 4-vCPU Intel Xeon cloud host with 15.7 GiB RAM and no swap; a
@@ -214,11 +287,15 @@ unverified. Compare pinned reference executables as black boxes and report
 complete command wall time, peak memory, timing scope and numerical agreement
 together. No general RustSTA-vs-OpenSTA speedup is claimed. Head-to-heads are
 published with that scope on the
-[RustEDA benchmarks page](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-05).
-In the 2026-11-05 Ibex host campaign RustSTA's complete pipeline was faster:
-OpenSTA took 1.64× (2 threads) and 1.99× (4 threads) its median wall time, with
-1.22× and 1.07× RustSTA's worst peak RSS, and the two agreed within 0.1639 ps on
-identical SPEF. In the 2026-11-02 campaign, on another host and layout, OpenSTA
+[RustEDA benchmarks page](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-13).
+In the 2026-11-13 Ibex host campaign RustSTA's complete pipeline was faster:
+OpenSTA took 1.57× (2 threads) and 2.02× (4 threads) its median wall time. Its
+worst peak RSS was 13.6 % below OpenSTA's at 2 threads but **11.8 % above it at
+4 threads** (197,060 against 176,252 KiB; the cause is not yet investigated),
+and the two agreed within 0.2697 ps on identical SPEF. In the 2026-11-05
+campaign, on another host, OpenSTA took 1.64× and 1.99× RustSTA's median wall
+time, with 1.22× and 1.07× its worst peak RSS, and the two agreed within
+0.1639 ps. In the 2026-11-02 campaign, on another host and layout, OpenSTA
 was faster (RustSTA 1.17× and 1.18× its median wall time) and the two differed
 by up to 1.4052 ps, which `failed` the 1 ps gate. Each is one task on one host.
 
@@ -227,9 +304,11 @@ the frontend and post-route repairs and signs off TT/SS extracted timing beside
 OpenSTA. On identical SPEF the two agreed within 0.806 ps in run16 (2026-10-30)
 and within 0.4754 ps in R20/R21 (2026-11-01), against a 1 ps gate. The
 2026-11-02 host campaign reran the run16-class recipe with RustSTA `0c2bcc6` and
-measured 1.4052 ps, so the gate `failed`; the 2026-11-05 campaign ran the current
-recipe with RustSTA `3550739` and measured 0.1639 ps on its layout, so the gate
-`passed`. The whole-flow comparison with
+measured 1.4052 ps, so the gate `failed`; the 2026-11-05 campaign ran the
+then-current recipe with RustSTA `3550739` and measured 0.1639 ps on its layout,
+so the gate `passed`; the 2026-11-13 campaign ran the current recipe with
+RustSTA `d453782` and measured 0.2697 ps, so it `passed` again. The whole-flow
+comparison with
 LibreLane is on the
 [RustEDA benchmarks page](https://lab-emi.github.io/RustEDA/benchmarks/).
 

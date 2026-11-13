@@ -13,6 +13,27 @@ source contains benchmark harnesses; a harness is not itself a measured result.
 Avoid treating a GPU propagation microbenchmark as end-to-end timing
 performance.
 
+## Published head-to-head · 2026-11-13
+
+The RustEDA Ibex host campaign of 2026-11-13 (IHP SG13G2 / EZ130 with two real
+SRAMs, on a 4-vCPU cloud host) replayed the flow's recorded RustSTA 0.4.3
+(commit [`d453782`](https://github.com/lab-emi/RustSTA/commit/d453782b118224ee27517857a59ad5a597a0fb4c), built with Rust 1.100.0) and OpenSTA 3.1.0 commands on the
+same final netlist, native SPEF, Liberty and SDC at TT and SS, with the method of
+2026-11-02 below. RustSTA's median wall time was 4.692 s at 2 threads and
+3.403 s at 4 threads, against 7.349 s and 6.881 s for OpenSTA (1.57× and
+2.02×). Its CPU time per run was 6.19–6.56 s and 6.25–6.42 s, OpenSTA's
+8.63–9.03 s and 9.69–10.63 s. Worst peak RSS was 152,088 and 197,060 KiB
+against 176,060 and 176,252 KiB. **RustSTA was faster at both thread counts and
+used 13.6 % less peak memory at 2 threads, but 11.8 % more at 4 threads**; the
+cause of that increase is not yet investigated. Numerical agreement on
+identical SPEF `passed` the 1 ps gate: the eight compared worst slacks differ by
+at most 0.2697 ps. The host is a different virtual machine from 2026-11-05's,
+on which every LibreLane stage took less time, so the two campaigns' times are
+not a before/after.
+
+[All eight compared values and the campaign context](../development-status.md) ·
+[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-13)
+
 ## Published head-to-head · 2026-11-05
 
 The RustEDA Ibex host campaign of 2026-11-05 (IHP SG13G2 / EZ130 with two real
