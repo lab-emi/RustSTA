@@ -513,7 +513,7 @@ impl<'a> EngineAnalysis<'a> {
                     .saturating_sub(parasitic_state_bytes(options)),
             );
             let reserve = |bytes: u64| {
-                room.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
+                room.try_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
                     left.checked_sub(bytes)
                 })
                 .is_ok()
