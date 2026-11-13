@@ -1,9 +1,81 @@
 # Development status
 
-Updated **2026-11-13**. The 2026-11-13 and 2026-11-05 sections report the
-RustEDA host campaigns of those dates; the rest of this page describes the
-source published with the RustEDA development update. Use the superproject’s
-exact gitlinks and the repository lockfile when reproducing a run.
+Updated **2026-11-13**. The first section reports a change to peak memory made
+after the 2026-11-13 host campaign and measured against the campaign's binary in
+the same runs; the two host campaign sections report the RustEDA host campaigns
+of 2026-11-13 and 2026-11-05; the rest of this page describes the source
+published with the RustEDA development update. Use the superproject’s exact
+gitlinks and the repository lockfile when reproducing a run.
+
+## Peak memory below OpenSTA · 2026-11-13
+
+After the 2026-11-13 host campaign, RustSTA commit
+[`de210a6`](https://github.com/lab-emi/RustSTA/commit/de210a66e5cef12e9e0cb11eec8a2e11ee77f0ba)
+brought the peak memory of the Ibex timing section below OpenSTA's at both
+thread counts, with unchanged speed and byte-identical outputs: **worst peak RSS
+154,144 KiB against OpenSTA's 176,308 KiB at 4 threads (12.6 % less)**, where
+the campaign's binary (`d453782`) used 194,124 KiB (10.1 % more) in the same
+runs, and **124,120 against 176,172 KiB at 2 threads (29.5 % less)**. RustSTA
+was 1.94× faster than OpenSTA at 4 threads and 1.56× at 2 in these runs.
+
+| Same-load A/B, 7 runs after a warm-up, interleaved | Campaign binary | New binary | Competitor |
+| --- | ---: | ---: | ---: |
+| **Timing section** (init, import, run, 8 reports; wall time summed) | RustSTA `d453782` | RustSTA `de210a6` | OpenSTA 3.1.0, TT + SS |
+| Worst peak RSS, 4 threads | 194,124 KiB | **154,144 KiB** | 176,308 KiB |
+| Median peak RSS, 4 threads (range) | 192,680 (177,756–194,124) KiB | **149,448 (148,832–154,144) KiB** | 176,004 (175,780–176,308) KiB |
+| Worst peak RSS, 2 threads | 165,156 KiB | **124,120 KiB** | 176,172 KiB |
+| Median peak RSS, 2 threads (range) | 154,796 (148,764–165,156) KiB | **124,008 (123,844–124,120) KiB** | 175,856 (175,644–176,172) KiB |
+| Median wall, 4 threads (range) | 2.873 (2.732–3.066) s | 2.815 (2.631–3.012) s | 5.470 (5.331–5.841) s |
+| Median wall, 2 threads (range) | 3.837 (3.614–4.034) s | 3.907 (3.653–4.156) s | 6.077 (5.568–6.713) s |
+| Median CPU, 4 / 2 threads | 5.29 / 5.29 s | 5.45 / 5.39 s | 7.95 / 7.45 s |
+
+RustSTA's peak RSS ranges overlap with neither the campaign binary's nor
+OpenSTA's at either thread count; its wall and CPU ranges overlap with the
+campaign binary's, so its speed is unchanged.
+
+**How it was measured.** One rotation per repetition and thread count (campaign
+binary, new binary, OpenSTA) on the 4-vCPU 2.30 GHz VM of the campaign's
+same-load gate reruns, after a further container restart, with the host's
+measurement and build locks held for the whole run so that nothing else ran.
+Each contender replays the command its flow recorded, under GNU time. The
+campaign's binary ran on the campaign's producer output, the new one on the
+output of a full native run made with the new binaries. Times from this host are
+not comparable with the campaign's below, which ran on the 2.10 GHz VM.
+
+**What changed and why.** The extra memory was memory that glibc's allocator
+kept resident after it was freed, not live data: the live heap peaks at about
+135 MiB at 4 threads, and the resident peak was 30 to 54 MiB above it, by a
+different amount in every run. glibc raises its mmap threshold to the size of
+each large block that is freed (up to 32 MiB), after which large blocks come
+from the arena of the allocating thread, and an arena gives freed pages back
+only from its top. Each worker thread has its own arena, so the parsed SPEF
+(freed once both corners are bound) and each corner's preparation stayed
+resident while later phases allocated in other arenas. The one analysis change
+of the 2026-11-13 campaign,
+[`c55e325`](https://github.com/lab-emi/RustSTA/commit/c55e3256a8edf1692c746b54f03ccc365fb76f18)
+(below), adds no live heap but about 13 MiB of such kept pages at 4 threads; the
+toolchain and the new layout show no consistent effect. The `ruststa` program
+now fixes the threshold at 1 MiB, unless `MALLOC_MMAP_THRESHOLD_` or
+`GLIBC_TUNABLES` already sets it, and returns the allocator's free pages at the
+end of every analysis phase, which costs about 15 ms per run; the resident peak
+is now the live peak plus about 10 MiB of mapped program.
+
+**Same results.** Given the same inputs at one work path, `de210a6` and the
+campaign's binary write byte-identical outputs in all 11 steps (in the A/B the
+campaign's binary read the campaign's output, so its import record names other
+input paths). With the new RustSTA and RustROAD binaries, a full native run
+(114 of 114 steps, the campaign's prepared inputs, recipe and executor) produced
+a GDS, DEF, native SPEF, netlists and mapped netlist byte-identical to the
+campaign's, and all nine shared gates passed with the campaign's verdicts.
+
+**What remains.** RustSTA's live heap is unchanged: the commit returns kept
+pages, it does not shrink live data. The two calls into the C library are the
+program's only unsafe code; with another C library they do nothing. This is one
+task on one host.
+
+[RustSTA peak memory and RustROAD extraction](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-peak-memory-and-rustroad-extraction-2026-11-13) ·
+[Performance and memory](guide/performance.md) ·
+[All benchmarks](https://lab-emi.github.io/RustEDA/benchmarks/)
 
 ## Ibex host campaign · 2026-11-13
 
@@ -76,9 +148,13 @@ at 2 and 4 threads, with the scope and method of 2026-11-02 below.
 2 threads and higher at 4.** OpenSTA's median wall time was 1.57× RustSTA's at
 2 threads and 2.02× at 4 threads. RustSTA's worst peak RSS was 13.6 % below
 OpenSTA's at 2 threads and **11.8 % above it at 4 threads**; on 2026-11-05 it
-was 6.3 % below at 4 threads (169,188 against 180,528 KiB). The effect of
-`c55e325` on peak memory was not measured, and the cause of the increase is not
-yet investigated.
+was 6.3 % below at 4 threads (169,188 against 180,528 KiB). In the campaign the
+effect of `c55e325` on peak memory was not measured and the cause of the
+increase was not investigated. Since then both are known: glibc's allocator kept
+freed memory resident, `c55e325` added about 13 MiB of such kept pages at
+4 threads and no live heap, and with `de210a6` the worst peak RSS is 12.6 %
+below OpenSTA's at 4 threads and 29.5 % below at 2 in same-load runs
+([Peak memory below OpenSTA](#peak-memory-below-opensta-2026-11-13)).
 
 As history, not a before/after: on 2026-11-05 OpenSTA took 1.64× and 1.99×
 RustSTA's median wall time (6.825 s and 5.317 s), and the flow's frontend stage

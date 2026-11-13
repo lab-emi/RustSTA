@@ -25,14 +25,29 @@ same final netlist, native SPEF, Liberty and SDC at TT and SS, with the method o
 8.63–9.03 s and 9.69–10.63 s. Worst peak RSS was 152,088 and 197,060 KiB
 against 176,060 and 176,252 KiB. **RustSTA was faster at both thread counts and
 used 13.6 % less peak memory at 2 threads, but 11.8 % more at 4 threads**; the
-cause of that increase is not yet investigated. Numerical agreement on
+campaign did not investigate the cause of that increase. Numerical agreement on
 identical SPEF `passed` the 1 ps gate: the eight compared worst slacks differ by
 at most 0.2697 ps. The host is a different virtual machine from 2026-11-05's,
 on which every LibreLane stage took less time, so the two campaigns' times are
 not a before/after.
 
+Since commit
+[`de210a6`](https://github.com/lab-emi/RustSTA/commit/de210a66e5cef12e9e0cb11eec8a2e11ee77f0ba),
+made after the campaign, RustSTA's peak memory is below OpenSTA's at both thread
+counts. The increase was memory that glibc's allocator kept resident after it
+was freed, not live data. In 7 interleaved same-load runs with OpenSTA and the
+campaign's binary on the 4-vCPU 2.30 GHz VM of the campaign's same-load gate
+reruns, the timing section's worst peak RSS was 124,120 and 154,144 KiB at 2
+and 4 threads against OpenSTA's 176,172 and 176,308 KiB (**29.5 % and 12.6 %
+less**), where the campaign's binary used 165,156 and 194,124 KiB. Wall and CPU
+ranges overlap with the campaign binary's, so the speed is unchanged (1.56× and
+1.94× faster than OpenSTA in those runs), and the outputs are byte-identical.
+Times from that host are not comparable with the campaign's above.
+
 [All eight compared values and the campaign context](../development-status.md) ·
-[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-13)
+[The change after the campaign](../development-status.md#peak-memory-below-opensta-2026-11-13) ·
+[STA head-to-head](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-vs-opensta-2026-11-13) ·
+[RustSTA peak memory and RustROAD extraction](https://lab-emi.github.io/RustEDA/benchmarks/#ruststa-peak-memory-and-rustroad-extraction-2026-11-13)
 
 ## Published head-to-head · 2026-11-05
 
@@ -92,7 +107,11 @@ timer, label the number analysis-only.
 
 The `RUSTSTA_PHASES=1` diagnostics help locate import, graph and propagation
 costs. `/usr/bin/time -v` supplies whole-process maximum resident set size.
-Neither replaces a complete command boundary measurement.
+Neither replaces a complete command boundary measurement. With glibc, `ruststa`
+fixes the allocator's mmap threshold at 1 MiB unless `MALLOC_MMAP_THRESHOLD_`
+or `glibc.malloc.mmap_threshold` in `GLIBC_TUNABLES` already sets it, and
+returns the allocator's free pages at the end of every analysis phase; record
+either variable beside the peak RSS when it is set.
 
 ## Bound the workload
 
