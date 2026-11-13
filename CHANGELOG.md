@@ -18,6 +18,17 @@ The format follows the "Keep a Changelog" convention; versions follow semantic v
   propagated tie-cell values, instead of appearing as missing timing arrivals.
 
 ### Changed
+- **Peak memory of `ruststa run` with several worker threads:** the `ruststa` program fixes the
+  mmap threshold of glibc's allocator at 1 MiB and returns the allocator's free pages to the
+  system at the end of every phase of the analysis. glibc raised its threshold to the size of
+  each large block that was freed, after which large blocks were cut from the arena of the
+  allocating worker thread, and an arena keeps freed pages resident unless they are at its top:
+  the parsed extraction, freed once every corner is bound, and each corner's preparation stayed
+  resident while the corners allocated in other arenas, by a different amount in every run. On
+  the Ibex benchmark the worst peak resident memory of the timing section (init, import, run and
+  eight reports; 10 runs each) falls from 151,772 / 197,700 KiB to 124,496 / 150,740 KiB at
+  2 / 4 threads and its median from 144,720 / 178,284 to 124,296 / 149,360 KiB, with the same
+  wall and CPU time. Every table, report and workspace file is byte-identical.
 - **Peak memory of `ruststa run`:** each corner computes its required times right after its
   endpoints and then releases its lowered problem (reduced to the arc delays those read), its
   check records, net loads and bound parasitics, instead of keeping every corner's until the

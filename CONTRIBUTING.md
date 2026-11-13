@@ -76,9 +76,11 @@ The file-based commands of the current engine (`ruststa sta`, `ruststa check sta
    request.
 4. `unsafe` code exists only in the GPU glue of `rusteda-compute` and the memory maps of
    `rusteda-workspace`, under a module-scoped `allow`, with a `// SAFETY:` comment on every
-   block. The kernel launches of the legacy engine (`crates/engines/ruststa/src/gpu/`) are the one
-   documented exception until work item C2 removes them. Checker crates forbid unsafe code, and
-   engine crates do as soon as their GPU code lives in `rusteda-compute`.
+   block. The documented exceptions are the kernel launches of the legacy engine
+   (`crates/engines/ruststa/src/gpu/`), until work item C2 removes them, and the two calls of the
+   `ruststa` program into the C allocator (`crates/apps/ruststa-cli/src/memory.rs`: its mmap
+   threshold and the return of free pages, for the peak memory). Checker crates forbid unsafe
+   code, and engine crates do as soon as their GPU code lives in `rusteda-compute`.
 
 ### Rule 6: Precision by algorithm, and determinism
 

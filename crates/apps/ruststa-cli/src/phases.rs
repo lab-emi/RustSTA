@@ -5,7 +5,7 @@
 //! every finished phase of the command and of the timing engine is written to standard error
 //! with its wall time and the resident and peak memory of the process after it (AGENTS Rule 8.3:
 //! end-to-end measurements, Rule 9.4: peak RSS). Without the variable nothing is measured or
-//! printed, and the engine runs without an observer.
+//! printed.
 
 use std::sync::OnceLock;
 use std::time::Instant;

@@ -474,6 +474,7 @@ dependencies = [
  "bytemuck",
  "clap",
  "clap_complete",
+ "libc",
  "rayon",
  "rustc-hash",
  "rusteda-compute",

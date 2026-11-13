@@ -8,6 +8,7 @@ pub mod args;
 pub mod check;
 pub mod holdfix;
 pub mod inspect;
+pub mod memory;
 pub mod path;
 pub mod phases;
 pub mod report;

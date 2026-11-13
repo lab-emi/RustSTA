@@ -33,6 +33,7 @@ use ruststa::engine::store::{
 use ruststa::engine::types::NodeId;
 
 use crate::args::{PrecisionArg, StoreArg, WireModelArg};
+use crate::memory::ReleaseAtPhaseEnds;
 use crate::phases::PhaseLog;
 use ruststa::engine::store::from_analysis::{
     StoreInput, build_store_from_analysis_with_ctx, build_store_from_required, check_store_tables,
@@ -639,7 +640,10 @@ pub fn run_sta_on_revision_with(
     let compiled = PhaseLog::time(log, "compile_constraints", || {
         compile_constraints(&sdc_model, &frozen, &corner_refs, diags)
     })?;
-    let ctx = Ctx::new(None, log.map(|l| l as &dyn Observer));
+    // The pages that each phase of the analysis frees go back to the system as it ends, so that
+    // the arenas of the worker threads do not keep them through the phases that follow.
+    let release = ReleaseAtPhaseEnds::new(log.map(|l| l as &dyn Observer));
+    let ctx = Ctx::new(None, Some(&release));
     // A full table needs the backward pass of every corner: each corner computes it before the
     // next one is analyzed and releases its lowered problem, so the store does not lower the
     // corners a second time.
