@@ -627,16 +627,28 @@ fn propagated_clock_is_explicit_and_replaces_ideal_latency() {
     session.swap_cell_by_name("u", "wt_buf_2").unwrap();
     session.verify_against_full().unwrap();
     let driving = format!("{sdc}\nset_driving_cell -lib_cell wt_buf_1 [get_ports a]\n");
-    // This synthetic cell has zero load sensitivity: it cannot fit a finite
-    // Thevenin driver into a resistive pi. Fail with a structured diagnostic.
-    let rejected = EngineAnalysis::analyze_single_corner(
+    // STA-REQ-0735: this synthetic cell has zero load sensitivity, so no finite Thevenin driver
+    // fits its resistive pi: the pi is a lumped load (no driver waveform) and the analysis
+    // completes, where it failed with T0077 before.
+    let driven = EngineAnalysis::analyze_single_corner(
         &frozen,
         std::slice::from_ref(lib()),
         &driving,
         &options,
     )
-    .unwrap_err();
-    assert!(rejected.iter().any(|d| d.code == "T0077"));
+    .unwrap();
+    let effects: Vec<_> = driven
+        .default_corner()
+        .driving_cells
+        .values()
+        .flat_map(|e| e.iter().flatten().flatten())
+        .collect();
+    assert!(!effects.is_empty());
+    assert!(
+        effects
+            .iter()
+            .all(|e| e.slew_ns.is_finite() && e.incr_delay_ns.is_finite() && e.drive.is_none())
+    );
     let unset = format!("{sdc}\nunset_propagated_clock [get_clocks clk]\n");
     let ideal = EngineAnalysis::analyze_single_corner(
         &frozen,
