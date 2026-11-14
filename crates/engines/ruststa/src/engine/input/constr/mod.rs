@@ -7,7 +7,8 @@
 //! The constraints table (CONSTR v1) holds the SDC commands in evaluation order with unresolved
 //! object queries. The compiler resolves every query against the names of the frozen netlist
 //! (glob, `-regexp`, `-nocase`, `-hierarchical`, `-of_objects`, `-filter`, `all_*`,
-//! `current_design`), converts values with each corner's library units, and builds the tables of
+//! `current_design`), converts values without `set_units` with the units of the first corner's
+//! first library (`STA-REQ-0018`), and builds the tables of
 //! the analysis: clocks, input and output delays, loads, transitions, driving cells, clock
 //! attributes, case analysis, disabled timing, exception object sets, wire-load selection, path
 //! groups and the recorded design-rule limits. The import diagnostics stored in the table are
@@ -20,6 +21,7 @@ pub mod index;
 pub mod model;
 pub mod pattern;
 pub mod query;
+mod units;
 
 use rustc_hash::FxHashMap;
 use rusteda_core::diag::Diag;

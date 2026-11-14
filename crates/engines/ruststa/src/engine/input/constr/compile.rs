@@ -19,11 +19,12 @@ use super::compile_ext::{
 use super::index::{DesignIndex, find_cell_pin, find_lib_cell};
 use super::model::{
     ClockLatencySpec, ClockLatencyTarget, CompileError, CompiledClock, CompiledClockGroups,
-    CompiledConstraints, CompiledIoDelay, CornerLibs, CornerUnits, DrivingCellSpec,
-    InputTransitionSpec, InterClockUncertainty, NetLoadSpec, PortLoadSpec, ResolvedObj,
+    CompiledConstraints, CompiledIoDelay, CornerLibs, DrivingCellSpec, InputTransitionSpec,
+    InterClockUncertainty, NetLoadSpec, PortLoadSpec, ResolvedObj,
 };
 use super::query::{NameLookupHint, QueryContext, resolve_obj};
-use crate::engine::types::{ClockId, CornerId, NodeId, Tr};
+use super::units::resolve_units;
+use crate::engine::types::{ClockId, NodeId, Tr};
 
 /// The design-rule commands that the limit checks analyze (`STA-REQ-0805`); the others
 /// (`set_min_capacitance`, `set_port_fanout_number`) stay recorded with `D0021`.
@@ -68,7 +69,7 @@ pub fn compile_sdc_lenient(
         ..CompiledConstraints::default()
     };
 
-    // 1. Resolve per-corner units and check unit consistency (`STA-REQ-0011`, `D0103`).
+    // 1. Resolve per-corner units and check unit agreement (`STA-REQ-0018`, `D0103`).
     let (time_scale, cap_scale, _res_scale) = resolve_units(sdc, corners, &mut out);
 
     // 2. Check top-level `sdc.current_design` if no `CurrentDesign` command is in `sdc.cmds`.
@@ -1085,98 +1086,4 @@ fn compile_io_delay(
             }
         }
     }
-}
-
-fn resolve_units(
-    sdc: &Sdc,
-    corners: &[CornerLibs<'_>],
-    out: &mut CompiledConstraints,
-) -> (f64, f64, f64) {
-    let mut first_lib_units: Option<(String, f64, f64, f64)> = None;
-    let mut d0103_emitted = false;
-
-    for (ci, corner) in corners.iter().enumerate() {
-        let mut corner_lib_units: Option<(&str, f64, f64, f64)> = None;
-        for lib in corner.libs {
-            let t = lib.units.time.scale;
-            let c = lib.units.capacitance.scale;
-            let r = lib.units.resistance.scale;
-            if let Some((prev_name, pt, pc, pr)) = corner_lib_units {
-                if (!scales_agree(pt, t) || !scales_agree(pc, c) || !scales_agree(pr, r))
-                    && !d0103_emitted
-                {
-                    out.diags.push(Diag::error(
-                        "D0103",
-                        format!(
-                            "corner '{}' libraries '{}' and '{}' disagree on units",
-                            corner.name, prev_name, lib.name
-                        ),
-                    ));
-                    d0103_emitted = true;
-                }
-            } else {
-                corner_lib_units = Some((&lib.name, t, c, r));
-            }
-
-            if let Some((ref first_name, ft, fc, fr)) = first_lib_units {
-                let time_mismatch = sdc.units.time_to_ns.is_none() && !scales_agree(ft, t);
-                let cap_mismatch = sdc.units.cap_to_pf.is_none() && !scales_agree(fc, c);
-                let res_mismatch = sdc.units.res_to_kohm.is_none() && !scales_agree(fr, r);
-                if (time_mismatch || cap_mismatch || res_mismatch) && !d0103_emitted {
-                    out.diags.push(Diag::error(
-                        "D0103",
-                        format!(
-                            "libraries '{}' and '{}' disagree on units while library units are in effect",
-                            first_name, lib.name
-                        ),
-                    ));
-                    d0103_emitted = true;
-                }
-            } else {
-                first_lib_units = Some((lib.name.clone(), t, c, r));
-            }
-        }
-
-        let first_lib = corner.libs.first();
-        let lib_t = first_lib.map_or(1.0, |l| l.units.time.scale);
-        let lib_c = first_lib.map_or(1.0, |l| l.units.capacitance.scale);
-        let lib_r = first_lib.map_or(1.0, |l| l.units.resistance.scale);
-        let lib_v = first_lib.map_or(1.0, |l| l.units.voltage.scale);
-        let lib_i = first_lib.map_or(1.0, |l| l.units.current.scale);
-        let lib_p = first_lib.map_or(1.0, |l| l.units.leakage_power.scale);
-
-        out.corner_units.push(CornerUnits {
-            corner: CornerId(ci as u32),
-            name: corner.name.to_string(),
-            time_to_ns: sdc.units.time_to_ns.unwrap_or(lib_t),
-            cap_to_pf: sdc.units.cap_to_pf.unwrap_or(lib_c),
-            res_to_kohm: sdc.units.res_to_kohm.unwrap_or(lib_r),
-            voltage_to_v: sdc.units.voltage_to_v.unwrap_or(lib_v),
-            current_to_ma: sdc.units.current_to_ma.unwrap_or(lib_i),
-            power_to_nw: sdc.units.power_to_nw.unwrap_or(lib_p),
-        });
-    }
-
-    if out.corner_units.is_empty() {
-        let cu = CornerUnits {
-            corner: CornerId(0),
-            name: "default".to_string(),
-            time_to_ns: sdc.units.time_to_ns.unwrap_or(1.0),
-            cap_to_pf: sdc.units.cap_to_pf.unwrap_or(1.0),
-            res_to_kohm: sdc.units.res_to_kohm.unwrap_or(1.0),
-            voltage_to_v: sdc.units.voltage_to_v.unwrap_or(1.0),
-            current_to_ma: sdc.units.current_to_ma.unwrap_or(1.0),
-            power_to_nw: sdc.units.power_to_nw.unwrap_or(1.0),
-        };
-        let scales = (cu.time_to_ns, cu.cap_to_pf, cu.res_to_kohm);
-        out.corner_units.push(cu);
-        scales
-    } else {
-        let cu = &out.corner_units[0];
-        (cu.time_to_ns, cu.cap_to_pf, cu.res_to_kohm)
-    }
-}
-
-fn scales_agree(a: f64, b: f64) -> bool {
-    (a - b).abs() <= 1e-12 * a.abs().max(b.abs()).max(1.0)
 }

@@ -17,6 +17,8 @@ use rusteda_compute::timing::{ArcClass, CompiledLutBank, LutDesc};
 use rusteda_core::job::Diag;
 use rusteda_core::liberty::{Table, TableVariable, Template};
 
+use crate::engine::input::libview::{LibraryUnits, UnitScale};
+
 /// Index of a compiled table in [`LutBank`], or [`NO_TABLE`] when absent.
 pub type TableId = u32;
 
@@ -75,7 +77,8 @@ impl LutBank {
 
     /// Compiles a Liberty [`Table`] into the bank, resolving template variables and default
     /// indices from `templates` when not overridden on the table itself (`STA-REQ-0014`,
-    /// `STA-REQ-0108`, `STA-REQ-0114`).
+    /// `STA-REQ-0108`, `STA-REQ-0114`). Index and table values are converted to ns and pF with
+    /// `units`, the units of the table's library (`STA-REQ-0018`).
     ///
     /// Returns a `T0014` error diagnostic if the table dimensions are inconsistent with its value
     /// count or if any axis has non-increasing index points.
@@ -84,8 +87,7 @@ impl LutBank {
         table: &Table,
         templates: &BTreeMap<String, Template>,
         kind: TableKind,
-        time_unit_ns: f64,
-        cap_unit_pf: f64,
+        units: LibraryUnits,
         construct: impl Into<String>,
     ) -> Result<TableId, Diag> {
         let construct = construct.into();
@@ -121,10 +123,15 @@ impl LutBank {
             resolved.variable(3),
         ];
         let mut arg = [0u32; 3];
-        let mut scales = [1.0f64; 3];
+        let mut scales = [UnitScale::IDENTITY; 3];
         for axis in 0..3 {
-            let (slot, scale) =
-                axis_role_and_scale(kind, axis, vars[axis].as_ref(), time_unit_ns, cap_unit_pf);
+            let (slot, scale) = axis_role_and_scale(
+                kind,
+                axis,
+                vars[axis].as_ref(),
+                units.time,
+                units.capacitance,
+            );
             arg[axis] = slot;
             scales[axis] = scale;
         }
@@ -151,7 +158,7 @@ impl LutBank {
                 } else {
                     n[axis] = idx.len() as u32;
                     let s = scales[axis];
-                    self.data.extend(idx.iter().map(|&x| x * s));
+                    self.data.extend(idx.iter().map(|&x| s.apply(x)));
                 }
             }
             if active == 1 && n[0] <= 1 {
@@ -161,7 +168,7 @@ impl LutBank {
 
         let voff = self.data.len() as u32;
         self.data
-            .extend(resolved.values.iter().map(|&v| v * time_unit_ns));
+            .extend(resolved.values.iter().map(|&v| units.time.apply(v)));
         let id = self.luts.len() as TableId;
         self.luts.push(LutDesc { n, off, arg, voff });
         self.meta.push(TableMeta { kind, construct });
@@ -243,15 +250,15 @@ fn resolve_with_template(table: &Table, templates: &BTreeMap<String, Template>) 
     }
 }
 
-/// Maps a Liberty axis variable to its canonical argument slot (`0..=2`) and unit scale (`ns`,
-/// `pF`, or `1.0`).
+/// Maps a Liberty axis variable to its canonical argument slot (`0..=2`) and its conversion to
+/// `ns` (`time_unit_ns`), `pF` (`cap_unit_pf`) or none (a length).
 fn axis_role_and_scale(
     kind: TableKind,
     axis: usize,
     var: Option<&TableVariable>,
-    time_unit_ns: f64,
-    cap_unit_pf: f64,
-) -> (u32, f64) {
+    time_unit_ns: UnitScale,
+    cap_unit_pf: UnitScale,
+) -> (u32, UnitScale) {
     match kind {
         TableKind::Delay | TableKind::Slew => match var {
             Some(
@@ -266,7 +273,7 @@ fn axis_role_and_scale(
                 | TableVariable::RelatedOutOutputNetPinCap,
             ) => (2, cap_unit_pf),
             Some(TableVariable::OutputNetLength | TableVariable::RelatedOutOutputNetLength) => {
-                (2, 1.0)
+                (2, UnitScale::IDENTITY)
             }
             Some(
                 TableVariable::InputNetTransition
@@ -285,7 +292,7 @@ fn axis_role_and_scale(
                         (1, cap_unit_pf)
                     }
                 } else if axis == 2 {
-                    (2, 1.0)
+                    (2, UnitScale::IDENTITY)
                 } else {
                     (0, time_unit_ns)
                 }
