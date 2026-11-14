@@ -206,8 +206,9 @@ Net load capacitance and wire delay follow the active wire model (`STA-REQ-0120`
   `set_wire_load_model`, `default_wire_load`, or `wire_load_selection` by total cell area) and the
   mode is `top` or `enclosed` (or unspecified). A net's fanout `F` (number of sink cell input pins)
   interpolates wire length `L(F)` from `fanout_length` (extrapolating above the last entry with
-  `slope`), adding `C_wire = L(F) * cap_per_length` to the net capacitance and
-  `D_wire = R_wire * C_total` to each net arc when `R_wire > 0`.
+  `slope`), adding `C_wire = L(F) * cap_per_length` to the driver's lumped load.
+  The wire arcs add no delay and preserve the driver's slew; the additional
+  capacitance affects the driving cell's delay and output slew.
 - **Top-level port net exclusion (`STA-REQ-0123`):** nets directly connected to any top-level module
   port (`input`, `output`, or `inout`) receive zero wire-load capacitance and zero wire resistance;
   their external load comes from `set_load` on the port.
