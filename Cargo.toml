@@ -12,11 +12,11 @@ authors = ["RustSTA contributors"]
 repository = "https://github.com/lab-emi/RustSTA"
 
 [workspace.dependencies]
-rusteda-core = { git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "6b2fa7346e29971c459323594f00f213598fbf2b" }
-rusteda-workspace = { git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "6b2fa7346e29971c459323594f00f213598fbf2b" }
-rusteda-compute = { git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "6b2fa7346e29971c459323594f00f213598fbf2b" }
-rusteda-formats = { git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "6b2fa7346e29971c459323594f00f213598fbf2b" }
-rusteda-cli-shared = { package = "rusteda-cli-common", git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "6b2fa7346e29971c459323594f00f213598fbf2b" }
+rusteda-core = { git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "ef598d153168a73899c73b33c3ce84ff42d809ea" }
+rusteda-workspace = { git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "ef598d153168a73899c73b33c3ce84ff42d809ea" }
+rusteda-compute = { git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "ef598d153168a73899c73b33c3ce84ff42d809ea" }
+rusteda-formats = { git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "ef598d153168a73899c73b33c3ce84ff42d809ea" }
+rusteda-cli-shared = { package = "rusteda-cli-common", git = "https://github.com/lab-emi/RustEDA-Common.git", rev = "ef598d153168a73899c73b33c3ce84ff42d809ea" }
 ruststa = { path = "crates/engines/ruststa" }
 ruststa-check = { path = "crates/verify/ruststa-check" }
 ruststa-fixtures = { path = "crates/verify/ruststa-fixtures" }
