@@ -10,7 +10,10 @@
 //! transition are the table values at the total capacitance, as for a load without resistance.
 //! Every other pi takes its charge-equivalent capacitance over the full linearized NLDM output
 //! transition (`rusteda_compute::rc::charge`), then fits the finite-ramp Thevenin source to that
-//! load. The net's wires follow that separately fitted waveform (`STA-REQ-0729`).
+//! load. The net's wires follow that separately fitted waveform (`STA-REQ-0729`). Tables that no
+//! finite-ramp Thevenin driver fits over the pi, such as a delay that does not grow with the load
+//! or a transition faster than the step response of the resistance into the load, make the pi a
+//! lumped load too (`STA-REQ-0735`).
 
 use rusteda_compute::ComputeError;
 use rusteda_compute::rc::{self, Pi, Thresholds};
@@ -67,16 +70,23 @@ pub fn pi_drive(
     }
     let sensitivity = (eval(total + SENSITIVITY_STEP_PF).0 - d0) / SENSITIVITY_STEP_PF;
     let res = sensitivity.max(0.0) * (-(1.0 - t.output).ln());
+    let lumped = PiDrive {
+        delay: d0,
+        slew: s0,
+        capacitance: total,
+        drive: None,
+        root_crossing: None,
+    };
     if pi.resistance < LUMPED_RESISTANCE_RATIO * res && s0 > 0.0 {
-        return Ok(PiDrive {
-            delay: d0,
-            slew: s0,
-            capacitance: total,
-            drive: None,
-            root_crossing: None,
-        });
+        return Ok(lumped);
     }
-    let r = rc::charge::gate(pi, t, res, eval)?;
+    let r = match rc::charge::gate(pi, t, res, &mut eval) {
+        Ok(r) => r,
+        // The pi and the trip points are valid, so the tables describe no finite-ramp Thevenin
+        // driver into this pi (`STA-REQ-0735`).
+        Err(_) if s0 > 0.0 => return Ok(lumped),
+        Err(e) => return Err(e),
+    };
     let drive = (r.resistance > 0.0).then_some((r.resistance, r.duration));
     Ok(PiDrive {
         delay: r.delay,
@@ -297,7 +307,8 @@ mod tests {
         }
     }
 
-    // STA-REQ-0728: invalid inputs keep their errors; a flat table has no resistance.
+    // STA-REQ-0728, STA-REQ-0735: invalid inputs keep their errors; a flat table has no
+    // resistance, so its pi is a lumped load.
     #[test]
     fn invalid_models_are_errors() {
         let t = trips();
@@ -307,7 +318,11 @@ mod tests {
             resistance: 0.1,
         };
         assert!(pi_response(pi, t, |_| (f64::NAN, 0.1)).is_err());
-        assert!(pi_response(pi, t, |_| (0.1, 0.1)).is_err());
+        assert_eq!(
+            pi_response(pi, t, |_| (0.1, 0.1)).unwrap(),
+            (0.1, 0.1, 0.003)
+        );
+        assert!(rc::charge::gate(pi, t, 0.0, |_| (0.1, 0.1)).is_err());
         assert!(pi_response(Pi { near: -1.0, ..pi }, t, |c| (c, c)).is_err());
         let bad = Thresholds { derate: 0.0, ..t };
         assert!(pi_response(pi, bad, |c| (10.0 * c, 0.1 + 20.0 * c)).is_err());
@@ -316,5 +331,59 @@ mod tests {
             ..pi
         };
         assert!(pi_response(tiny, bad, |c| (10.0 * c, 0.1 + 20.0 * c)).is_err());
+    }
+
+    // STA-REQ-0735: the clock-to-output arc of an OpenRAM SKY130 macro
+    // (`sky130_sram_2kbyte_1rw1r_32x512_8`, TT 1.8 V 25 C: delay 0.383, 0.412, 0.529 ns and
+    // transition 0.002, 0.005, 0.016 ns at 1.7225, 6.89, 27.56 fF, 10/90 % slew and 50 % delay
+    // trip points) into the pi of its `dout0[31]` net on a routed layout. Its delay sensitivity
+    // gives a 3.9 kOhm driver whose step response into the load is slower than the table
+    // transition, so no finite-ramp Thevenin driver fits: the pi is a lumped load, where the
+    // analysis used to fail with T0077.
+    #[test]
+    fn tables_without_a_thevenin_driver_make_a_lumped_load() {
+        let t = Thresholds {
+            lower: 0.1,
+            upper: 0.9,
+            input: 0.5,
+            output: 0.5,
+            derate: 1.0,
+        };
+        let index = [
+            0.0017224999999999999,
+            0.006889999999999999,
+            0.027559999999999998,
+        ];
+        let line = |v: [f64; 3], c: f64| {
+            let k = usize::from(c > index[1]);
+            v[k] + (v[k + 1] - v[k]) * (c - index[k]) / (index[k + 1] - index[k])
+        };
+        let eval = |c: f64| {
+            (
+                line([0.383, 0.412, 0.529], c),
+                line([0.002, 0.005, 0.016], c),
+            )
+        };
+        let pi = Pi {
+            near: 0.008452638100777694,
+            far: 0.015307025899222306,
+            resistance: 0.18412036689752997,
+        };
+        let total = pi.total();
+        let res = (eval(total + SENSITIVITY_STEP_PF).0 - eval(total).0) / SENSITIVITY_STEP_PF
+            * std::f64::consts::LN_2;
+        assert!(res > 3.9 && pi.resistance > LUMPED_RESISTANCE_RATIO * res);
+        let rejected = rc::charge::gate(pi, t, res, eval).unwrap_err();
+        assert!(
+            rejected
+                .to_string()
+                .contains("incompatible with Thevenin resistance"),
+            "{rejected}"
+        );
+        let r = pi_drive(pi, t, eval).unwrap();
+        assert_eq!(
+            (r.delay, r.slew, r.capacitance, r.drive, r.root_crossing),
+            (eval(total).0, eval(total).1, total, None, None)
+        );
     }
 }

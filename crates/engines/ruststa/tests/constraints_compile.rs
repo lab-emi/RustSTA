@@ -929,12 +929,26 @@ fn diagnostics_codes_severities_and_source_locations() {
         );
     }
 
-    // 3. D0103 library unit disagreement when set_units is omitted
+    // 3. D0103 (STA-REQ-0018): libraries of one corner that disagree on units are a warning, and
+    // SDC values are read in the first library's units; first libraries of two corners that
+    // disagree make SDC values without set_units ambiguous, an error.
     {
         let (sdc, _) =
             rusteda_formats::sdc::read_str("create_clock -name clk -period 2.0 [get_ports clk]");
         let mixed_libs = [lib_ns.clone(), lib_ps.clone()];
         let corners = [CornerLibs::new("default", &mixed_libs)];
+        let c = CompiledConstraints::compile(&sdc, &netlist, &corners).expect("warning only");
+        assert!(
+            c.diags
+                .iter()
+                .any(|d| d.code == "D0103" && d.severity == Severity::Warning)
+        );
+        assert_eq!(c.clocks[0].period_ns, 2.0);
+        let (ns_only, ps_only) = ([lib_ns.clone()], [lib_ps.clone()]);
+        let corners = [
+            CornerLibs::new("slow", &ns_only),
+            CornerLibs::new("fast", &ps_only),
+        ];
         let err = CompiledConstraints::compile(&sdc, &netlist, &corners).unwrap_err();
         assert!(
             err.diags

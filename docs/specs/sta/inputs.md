@@ -25,8 +25,8 @@ unconnected outputs are allowed.
 direction, function, `three_state` expression, and capacitance (`rise_capacitance`/`fall_capacitance`
 when given, else `capacitance`), timing groups with `related_pin`, `timing_sense`, `timing_type`
 and `when`, and the tables `cell_rise`, `cell_fall`, `rise_transition`, `fall_transition`,
-`rise_constraint`, `fall_constraint`. Library units (`time_unit`, `capacitive_load_unit`) are
-converted to nanoseconds and picofarads.
+`rise_constraint`, `fall_constraint`. Library values are converted to the internal units with
+each library's own units (STA-REQ-0018).
 
 **STA-REQ-0012** `timing_sense` is `positive_unate`, `negative_unate` or `non_unate`; when absent
 it is derived from the output function (unate in the related pin if the function is monotone in
@@ -82,12 +82,40 @@ corner.
 each cell's metadata. Valid libraries combined in one corner may differ; a malformed
 threshold interval or nonpositive slew derate is a T0013 error. The first library defines
 the top-level port convention. Cell delay, transition and constraint tables retain their
-original library units. A net converts slew between the driver's and receiver's intervals
+original library trip points. A net converts slew between the driver's and receiver's intervals
 and derates; its arrival reference changes between their output/input thresholds.
 The extracted solver retains the source waveform convention for slew, then converts
 the resulting abstract transition to the receiving library. Delay uses the
 receiver input threshold on that waveform. No PDK file is
 rewritten to normalize these conventions.
+
+**STA-REQ-0018** Library units and the units of SDC values (test `library_units`) [@liberty2017;
+@sdc2016]. The analysis computes in nanoseconds, picofarads, kilohms, volts, milliamperes and
+nanowatts. Every library is converted to these units with its own `time_unit`,
+`capacitive_load_unit`, `pulling_resistance_unit`, `voltage_unit`, `current_unit` and
+`leakage_power_unit`, never with those of another library of its corner: delay, transition and
+constraint tables with their time and capacitance axes, pin capacitances, capacitance and transition
+limits, pulse-width and period limits, and wire-load capacitances. (The analysis reads no
+resistance, voltage, current or power value from a library: the lumped wire-load model uses the wire
+capacitance only, and there is no power analysis.) A library unit that is the internal unit divided
+by a whole number (`1ps`, `10fF`, `1ohm`) converts by dividing by that number, as SDC values do
+(SDC-REQ-0016): a value exact in binary in the smaller unit (`123` or `1.5` in `1ps`) converts to
+the same number as its decimal equivalent in the larger unit (`0.123` or `0.0015` in `1ns`), and
+such a library written in ns/pF and in ps/fF gives bit-identical timing. The libraries of one corner
+may state different units, as SRAM macros commonly do (GF180MCU: `gf180mcu_fd_sc_mcu7t5v0` states
+`1ohm` and `1uW`, its `gf180mcu_fd_ip_sram` macros `1kohm` and `1mW`; SKY130: `sky130_fd_sc_hd`
+states `1nW`, the OpenRAM macros `1mW`).
+
+An SDC value without `set_units` is read in the unit of its quantity stated by the first library of
+the corner, its main library. A library of a corner whose time, capacitance or resistance unit (the
+quantities SDC values are stated in) differs from the corner's first library gets warning D0103 per
+corner and library, naming both libraries and every unit attribute that differs (units that differ
+only in voltage, current or leakage power are not reported). The constraints are compiled once for
+all corners, with the first corner's units: when the first library of another corner states a
+different time or capacitance unit and the SDC sets that unit with no `set_units`, one SDC value
+would mean different quantities in the two corners, and that ambiguity is error D0103, naming both
+libraries and the differing units. A resistance unit alone is no error, since no supported SDC
+command states a resistance.
 
 ## Constraints
 

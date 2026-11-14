@@ -20,6 +20,7 @@ use rusteda_core::diag::Diag;
 use rusteda_core::liberty::{Library, WireLoad, WireLoadMode, WireLoadSelection};
 use rusteda_core::netlist::{CONST0, CONST1, FrozenNetlist, PinDir};
 
+use crate::engine::input::libview::UnitScale;
 use crate::engine::types::{An, DelaySlew, NetRow, NodeId, Tr};
 
 /// Diagnostic code emitted when a requested `wire_load` model, `wire_load_selection`, or
@@ -350,10 +351,11 @@ impl WireloadLumped {
     }
 
     /// Evaluates the lumped wire capacitance `C_wire(F)` (in pF) for an internal net with
-    /// `fanout` connected instance load pins (`STA-REQ-0123`).
+    /// `fanout` connected instance load pins (`STA-REQ-0123`), the model's capacitance per unit
+    /// length converted with the units of its library (`STA-REQ-0018`).
     #[must_use]
     pub fn capacitance_for_fanout(&self, fanout: u32) -> f64 {
-        self.model.capacitance_for_fanout(fanout) * self.cap_unit_pf
+        lumped_wire_cap(&self.model, UnitScale::new(self.cap_unit_pf), fanout)
     }
 
     /// Returns the number of connected instance load pins (`Input` or `Inout`) on `net` (including
@@ -746,12 +748,20 @@ fn union_roots(parent: &mut [u32], a: u32, b: u32) {
     }
 }
 
+/// `C_wire(F)` of `model` in pF: its capacitance per unit length, converted with `cap_unit`
+/// before it is multiplied by the length, so that the same model stated in another capacitance
+/// unit gives the same value (`STA-REQ-0018`).
+fn lumped_wire_cap(model: &WireLoad, cap_unit: UnitScale, fanout: u32) -> f64 {
+    cap_unit.apply(model.capacitance) * model.length_for_fanout(fanout)
+}
+
 fn compute_net_wire_caps(
     netlist: &FrozenNetlist<'_>,
     model: &WireLoad,
     cap_unit_pf: f64,
     overrides: &FxHashMap<NetRow, [f64; 2]>,
 ) -> (Vec<u32>, Vec<bool>, Vec<[f64; 2]>) {
+    let cap_unit = UnitScale::new(cap_unit_pf);
     let n_nets = netlist.nets.len();
     let mut parent: Vec<u32> = (0..n_nets as u32).collect();
     let mut is_const = vec![false; n_nets];
@@ -819,7 +829,7 @@ fn compute_net_wire_caps(
         } else if is_port || is_const[r] {
             net_wire_cap[net_idx] = [0.0, 0.0];
         } else {
-            let c = model.capacitance_for_fanout(fo) * cap_unit_pf;
+            let c = lumped_wire_cap(model, cap_unit, fo);
             net_wire_cap[net_idx] = [c, c];
         }
     }

@@ -305,18 +305,36 @@ pub(crate) fn launch_value(
         return Ok(None);
     }
     let c_load = node_net_cap(netview, canon_totals, out_pin)[to.index()][an.index()];
-    let (ds, drive) = lib.arc_delay_drive_3d(
-        global_arc,
-        to,
-        ck_slew,
-        match netview.node_net(out_pin) {
-            NetTarget::Net(net) => net_loads.physical_load(net, to, an, c_load),
-            _ => DriverLoad::Lumped { c: c_load },
-        },
-        0.0,
-    );
+    let load = match netview.node_net(out_pin) {
+        NetTarget::Net(net) => net_loads.physical_load(net, to, an, c_load),
+        _ => DriverLoad::Lumped { c: c_load },
+    };
+    let rejected = |reason: String| {
+        let load = match load {
+            DriverLoad::Lumped { c } => format!("{c} pF"),
+            DriverLoad::Pi { c_near, r, c_far } => {
+                format!("pi {c_near} pF, {r} kOhm, {c_far} pF")
+            }
+        };
+        Diag::error(
+            "T0077",
+            format!(
+                "nonfinite RC sequential launch at '{}' ({} {}, clock transition {ck_slew} ns, \
+                 load {load}): {reason}",
+                netview.node_name_str(out_pin),
+                if to == Tr::Rise { "rise" } else { "fall" },
+                if an == An::Late { "late" } else { "early" },
+            ),
+        )
+    };
+    let (ds, drive) = lib
+        .arc_delay_drive_checked(global_arc, to, ck_slew, load, 0.0)
+        .map_err(|e| rejected(e.to_string()))?;
     if !ds.delay.is_finite() || !ds.slew.is_finite() {
-        return Err(Diag::error("T0077", "nonfinite RC sequential launch"));
+        return Err(rejected(format!(
+            "delay {} ns, transition {} ns",
+            ds.delay, ds.slew
+        )));
     }
     Ok(Some((ds.delay, ds.slew.max(0.0), drive)))
 }

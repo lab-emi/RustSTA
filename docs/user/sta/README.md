@@ -136,9 +136,20 @@ $ rusteda import -w ./ws_mc --base-rev rev0 --lib wt_full.lib --corner slow --li
 }
 ```
 
-All library time, capacitance, resistance, voltage, and current values are scaled to internal units
-of nanoseconds (`ns`), picofarads (`pF`), kilohms (`kOhm`), volts (`V`), and milliamperes (`mA`)
-(`STA-REQ-0010`).
+Each library's values are converted to the internal units, nanoseconds (`ns`), picofarads (`pF`),
+kilohms (`kOhm`), volts (`V`), milliamperes (`mA`) and nanowatts (`nW`), with that library's own
+unit attributes (`STA-REQ-0018`). The libraries of one corner may therefore state different units,
+as SRAM macros often do against their cell library (GF180MCU, SKY130). SDC values without
+`set_units` are read in the units of the corner's first library: list the cell library first.
+
+- `warning[D0103]` names a library of a corner whose time, capacitance or resistance unit differs
+  from the corner's first library, and every unit attribute that differs. The analysis runs; check
+  that the SDC values are meant in the first library's units.
+- `error[D0103]` means that the first libraries of two corners state different time or
+  capacitance units and the SDC does not set that unit with `set_units`, so one SDC value would
+  mean different quantities in the two corners. Add `set_units -time ns -capacitance pF` (or the
+  units the SDC is written in) to the SDC, or list a library with the same units first in every
+  corner.
 
 ### SDC constraints (`CONSTR v1`)
 

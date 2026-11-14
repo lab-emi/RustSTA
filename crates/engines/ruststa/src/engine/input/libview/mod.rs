@@ -12,9 +12,11 @@
 //! no-change and clock-tree-path arcs are counted per instance as unanalyzed arcs. Table axes are
 //! typed by role,
 //! up to three, with per-table index overrides. Slew thresholds and the slew derate are recorded
-//! per corner.
+//! per corner. Every library's values are converted to the internal units with that library's own
+//! units ([`LibraryUnits`], `STA-REQ-0018`).
 
 pub mod thresholds;
+pub mod units;
 
 use std::collections::BTreeMap;
 
@@ -28,6 +30,7 @@ use crate::engine::delay::lut::{LutBank, NO_TABLE, RangeTracker, TableId, TableK
 use crate::engine::types::{LibArc, Tr};
 
 pub use thresholds::CornerThresholds;
+pub use units::{LibraryUnits, UnitScale};
 
 /// Unateness (timing sense) of a timing arc (`STA-REQ-0012`, `STA-REQ-0017`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -343,9 +346,12 @@ pub struct TimingLib {
     pub thresholds: CornerThresholds,
     /// Index in `lut_bank.classes` of the wire [`ArcClass`] (`flags = ArcClass::WIRE`).
     pub wire_class: u32,
-    /// Time unit of the first library in ns (or `1.0` when empty).
+    /// Time unit of the first library in ns (or `1.0` when empty). The values of every library
+    /// are already converted with that library's own units ([`LibraryUnits`]); this is the unit
+    /// SDC values without `set_units` are read in (`STA-REQ-0018`).
     pub time_unit_ns: f64,
-    /// Capacitive load unit of the first library in pF (or `1.0` when empty).
+    /// Capacitive load unit of the first library in pF (or `1.0` when empty), like
+    /// [`Self::time_unit_ns`].
     pub cap_unit_pf: f64,
 }
 
@@ -445,7 +451,7 @@ impl TimingLib {
         };
 
         for &(lib, thresholds) in libs {
-            let (tu, cu) = (lib.time_unit_ns, lib.cap_unit_pf);
+            let units = LibraryUnits::of(lib);
             for c in &lib.cells {
                 if let Some(&prev_idx) = view.by_name.get(&c.name) {
                     let prev_lib = &view.cells[prev_idx].library;
@@ -465,7 +471,7 @@ impl TimingLib {
                     thresholds,
                     area: c.area,
                     is_sequential: !c.sequentials.is_empty(),
-                    pins: c.pins.iter().map(|p| build_pin(lib, p, tu, cu)).collect(),
+                    pins: c.pins.iter().map(|p| build_pin(lib, p, units)).collect(),
                     arcs: Vec::new(),
                     checks: Vec::new(),
                     preset_clear_arcs: Vec::new(),
@@ -679,7 +685,8 @@ impl TimingLib {
     }
 }
 
-fn build_pin(lib: &Library, p: &Pin, tu: f64, cu: f64) -> CellPin {
+fn build_pin(lib: &Library, p: &Pin, units: LibraryUnits) -> CellPin {
+    let (tu, cu) = (units.time, units.capacitance);
     let base = if p.capacitance_given || p.capacitance != 0.0 {
         p.capacitance
     } else {
@@ -688,7 +695,7 @@ fn build_pin(lib: &Library, p: &Pin, tu: f64, cu: f64) -> CellPin {
     let cap_tr = |plain: Option<f64>, range: Option<(f64, f64)>| -> [f64; 2] {
         let v = plain.unwrap_or(base);
         let (lo, hi) = range.unwrap_or((v, v));
-        [cu * lo, cu * hi]
+        [cu.apply(lo), cu.apply(hi)]
     };
     CellPin {
         name: p.name.clone(),
@@ -700,10 +707,10 @@ fn build_pin(lib: &Library, p: &Pin, tu: f64, cu: f64) -> CellPin {
             cap_tr(p.rise_capacitance, p.rise_capacitance_range),
             cap_tr(p.fall_capacitance, p.fall_capacitance_range),
         ],
-        max_capacitance: lib.pin_max_capacitance(p).map(|v| v * cu),
-        max_transition: lib.pin_max_transition(p).map(|v| v * tu),
+        max_capacitance: lib.pin_max_capacitance(p).map(|v| cu.apply(v)),
+        max_transition: lib.pin_max_transition(p).map(|v| tu.apply(v)),
         max_fanout: lib.pin_max_fanout(p),
-        min_capacitance: p.min_capacitance.map(|v| v * cu),
+        min_capacitance: p.min_capacitance.map(|v| cu.apply(v)),
         fanout_load: lib.pin_fanout_load(p),
         func: None,
         three_state_func: None,
@@ -721,7 +728,7 @@ fn add_pulse_attributes(
     to: usize,
     p: &Pin,
 ) -> Result<(), Diag> {
-    let (tu, cu) = (lib.time_unit_ns, lib.cap_unit_pf);
+    let units = LibraryUnits::of(lib);
     let mut scalar = |v: Option<f64>, attr: &str| -> Result<TableId, Diag> {
         let Some(v) = v else {
             return Ok(NO_TABLE);
@@ -735,8 +742,7 @@ fn add_pulse_attributes(
             &tab,
             &lib.templates,
             TableKind::Check,
-            tu,
-            cu,
+            units,
             format!("cell {} pin {} {attr}", tc.name, p.name),
         )
     };
@@ -774,7 +780,7 @@ fn compile_arc(
     p: &Pin,
     a: &rusteda_core::liberty::TimingArc,
 ) -> Result<(), Diag> {
-    let (tu, cu) = (lib.time_unit_ns, lib.cap_unit_pf);
+    let units = LibraryUnits::of(lib);
     let tt_raw = a.timing_type.trim();
     let tt = if tt_raw.is_empty() {
         TimingType::Combinational
@@ -796,8 +802,7 @@ fn compile_arc(
                     tab,
                     &lib.templates,
                     TableKind::Check,
-                    tu,
-                    cu,
+                    units,
                     format!("cell {} pin {} ({}) {attr}", tc.name, p.name, tt.name()),
                 ),
                 None => Ok(NO_TABLE),
@@ -848,8 +853,7 @@ fn compile_arc(
                 tab,
                 &lib.templates,
                 kind,
-                tu,
-                cu,
+                units,
                 format!(
                     "cell {} pin {} ({} -> {}) {attr}",
                     tc.name, p.name, a.related_pin, p.name

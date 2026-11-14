@@ -79,6 +79,23 @@ separate resistances). Above the ratio the charge selection of STA-REQ-0733 appl
 the transition is discontinuous at the ratio, as observed of a reference timing
 tool, whose reported effective capacitance equals the total there.
 
+**STA-REQ-0735**: Tables without a Thevenin driver (test `thevenin_fit`). When an
+arc's tables describe no finite-ramp Thevenin driver into its pi, the pi is a lumped
+load as in STA-REQ-0727 (Ceff = Ctotal, the NLDM delay and transition at the total
+capacitance, the wires driven by that transition per STA-REQ-0729), instead of
+failing the analysis with T0077. That is the case when the pi and the trip points
+are valid, the NLDM transition at the total load is positive, and the STA-REQ-0728
+resistance is not positive (a delay that does not grow with the load) or the charge
+selection of STA-REQ-0733 and STA-REQ-0734 and its duration fit find no solution: an
+unbracketed or ill-conditioned charge residual, exhausted work, or an NLDM
+transition faster than the step response of the resistance into the selected load,
+which no source ramp can fit. The OpenRAM SKY130 SRAM
+`sky130_sram_2kbyte_1rw1r_32x512_8` is such a cell: its clock-to-output delay rises
+by 5.7 ns/pF (a 3.9 kOhm resistance) while its transition stays between 2 and 16 ps,
+and on a routed layout its `dout` pi loads (184 Ohm between 8.5 fF and 15.3 fF on
+one net) are above the STA-REQ-0727 ratio. Arcs that the model fits are unchanged.
+An invalid pi, invalid trip points or a nonfinite table value remain errors.
+
 **STA-REQ-0729**: Interconnect delay and transition per sink (replaces STA-REQ-0722). When the
 transition at the driver pin was set by a cell arc into the net's pi load outside the lumped
 regime (STA-REQ-0728, STA-REQ-0727, clock-to-output launches included), the sink voltage is that
