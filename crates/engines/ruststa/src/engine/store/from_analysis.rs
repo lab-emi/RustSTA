@@ -9,7 +9,7 @@
 //! Every lookup of a check or a launch by pin goes through an index built once per table, so the
 //! build stays linear in the size of the design.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
@@ -17,34 +17,35 @@ use rusteda_core::diag as core_diag;
 use std::time::Instant;
 
 use rusteda_core::job::{Ctx, Diag, Event};
-use rusteda_core::liberty::{Direction, Library};
+use rusteda_core::liberty::Library;
 
 use crate::engine::analysis::{CornerAnalysis, EngineAnalysis};
 use crate::engine::graph::{CheckKind, DisableReason, TimingGraph};
 use crate::engine::input::NetlistView;
 use crate::engine::input::constr::CompiledConstraints;
-use crate::engine::input::netview::NodeKind;
 use crate::engine::limits::LimitKind;
-use crate::engine::prop::backward::{BackwardPass, ByNode};
+use crate::engine::prop::backward::BackwardPass;
 use crate::engine::prop::checks::{EndpointCheckKind, SlackRecord};
 use crate::engine::prop::clocks::ClockModel;
 use crate::engine::prop::endpoints::EndpointStatus;
-use crate::engine::prop::latch::lower_corner_with_derates;
 use crate::engine::prop::lower::LoweredCorner;
-use crate::engine::prop::starts::build_start_rows;
 use crate::engine::store::layout::PATH_CHAIN_STEP_WORDS;
 use crate::engine::store::{
-    ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport,
-    CornerLimitsReport, CornerRec, DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec,
-    InstHashBuilder, LimitKindReport, NO_INDEX, NO_PRED, NameHashBuilder, NodeRec, NoteRec,
-    NoteSeverity, PATH_CHAIN_HEADER_WORDS, PathHeaderRec, PathPointRec, PathRankRec, ScopeReport,
-    StaMeta, StaStoreData, StoreMode, StorePrecision, StringTableBuilder, SummaryRec, TagExtraRec,
-    TagRec, UnconstrainedReasonTag, UnconstrainedRec, canon_f32, canon_f64, hash_node_name,
-    pack_chain_step, pack_f64_words,
+    ABSENT_EARLY_LATE, ABSENT_REQUIRED, ABSENT_SLACK, ClockRec, CompletenessReport, CornerRec,
+    DisabledArcRec, EndpointKindTag, EndpointRec, EpSlackRec, InstHashBuilder, NO_INDEX, NO_PRED,
+    NameHashBuilder, NodeRec, NoteRec, NoteSeverity, PATH_CHAIN_HEADER_WORDS, PathHeaderRec,
+    PathPointRec, PathRankRec, ScopeReport, StaMeta, StaStoreData, StoreMode, StorePrecision,
+    StringTableBuilder, SummaryRec, TagExtraRec, TagRec, UnconstrainedReasonTag, UnconstrainedRec,
+    canon_f32, canon_f64, hash_node_name, pack_chain_step, pack_f64_words,
 };
 use crate::engine::types::{An, NodeId, Tr};
 
 mod capacity;
+mod corner_tables;
+pub use corner_tables::corner_limits_report;
+use corner_tables::{
+    cmp_slack_nan_last, compute_corner_backward_pass, count_unconstrained_inputs, sat_u32,
+};
 mod steps;
 
 pub use capacity::check_store_tables;
@@ -1175,140 +1176,4 @@ fn build_store_kept(
     data.canonicalize();
     clock.lap("store.canonicalize");
     data
-}
-
-fn count_unconstrained_inputs(analysis: &StoreInput<'_>) -> u32 {
-    let mut clock_sources = BTreeSet::new();
-    for ck in &analysis.constraints.clocks {
-        for &src in &ck.sources {
-            clock_sources.insert(src);
-        }
-    }
-    let mut input_delayed = BTreeSet::new();
-    for id in &analysis.constraints.input_delays {
-        input_delayed.insert(id.node);
-    }
-    let mut count = 0u32;
-    for pb in 0..analysis.graph.num_port_bits() {
-        let nid = NodeId(pb as u32);
-        if let NodeKind::PortBit { dir, .. } = analysis.netview.node_kind(nid)
-            && matches!(dir, Direction::Input | Direction::Inout)
-            && !clock_sources.contains(&nid)
-            && !input_delayed.contains(&nid)
-        {
-            count += 1;
-        }
-    }
-    count
-}
-
-/// The required times of corner `ca`: seeded at its checks and propagated backward over the
-/// lowered problem of the corner, `kept` when the analysis kept it, else lowered again.
-fn compute_corner_backward_pass(
-    analysis: &StoreInput<'_>,
-    ca: &CornerAnalysis,
-    kept: Option<&LoweredCorner<'_>>,
-) -> BackwardPass {
-    let ntags = ca.tags.len().max(1);
-    // The node-ordered values of the corner hold the propagated arrivals and transitions, so the
-    // pass does not need the level-ordered result, which a caller may already have released.
-    if let Some(lowered) = kept {
-        return BackwardPass::for_table(
-            analysis.graph,
-            lowered,
-            ntags,
-            &ca.endpoints.records,
-            &ca.node_values,
-        );
-    }
-    let mut bp =
-        BackwardPass::seeded_for_table(analysis.graph.num_nodes(), ntags, &ca.endpoints.records);
-    let values = ByNode {
-        values: &ca.node_values,
-        order: analysis.graph.order(),
-    };
-
-    if let Ok(start_build) = build_start_rows(
-        analysis.netview,
-        analysis.graph,
-        &ca.lib,
-        analysis.constraints,
-        &ca.clock_model,
-        &ca.tags,
-        &ca.exceptions,
-        &ca.net_loads,
-        &analysis.constraints.timing_derate,
-    ) {
-        // The same graph, starts and RC data passed analysis preflight already; the lowering is
-        // the analysis's own (`lower_corner`), so the arc values equal those of a kept problem.
-        let lowered = lower_corner_with_derates(
-            analysis.netview,
-            analysis.graph,
-            &ca.lib,
-            &ca.net_loads,
-            ntags as u32,
-            start_build.rows,
-            &start_build.launch_slews,
-            &start_build.launch_drives,
-            &ca.latch_maps,
-            &ca.wire_model,
-            u64::MAX,
-            analysis.constraints.timing_derate,
-            None,
-            false,
-        )
-        .expect("the lowering of a validated analysis is deterministic");
-        bp.propagate(analysis.graph, &lowered, &values);
-    }
-    bp
-}
-
-fn cmp_slack_nan_last(a: f64, b: f64) -> std::cmp::Ordering {
-    match (a.is_nan(), b.is_nan()) {
-        (true, true) => std::cmp::Ordering::Equal,
-        (true, false) => std::cmp::Ordering::Greater,
-        (false, true) => std::cmp::Ordering::Less,
-        (false, false) => a.total_cmp(&b),
-    }
-}
-
-/// `v` as `u32`, saturated.
-fn sat_u32(v: u64) -> u32 {
-    u32::try_from(v).unwrap_or(u32::MAX)
-}
-
-/// The counts of the pin limit checks of `ca` as the `SCOPE` of `sta.rbin` records them
-/// (`STA-REQ-0807`).
-#[must_use]
-pub fn corner_limits_report(ca: &CornerAnalysis) -> CornerLimitsReport {
-    CornerLimitsReport {
-        corner: ca.corner_name.clone(),
-        kinds: LimitKind::ALL
-            .iter()
-            .map(|&k| {
-                let s = ca.limits.kind(k);
-                (
-                    k.name().to_owned(),
-                    LimitKindReport {
-                        checked: s.checked,
-                        violating: s.violating,
-                        unlimited: s.unlimited,
-                        worst_slack_ns: s.worst_slack,
-                        unevaluated: s.unevaluated,
-                    },
-                )
-            })
-            .collect(),
-        unclocked_pulse_pins: ca.limits.unclocked_pulse_pins,
-        pass_through_pulse_pins: ca.limits.pass_through_pulse_pins,
-        pulse_groups: ca.limits.rules.groups.name().to_owned(),
-        pulse_pins: ca.limits.rules.pins.name().to_owned(),
-        clock_limits: ca.limits.clock_limits.name().to_owned(),
-        constant_drivers: ca.limits.constant_drivers,
-        static_transition_pins: ca.limits.static_transition_pins,
-        ideal_clock_pins: ca.limits.ideal_clock_pins,
-        untimed_pins: ca.limits.untimed_pins,
-        clock_scope_pins: ca.limits.clock_scope_pins,
-        unconnected_output_pins: ca.limits.unconnected_output_pins,
-    }
 }
